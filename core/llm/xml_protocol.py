@@ -256,3 +256,11 @@ def parse_react_xml(text: str) -> ReActDecision:
         action=action_el.text.strip(),
         action_input=parse_action_input(input_el),
     )
+
+
+def format_react_xml(thought: str, action: str) -> str:
+    """构造 ReAct XML 响应（测试与脚本化客户端使用）。"""
+    return (
+        f"<react><thought>{_escape_xml(thought)}</thought>"
+        f"<action>{_escape_xml(action)}</action><action_input/></react>"
+    )

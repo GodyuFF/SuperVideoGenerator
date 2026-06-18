@@ -4,18 +4,27 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { A2UIModal } from "../components/A2UIModal";
+import { GeneratedContent } from "../components/GeneratedContent";
 import { MASTER_AGENT_NAME, styleModeLabel, type StyleMode } from "../constants";
 import { formatApiError, useProject, useWebSocket } from "../hooks/useApi";
-import type { LLMConfig, PlanStep, TextAsset, WsEvent } from "../types";
+import type { LLMConfig, PlanStep, StepOutput, TextAsset, VideoPlan } from "../types";
 
 const API = "/api";
 
 type GenerationMode = "auto" | "cost_confirm";
 
+interface ChatLine {
+  id: string;
+  text: string;
+  streaming?: boolean;
+}
+
 interface ScriptMeta {
   style_mode?: string;
   style_locked?: boolean;
   status?: string;
+  title?: string;
+  content_md?: string;
 }
 
 interface WorkbenchProps {
@@ -23,6 +32,7 @@ interface WorkbenchProps {
   llmLoading: boolean;
   needsAiConfig: boolean;
   onOpenSettings: () => void;
+  onOpenLogs: () => void;
 }
 
 export function Workbench({
@@ -30,15 +40,19 @@ export function Workbench({
   llmLoading,
   needsAiConfig,
   onOpenSettings,
+  onOpenLogs,
 }: WorkbenchProps) {
   const { projectId, scriptId, loading, initError, bootstrap } = useProject();
   const { events, pendingConfirmation, sendConfirmation } = useWebSocket(
     projectId,
     scriptId
   );
-  const [messages, setMessages] = useState<string[]>([]);
+  const [messages, setMessages] = useState<ChatLine[]>([]);
   const [input, setInput] = useState("");
   const [assets, setAssets] = useState<TextAsset[]>([]);
+  const [scriptTitle, setScriptTitle] = useState("");
+  const [scriptContentMd, setScriptContentMd] = useState("");
+  const [videoPlan, setVideoPlan] = useState<VideoPlan | null>(null);
   const [planSteps, setPlanSteps] = useState<PlanStep[]>([]);
   const [scriptStatus, setScriptStatus] = useState("draft");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("cost_confirm");
@@ -46,6 +60,22 @@ export function Workbench({
   const [styleLocked, setStyleLocked] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const lastEventIndex = useRef(0);
+  const streamLineIds = useRef<Map<string, string>>(new Map());
+
+  const appendLine = useCallback((line: ChatLine) => {
+    setMessages((m) => [...m, line]);
+  }, []);
+
+  const appendMasterLine = useCallback(
+    (text: string, streaming = false) => {
+      appendLine({
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        text: `${MASTER_AGENT_NAME}: ${text}`,
+        streaming,
+      });
+    },
+    [appendLine]
+  );
 
   const loadScript = useCallback(async () => {
     if (!projectId || !scriptId) return;
@@ -53,15 +83,32 @@ export function Workbench({
     if (!r.ok) return;
     const script = (await r.json()) as ScriptMeta;
     if (script.status) setScriptStatus(script.status);
+    if (script.title) setScriptTitle(script.title);
+    if (script.content_md) setScriptContentMd(script.content_md);
     if (script.style_mode === "dynamic_image" || script.style_mode === "ai_video") {
       setStyleMode(script.style_mode);
     }
     setStyleLocked(Boolean(script.style_locked));
   }, [projectId, scriptId]);
 
-  useEffect(() => {
-    loadScript();
-  }, [loadScript]);
+  const loadVideoPlan = useCallback(async () => {
+    if (!projectId || !scriptId) return;
+    const r = await fetch(
+      `${API}/projects/${projectId}/scripts/${scriptId}/video-plan`
+    );
+    if (r.ok) {
+      setVideoPlan(await r.json());
+    }
+  }, [projectId, scriptId]);
+
+  const loadPlan = useCallback(async () => {
+    if (!projectId || !scriptId) return;
+    const r = await fetch(`${API}/projects/${projectId}/scripts/${scriptId}/plan`);
+    if (r.ok) {
+      const plan = await r.json();
+      if (plan.steps) setPlanSteps(plan.steps as PlanStep[]);
+    }
+  }, [projectId, scriptId]);
 
   const refreshAssets = useCallback(async () => {
     if (!projectId || !scriptId) return;
@@ -69,14 +116,72 @@ export function Workbench({
     if (r.ok) setAssets(await r.json());
   }, [projectId, scriptId]);
 
+  const refreshGeneratedContent = useCallback(async () => {
+    await loadScript();
+    await refreshAssets();
+    await loadVideoPlan();
+    await loadPlan();
+  }, [loadScript, refreshAssets, loadVideoPlan, loadPlan]);
+
+  useEffect(() => {
+    if (projectId && scriptId) {
+      refreshGeneratedContent();
+    }
+  }, [projectId, scriptId, refreshGeneratedContent]);
+
   useEffect(() => {
     const newEvents = events.slice(lastEventIndex.current);
     lastEventIndex.current = events.length;
 
     newEvents.forEach((e) => {
-      if (e.type === "master_message" && e.content) {
-        const name = String(e.agent_name ?? MASTER_AGENT_NAME);
-        setMessages((m) => [...m, `${name}: ${String(e.content)}`]);
+      if (e.type === "llm_stream_start" && e.stream_id) {
+        const streamId = String(e.stream_id);
+        const lineId = `stream-${streamId}`;
+        streamLineIds.current.set(streamId, lineId);
+        appendLine({
+          id: lineId,
+          text: `${MASTER_AGENT_NAME}: `,
+          streaming: true,
+        });
+      }
+      if (e.type === "llm_stream_delta" && e.stream_id && e.delta) {
+        const lineId = streamLineIds.current.get(String(e.stream_id));
+        if (!lineId) return;
+        const delta = String(e.delta);
+        setMessages((m) =>
+          m.map((line) =>
+            line.id === lineId ? { ...line, text: line.text + delta } : line
+          )
+        );
+      }
+      if (e.type === "llm_stream_end" && e.stream_id) {
+        const streamId = String(e.stream_id);
+        const lineId = streamLineIds.current.get(streamId);
+        if (lineId) {
+          setMessages((m) =>
+            m.map((line) =>
+              line.id === lineId ? { ...line, streaming: false } : line
+            )
+          );
+          streamLineIds.current.delete(streamId);
+        }
+      }
+      if (e.type === "master_message" && e.content && e.source === "llm_summary") {
+        const content = String(e.content);
+        const full = `${String(e.agent_name ?? MASTER_AGENT_NAME)}: ${content}`;
+        setMessages((m) => {
+          if (m.some((line) => line.text === full)) return m;
+          return [
+            ...m,
+            {
+              id: `summary-${Date.now()}`,
+              text: full,
+            },
+          ];
+        });
+      }
+      if (e.type === "react_thought" && e.thought && e.visibility === "user") {
+        appendMasterLine(String(e.thought));
       }
       if (e.type === "script_style_locked" && e.style_mode) {
         const mode = String(e.style_mode);
@@ -84,10 +189,6 @@ export function Workbench({
           setStyleMode(mode);
         }
         setStyleLocked(true);
-        setMessages((m) => [
-          ...m,
-          `[系统] 视频风格已绑定：${styleModeLabel(mode)}（不可修改）`,
-        ]);
       }
       if (e.type === "planning_started") {
         setScriptStatus("planning");
@@ -108,12 +209,15 @@ export function Workbench({
         );
       }
       if (e.type === "step_completed") {
+        const outputs = e.outputs as StepOutput[] | undefined;
         setPlanSteps((steps) =>
           steps.map((s) =>
-            s.id === e.step_id ? { ...s, status: "completed" } : s
+            s.id === e.step_id
+              ? { ...s, status: "completed", outputs: outputs ?? s.outputs }
+              : s
           )
         );
-        refreshAssets();
+        refreshGeneratedContent();
       }
       if (e.type === "step_failed") {
         setPlanSteps((steps) =>
@@ -127,50 +231,16 @@ export function Workbench({
       if (e.type === "project_completed") {
         setScriptStatus("completed");
         setIsRunning(false);
-      }
-      if (e.type === "execution_failed") {
-        setScriptStatus("failed");
-        setIsRunning(false);
-      }
-      if (e.type === "step_awaiting_confirmation") {
-        setMessages((m) => [
-          ...m,
-          `[待确认] 视频生成费用 $${Number(e.estimated_cost_usd).toFixed(2)}`,
-        ]);
-      }
-      if (e.type === "interaction_log" && e.record) {
-        const rec = e.record as { kind?: string; summary?: string; source?: string };
-        if (rec.kind === "react_rule_fallback") {
-          setMessages((m) => [
-            ...m,
-            `[系统] ${String(rec.summary ?? "规则回退，未调用真实 LLM")}`,
-          ]);
-        }
+        refreshGeneratedContent();
       }
     });
-  }, [events, refreshAssets]);
-
-  const [interactionStats, setInteractionStats] = useState<{
-    llm_real_calls: number;
-    react_rule_fallback: number;
-    agent_mock_action: number;
-  } | null>(null);
-
-  const refreshInteractionStats = useCallback(async () => {
-    if (!scriptId) return;
-    const r = await fetch(`${API}/interactions/stats?script_id=${scriptId}`);
-    if (r.ok) setInteractionStats(await r.json());
-  }, [scriptId]);
-
-  useEffect(() => {
-    refreshInteractionStats();
-  }, [refreshInteractionStats, isRunning]);
+  }, [events, refreshGeneratedContent, appendLine, appendMasterLine]);
 
   function promptConfigureAi() {
-    setMessages((m) => [
-      ...m,
-      "[系统] 请先配置 AI 模型与 API Key 后再开始对话。",
-    ]);
+    appendLine({
+      id: `sys-${Date.now()}`,
+      text: "[系统] 请先配置 AI 模型与 API Key 后再开始对话。",
+    });
     onOpenSettings();
   }
 
@@ -192,18 +262,16 @@ export function Workbench({
         pid = ids.projectId;
         sid = ids.scriptId;
       } catch (e) {
-        setMessages((m) => [
-          ...m,
-          `${MASTER_AGENT_NAME}: 无法连接服务（${(e as Error).message}）`,
-        ]);
+        appendMasterLine(`无法连接服务（${(e as Error).message}）`);
         return;
       }
     }
 
-    setMessages((m) => [...m, `你: ${text}`]);
+    appendLine({ id: `user-${Date.now()}`, text: `你: ${text}` });
     setInput("");
     setIsRunning(true);
-    lastEventIndex.current = 0;
+    lastEventIndex.current = events.length;
+    streamLineIds.current.clear();
 
     const postChat = async (p: string, s: string) =>
       fetch(`${API}/projects/${p}/scripts/${s}/chat`, {
@@ -217,32 +285,26 @@ export function Workbench({
       });
 
     try {
-      let r = await postChat(pid, sid);
+      const r = await postChat(pid, sid);
 
       if (r.status === 404) {
-        const ids = await bootstrap();
-        if (ids) {
-          pid = ids.projectId;
-          sid = ids.scriptId;
-          r = await postChat(pid, sid);
-          setMessages((m) => [
-            ...m,
-            "[系统] 已重新连接服务并创建新剧本，继续执行…",
-          ]);
-        }
+        appendMasterLine(
+          "剧本或项目不存在（后端可能已重启）。请点击页面刷新或重新初始化后再发送。"
+        );
+        setIsRunning(false);
+        return;
       }
 
       if (!r.ok) {
         const err = (await r.json().catch(() => null)) as Record<string, unknown> | null;
-        setMessages((m) => [
-          ...m,
-          `${MASTER_AGENT_NAME}: 执行失败（${formatApiError(err, r.statusText)}）`,
-        ]);
+        appendMasterLine(`执行失败（${formatApiError(err, r.statusText)}）`);
         setIsRunning(false);
         return;
       }
       const data = await r.json();
       if (data.script?.status) setScriptStatus(data.script.status);
+      if (data.script?.title) setScriptTitle(data.script.title);
+      if (data.script?.content_md) setScriptContentMd(data.script.content_md);
       if (data.script?.style_locked) setStyleLocked(true);
       if (
         data.script?.style_mode === "dynamic_image" ||
@@ -251,14 +313,20 @@ export function Workbench({
         setStyleMode(data.script.style_mode);
       }
       if (data.plan?.steps) setPlanSteps(data.plan.steps);
-      await refreshAssets();
-      await refreshInteractionStats();
+      if (data.summary) {
+        const summaryText = `${MASTER_AGENT_NAME}: ${data.summary}`;
+        setMessages((m) => {
+          if (m.some((line) => line.text === summaryText)) return m;
+          return [
+            ...m,
+            { id: `summary-api-${Date.now()}`, text: summaryText },
+          ];
+        });
+      }
+      await refreshGeneratedContent();
       setIsRunning(false);
     } catch {
-      setMessages((m) => [
-        ...m,
-        `${MASTER_AGENT_NAME}: 网络错误，请确认后端已启动（端口 8000）。`,
-      ]);
+      appendMasterLine("网络错误，请确认后端已启动（端口 8000）。");
       setIsRunning(false);
     }
   }
@@ -299,6 +367,13 @@ export function Workbench({
           <span className="status-badge running">{MASTER_AGENT_NAME} 执行中…</span>
         )}
         <div className="top-bar-spacer" />
+        <button
+          type="button"
+          className="btn-secondary btn-config"
+          onClick={onOpenLogs}
+        >
+          查看日志
+        </button>
         <button
           type="button"
           className="btn-secondary btn-config"
@@ -361,8 +436,13 @@ export function Workbench({
             </label>
           </div>
           <div className="chat-log">
-            {messages.map((msg, i) => (
-              <div key={i} className="chat-line">{msg}</div>
+            {messages.map((line) => (
+              <div
+                key={line.id}
+                className={`chat-line${line.streaming ? " streaming" : ""}`}
+              >
+                {line.text}
+              </div>
             ))}
           </div>
           <div className="chat-input-row">
@@ -390,18 +470,6 @@ export function Workbench({
               {isRunning ? "执行中…" : needsAiConfig ? "配置 AI" : "发送"}
             </button>
           </div>
-          <div className="event-log">
-            <h3>事件日志（含子 Agent ReAct）</h3>
-            {events.slice(-12).map((e, i) => (
-              <div key={i} className="event-line">
-                {e.type === "interaction_log"
-                  ? `📋 ${String((e.record as { summary?: string })?.summary ?? e.type)}`
-                  : e.type === "agent_react_thought" || e.type === "agent_react_action"
-                    ? `${String(e.agent_display_name ?? e.agent_name)} · ${String(e.type)}`
-                    : String(e.type)}
-              </div>
-            ))}
-          </div>
         </aside>
 
         <main className="script-panel">
@@ -417,41 +485,28 @@ export function Workbench({
                   <span className="step-type">{step.type}</span>
                   <span>{step.title}</span>
                   <span className="step-status">{step.status}</span>
+                  {step.outputs && step.outputs.length > 0 && (
+                    <span className="step-outputs">
+                      {step.outputs.map((o) => o.label).join(" · ")}
+                    </span>
+                  )}
                   {step.error && <span className="step-error">{step.error}</span>}
                 </li>
               ))}
             </ul>
           </section>
-          <section className="interaction-section">
-            <h3>接口交互记录（持久化）</h3>
-            <button type="button" onClick={refreshInteractionStats}>刷新统计</button>
-            {interactionStats && (
-              <p className="muted interaction-stats">
-                真实 LLM 调用：<strong>{interactionStats.llm_real_calls}</strong>
-                · 规则回退：<strong>{interactionStats.react_rule_fallback}</strong>
-                · Mock 动作：<strong>{interactionStats.agent_mock_action}</strong>
-              </p>
-            )}
-            {interactionStats && interactionStats.llm_real_calls === 0 && (
-              <p className="warn-text">
-                本次剧本尚无真实 LLM 调用记录，可能在使用规则回退。请确认 API Key 已保存。
-              </p>
-            )}
-          </section>
-          <section className="asset-section">
-            <h3>资产库</h3>
-            <button type="button" onClick={refreshAssets}>刷新</button>
-            {assets.length === 0 && <p className="muted">子 Agent 执行后显示资产</p>}
-            <ul className="asset-list">
-              {assets.map((a) => (
-                <li key={a.id} className="asset-item">
-                  <code>{a.id}</code>
-                  <strong>{a.name}</strong>
-                  <span className="asset-type">{a.type}</span>
-                  <span className="asset-scope">{a.scope}</span>
-                </li>
-              ))}
-            </ul>
+          <section className="generated-section">
+            <div className="section-header-row">
+              <h3>生成内容</h3>
+              <button type="button" onClick={refreshGeneratedContent}>刷新</button>
+            </div>
+            <GeneratedContent
+              scriptTitle={scriptTitle}
+              scriptContentMd={scriptContentMd}
+              assets={assets}
+              videoPlan={videoPlan}
+              planSteps={planSteps}
+            />
           </section>
         </main>
       </div>

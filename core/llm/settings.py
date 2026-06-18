@@ -20,6 +20,7 @@ class LLMSettings(BaseSettings):
     max_tokens: int = 1024
     timeout_sec: float = 60.0
     use_llm_react: bool = True
+    trust_env: bool = False  # 是否读取系统代理；部分环境下代理会导致 ConnectError
 
     model_config = SettingsConfigDict(
         env_prefix="SVG_LLM_",

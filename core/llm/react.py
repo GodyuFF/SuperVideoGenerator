@@ -13,6 +13,7 @@ from core.llm.react_models import (
     new_conversation_id,
 )
 from core.llm.settings import LLMConfigManager
+from core.llm.streaming import OnDelta
 from core.logging.setup import get_logger, log_stage
 
 logger = get_logger("core.llm.react")
@@ -20,7 +21,6 @@ logger = get_logger("core.llm.react")
 DEFAULT_MAX_ITERATIONS = MAX_REACT_ITERATIONS
 
 ActionHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
-FallbackDecider = Callable[["ReAct"], ReActDecision]
 ActionProvider = Callable[[], list[str]]
 CompletedProvider = Callable[[], list[str]]
 
@@ -32,7 +32,6 @@ __all__ = [
     "ReActStepRecord",
     "new_conversation_id",
     "ActionHandler",
-    "FallbackDecider",
 ]
 
 
@@ -57,7 +56,6 @@ class ReAct:
         extra_actions: list[str] | None = None,
         action_provider: ActionProvider | None = None,
         completed_provider: CompletedProvider | None = None,
-        fallback: FallbackDecider | None = None,
         log_context: dict[str, Any] | None = None,
         extra: dict[str, Any] | None = None,
         user_summary: str = "",
@@ -81,7 +79,6 @@ class ReAct:
         self._recorder = interaction_recorder
         self._action_provider = action_provider
         self._completed_provider = completed_provider
-        self._fallback = fallback
         self._log_context = dict(log_context or {})
 
         self.observations: list[str] = []
@@ -147,32 +144,15 @@ class ReAct:
                 return candidate
         raise ValueError(f"非法 action「{action}」，允许: {allowed}")
 
-    async def _record_rule_fallback(self, reason: str) -> None:
-        if not self._recorder:
-            return
-        await self._recorder.record_rule_fallback(
-            script_id=str(self._log_context.get("script_id", "")),
-            project_id=str(self._log_context.get("project_id", "")),
-            agent_name=self.agent_name,
-            step_id=str(self._log_context.get("step_id", "")),
-            reason=reason,
-            iteration=self.iteration,
-        )
-
-    async def decide(self) -> ReActDecision:
-        """单轮推理：LLM XML 决策，失败时走 fallback。"""
+    async def decide(self, on_delta: OnDelta | None = None) -> ReActDecision:
+        """单轮推理：LLM XML 决策（流式）。"""
         from core.llm.xml_protocol import REACT_SYSTEM_PROMPT, parse_react_xml
 
         allowed = self.available_actions()
 
         if not self._llm_config.is_llm_available():
-            reason = "未配置 API Key 或已关闭 LLM ReAct"
-            await self._record_rule_fallback(reason)
-            if self._fallback:
-                return self._fallback(self)
-            return ReActDecision(
-                thought="LLM 不可用，结束 ReAct。",
-                action="finish",
+            raise RuntimeError(
+                "未配置 API Key 或已关闭 LLM ReAct，请在 AI 配置中填写 Key 并启用 LLM ReAct"
             )
 
         context_xml = self.to_context_xml()
@@ -188,25 +168,23 @@ class ReAct:
                 REACT_SYSTEM_PROMPT,
                 context_xml,
                 log_context=log_ctx,
+                on_delta=on_delta,
             )
             decision = parse_react_xml(raw)
-            decision.action = self._sanitize_action(decision.action, allowed)
+            try:
+                decision.action = self._sanitize_action(decision.action, allowed)
+            except ValueError as e:
+                raise RuntimeError(str(e)) from e
             return decision
         except Exception as e:
             log_stage(
                 logger,
                 "llm.react",
-                "ReAct LLM 回退",
+                "ReAct LLM 失败",
                 agent=self.agent_name,
                 error=str(e),
             )
-            await self._record_rule_fallback(str(e))
-            if self._fallback:
-                return self._fallback(self)
-            return ReActDecision(
-                thought=f"LLM 决策失败：{e}",
-                action="finish",
-            )
+            raise
 
     async def run(self, on_action: ActionHandler) -> list[ReActStepRecord]:
         """

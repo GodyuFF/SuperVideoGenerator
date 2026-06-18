@@ -12,6 +12,7 @@ from core.events.emitter import EventEmitter
 from core.logging.setup import setup_logging
 from core.models.entities import GenerationMode, Project, Script, ScriptStatus, VideoStyleMode
 from core.store.memory import MemoryStore
+from tests.conftest import inject_scripted_llm
 
 
 @pytest.fixture
@@ -30,6 +31,8 @@ def harness():
 
     script = Script(project_id=project.id, title="第一集", duration_sec=60)
     store.add_script(script)
+
+    inject_scripted_llm(master, VideoStyleMode.DYNAMIC_IMAGE)
 
     return store, emitter, conversations, confirmation, master, project, script
 
@@ -80,6 +83,7 @@ async def test_ai_video_auto_mode_completes(harness):
     store, emitter, _, confirmation, master, project, script = harness
     project.config.style.mode = VideoStyleMode.AI_VIDEO
     project.config.generation.mode = GenerationMode.AUTO
+    inject_scripted_llm(master, VideoStyleMode.AI_VIDEO)
 
     events = []
 
@@ -100,6 +104,7 @@ async def test_ai_video_cost_confirm_requires_approval(harness):
     store, emitter, _, confirmation, master, project, script = harness
     project.config.style.mode = VideoStyleMode.AI_VIDEO
     project.config.generation.mode = GenerationMode.COST_CONFIRM
+    inject_scripted_llm(master, VideoStyleMode.AI_VIDEO)
 
     events = []
 
@@ -135,6 +140,7 @@ async def test_ai_video_cost_confirm_rejected_fails(harness):
     store, emitter, _, confirmation, master, project, script = harness
     project.config.style.mode = VideoStyleMode.AI_VIDEO
     project.config.generation.mode = GenerationMode.COST_CONFIRM
+    inject_scripted_llm(master, VideoStyleMode.AI_VIDEO)
 
     events = []
 

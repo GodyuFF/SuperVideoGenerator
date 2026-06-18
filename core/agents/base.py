@@ -1,4 +1,4 @@
-"""子 Agent 抽象基类：统一 ReAct 入口，与用户对话隔离，决策走 LLM XML。"""
+"""子 Agent 抽象基类：统一 ReAct 入口，决策与动作执行均走 LLM。"""
 
 from abc import ABC, abstractmethod
 from typing import Any
@@ -7,7 +7,9 @@ from core.agents.conversation import ConversationStore
 from core.agents.react_core import AgentRunContext, ReActDecision, ReActRunner
 from core.events.emitter import EventEmitter
 from core.interaction_log.recorder import InteractionRecorder
+from core.llm.client import LLMClient
 from core.llm.react_decider import LLMReActDecider
+from core.llm.settings import LLMConfigManager
 from core.models.entities import StepOutput
 from core.store.memory import MemoryStore
 
@@ -26,12 +28,16 @@ class ReActAgent(ABC):
         conversations: ConversationStore,
         llm_decider: LLMReActDecider,
         recorder: InteractionRecorder | None = None,
+        llm_config: LLMConfigManager | None = None,
+        llm_client: LLMClient | None = None,
     ) -> None:
         self._store = store
         self._emitter = emitter
         self._conversations = conversations
         self._llm_decider = llm_decider
         self._recorder = recorder
+        self._llm_config = llm_config or llm_decider._config
+        self._llm_client = llm_client or llm_decider._client
         self._runner = ReActRunner(emitter, conversations)
 
     @abstractmethod
@@ -53,7 +59,7 @@ class ReActAgent(ABC):
     async def _act_with_log(self, action: str, ctx: AgentRunContext) -> str:
         observation = await self.execute_action(action, ctx)
         if self._recorder:
-            await self._recorder.record_mock_action(
+            await self._recorder.record_agent_action(
                 script_id=ctx.script_id,
                 project_id=str(ctx.work_context.get("project_id", "")),
                 agent_name=self.name,

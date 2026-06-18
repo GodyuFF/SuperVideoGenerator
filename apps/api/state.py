@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from core.a2ui.manager import ConfirmationManager
 from core.agents.conversation import ConversationStore
+from core.interaction_log.file_store import InteractionFileStore
 from core.interaction_log.recorder import InteractionRecorder
 from core.interaction_log.store import InteractionLogStore
 from core.llm.settings import LLMConfigManager
@@ -12,6 +13,7 @@ from core.events.emitter import EventEmitter
 from core.logging.setup import setup_logging
 from core.models.entities import Project, Script
 from core.store.memory import MemoryStore
+from core.store.persist import load_store, schedule_save
 
 
 class AppState:
@@ -20,12 +22,17 @@ class AppState:
     def __init__(self) -> None:
         setup_logging()
         self.store = MemoryStore()
+        load_store(self.store)
         self.conversations = ConversationStore()
         self.llm_config = LLMConfigManager()
         self.interaction_log_store = InteractionLogStore()
+        self.interaction_file_store = InteractionFileStore()
         self.emitter = EventEmitter()
         self.interaction_recorder = InteractionRecorder(
-            self.interaction_log_store, self.emitter
+            self.interaction_log_store,
+            self.emitter,
+            file_store=self.interaction_file_store,
+            emit_ws_events=False,
         )
         self.confirmation_manager = ConfirmationManager(self.emitter)
         self.super_video_master = SuperVideoMaster(
@@ -37,6 +44,9 @@ class AppState:
             self.interaction_recorder,
         )
         self.ws_clients: dict[str, list] = {}
+
+    def persist_store(self) -> None:
+        schedule_save(self.store)
 
     def channel_key(self, project_id: str, script_id: str) -> str:
         return f"{project_id}:{script_id}"
@@ -52,14 +62,21 @@ state = AppState()
 
 async def _ws_emit_handler(event: dict) -> None:
     script_id = event.get("script_id")
+    event_type = event.get("type", "")
+    broadcast_types = {
+        "master_message",
+        "react_thought",
+        "llm_stream_start",
+        "llm_stream_delta",
+        "llm_stream_end",
+        "execution_failed",
+        "project_completed",
+    }
     for channel, clients in state.ws_clients.items():
         if script_id and channel.endswith(f":{script_id}"):
             for ws in clients:
                 await ws.send_json(event)
-        elif event.get("type", "").startswith("a2ui_") or event.get("type") in (
-            "master_message",
-            "interaction_log",
-        ):
+        elif event_type.startswith("a2ui_") or event_type in broadcast_types:
             for ws in clients:
                 await ws.send_json(event)
 
@@ -70,10 +87,12 @@ state.emitter.subscribe(_ws_emit_handler)
 def create_project(title: str) -> Project:
     project = Project(title=title, created_at=datetime.now(timezone.utc).isoformat())
     state.store.add_project(project)
+    state.persist_store()
     return project
 
 
 def create_script(project_id: str, title: str, duration_sec: int = 60) -> Script:
     script = Script(project_id=project_id, title=title, duration_sec=duration_sec)
     state.store.add_script(script)
+    state.persist_store()
     return script

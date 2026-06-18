@@ -1,10 +1,9 @@
-"""LLM ReAct 决策器：XML 协议与 LLM 交互，失败时规则回退。"""
+"""LLM ReAct 决策器：XML 协议与 LLM 交互，无规则回退。"""
 
 from typing import Any
 
 from core.agents.react_core import AgentRunContext, ReActDecision
 from core.llm.client import LLMClient
-from core.llm.rule_fallback import rule_decide_agent
 from core.llm.settings import LLMConfigManager
 from core.interaction_log.recorder import InteractionRecorder
 from core.llm.xml_protocol import (
@@ -13,13 +12,14 @@ from core.llm.xml_protocol import (
     parse_react_xml,
 )
 from core.llm.react_session import ReActSession
+from core.llm.streaming import OnDelta
 from core.logging.setup import get_logger, log_stage
 
 logger = get_logger("core.llm.react_decider")
 
 
 class LLMReActDecider:
-    """统一 ReAct 决策：优先 LLM XML，回退规则引擎。"""
+    """统一 ReAct 决策：仅通过 LLM XML 决策。"""
 
     def __init__(
         self,
@@ -31,6 +31,12 @@ class LLMReActDecider:
         self._client = client
         self._recorder = recorder
 
+    def _require_llm(self) -> None:
+        if not self._config.is_llm_available():
+            raise RuntimeError(
+                "未配置 API Key 或已关闭 LLM ReAct，请在 AI 配置中填写 Key 并启用 LLM ReAct"
+            )
+
     def _sanitize_action(self, action: str, allowed: list[str]) -> str:
         action = action.strip()
         if action in allowed:
@@ -40,7 +46,11 @@ class LLMReActDecider:
                 return a
         raise ValueError(f"非法 action「{action}」，允许: {allowed}")
 
-    async def decide_session(self, session: ReActSession) -> ReActDecision:
+    async def decide_session(
+        self,
+        session: ReActSession,
+        on_delta: OnDelta | None = None,
+    ) -> ReActDecision:
         """基于 ReActSession，通过纯净 ReAct 类决策。"""
         from core.llm.react_session import bind_react_session
 
@@ -50,7 +60,7 @@ class LLMReActDecider:
             self._client,
             self._recorder,
         )
-        return await react.decide()
+        return await react.decide(on_delta=on_delta)
 
     async def decide_agent(
         self,
@@ -59,19 +69,8 @@ class LLMReActDecider:
         action_pipeline: list[str],
         role_prompt: str = "",
     ) -> ReActDecision:
+        self._require_llm()
         available = list(action_pipeline) + ["finish"]
-        if not self._config.is_llm_available():
-            reason = "未配置 API Key 或已关闭 LLM ReAct"
-            if self._recorder:
-                await self._recorder.record_rule_fallback(
-                    script_id=ctx.script_id,
-                    project_id=str(ctx.work_context.get("project_id", "")),
-                    agent_name=ctx.agent_name,
-                    step_id=ctx.step_id,
-                    reason=reason,
-                    iteration=ctx.iteration,
-                )
-            return rule_decide_agent(ctx, display_name, action_pipeline)
 
         extra: dict[str, Any] = {
             "agent": ctx.agent_name,
@@ -106,17 +105,11 @@ class LLMReActDecider:
                 log_context=log_ctx,
             )
             decision = parse_react_xml(raw)
-            decision.action = self._sanitize_action(decision.action, available)
+            try:
+                decision.action = self._sanitize_action(decision.action, available)
+            except ValueError as e:
+                raise RuntimeError(str(e)) from e
             return decision
         except Exception as e:
-            log_stage(logger, "llm.react", "子 Agent LLM 回退", agent=ctx.agent_name, error=str(e))
-            if self._recorder:
-                await self._recorder.record_rule_fallback(
-                    script_id=ctx.script_id,
-                    project_id=str(ctx.work_context.get("project_id", "")),
-                    agent_name=ctx.agent_name,
-                    step_id=ctx.step_id,
-                    reason=str(e),
-                    iteration=ctx.iteration,
-                )
-            return rule_decide_agent(ctx, display_name, action_pipeline)
+            log_stage(logger, "llm.react", "子 Agent LLM 失败", agent=ctx.agent_name, error=str(e))
+            raise

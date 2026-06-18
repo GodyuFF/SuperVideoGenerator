@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from core.agents.mock_agents import (
+from core.agents.llm_agents import (
     EditingAgent,
     ImageAgent,
     ScriptAgent,

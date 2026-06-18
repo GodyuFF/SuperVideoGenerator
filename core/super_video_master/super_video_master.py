@@ -39,6 +39,7 @@ class SuperVideoMaster:
         self._llm_config = llm_config or LLMConfigManager()
         self._recorder = interaction_recorder
         llm_client = LLMClient(self._llm_config, self._recorder)
+        self._llm_client = llm_client
         self._llm_decider = LLMReActDecider(
             self._llm_config, llm_client, self._recorder
         )
@@ -58,7 +59,7 @@ class SuperVideoMaster:
             self._llm_decider,
         )
 
-    async def _emit_master_message(self, script_id: str, content: str) -> None:
+    async def _emit_llm_summary(self, script_id: str, content: str) -> None:
         self._conversations.add(
             script_id, "master", ConversationRole.MASTER, content
         )
@@ -69,6 +70,7 @@ class SuperVideoMaster:
                 "role": "super_video_master",
                 "agent_name": MASTER_AGENT_NAME,
                 "content": content,
+                "source": "llm_summary",
             }
         )
 
@@ -81,7 +83,7 @@ class SuperVideoMaster:
     ) -> str:
         """
         对话入口：用户消息仅进入主会话；子 Agent 通过任务简报隔离调用。
-        返回本次对话的 conversation_id。
+        返回本次对话的 conversation_id 与用户可见结束摘要。
         """
         script = self._store.get_script(script_id)
         project = self._store.get_project(project_id)
@@ -120,12 +122,8 @@ class SuperVideoMaster:
         conversation_id = self._dialogue_sessions.create(
             project_id, script_id, user_text
         )
-        await self._emit_master_message(
-            script_id,
-            f"已收到需求，{MASTER_AGENT_NAME} 将以 ReAct（XML+LLM）委派子 Agent 或调用工具。",
-        )
 
-        await self._react.run(
+        observations = await self._react.run(
             project_id=project_id,
             script_id=script_id,
             user_message=user_text,
@@ -134,14 +132,62 @@ class SuperVideoMaster:
             conversation_id=conversation_id,
         )
 
-        if script.status == ScriptStatus.COMPLETED:
-            content = "全部子 Agent 执行完成，成片已生成。"
-        elif script.status == ScriptStatus.FAILED:
-            content = "执行未完成，请查看右侧计划步骤中的错误信息。"
-        else:
-            content = f"当前状态：{script.status.value}"
+        from core.super_video_master.summary import generate_user_summary
 
-        await self._emit_master_message(script_id, content)
+        stream_id = f"summary-{conversation_id}"
+        await self._emitter.emit(
+            {
+                "type": "llm_stream_start",
+                "script_id": script_id,
+                "stream_id": stream_id,
+                "kind": "llm_summary",
+                "source": "llm_summary",
+                "visibility": "user",
+                "conversation_id": conversation_id,
+                "agent_name": MASTER_AGENT_NAME,
+            }
+        )
+
+        async def on_summary_delta(delta: str) -> None:
+            await self._emitter.emit(
+                {
+                    "type": "llm_stream_delta",
+                    "script_id": script_id,
+                    "stream_id": stream_id,
+                    "delta": delta,
+                    "kind": "llm_summary",
+                    "source": "llm_summary",
+                    "visibility": "user",
+                    "conversation_id": conversation_id,
+                    "agent_name": MASTER_AGENT_NAME,
+                }
+            )
+
+        plan = self._store.get_plan(script_id)
+        summary = await generate_user_summary(
+            self._llm_client,
+            user_message=user_text,
+            script=script,
+            plan=plan,
+            observations=observations,
+            project_id=project_id,
+            script_id=script_id,
+            on_delta=on_summary_delta,
+        )
+
+        await self._emitter.emit(
+            {
+                "type": "llm_stream_end",
+                "script_id": script_id,
+                "stream_id": stream_id,
+                "kind": "llm_summary",
+                "source": "llm_summary",
+                "visibility": "user",
+                "conversation_id": conversation_id,
+                "agent_name": MASTER_AGENT_NAME,
+            }
+        )
+        await self._emit_llm_summary(script_id, summary)
         log_stage(
             logger,
             "super_video_master",
@@ -150,4 +196,4 @@ class SuperVideoMaster:
             status=script.status.value,
             conversation_id=conversation_id,
         )
-        return conversation_id
+        return conversation_id, summary

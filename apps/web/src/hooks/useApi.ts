@@ -40,9 +40,12 @@ export function formatApiError(
 ): string {
   if (!err) return statusText;
   const detail = err.detail;
-  if (typeof detail === "string") return detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
   if (Array.isArray(detail)) {
     return detail.map((d) => String((d as { msg?: string }).msg ?? d)).join("; ");
+  }
+  if (typeof err.message === "string" && err.message.trim()) {
+    return err.message;
   }
   return statusText;
 }

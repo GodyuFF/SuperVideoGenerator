@@ -3,21 +3,40 @@
 import logging
 import os
 import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any
 
 # 日志阶段前缀，与产品手册中的分阶段输出一致
 STAGE_PREFIX = "[STAGE"
+DEFAULT_LOG_FILE = Path("data/logs/app.log")
 
 
 def setup_logging(level: str | None = None) -> None:
     """初始化全局日志；可通过环境变量 LOG_LEVEL 控制级别。"""
     log_level = level or os.environ.get("LOG_LEVEL", "INFO").upper()
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        stream=sys.stdout,
-        force=True,
-    )
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.setLevel(log_level)
+
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(formatter)
+    root.addHandler(stream_handler)
+
+    log_file = os.environ.get("LOG_FILE", str(DEFAULT_LOG_FILE))
+    if log_file and log_file.lower() not in ("0", "false", "off", "none"):
+        path = Path(log_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            path,
+            maxBytes=5 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(formatter)
+        root.addHandler(file_handler)
 
 
 def get_logger(name: str) -> logging.Logger:

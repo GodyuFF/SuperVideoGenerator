@@ -112,6 +112,18 @@ def get_plan(project_id: str, script_id: str):
     return plan.model_dump()
 
 
+@router.get("/projects/{project_id}/scripts/{script_id}/video-plan")
+def get_video_plan(project_id: str, script_id: str):
+    """获取分镜视频计划稿（镜头列表与旁白）。"""
+    script = state.store.get_script(script_id)
+    if not script or script.project_id != project_id:
+        raise HTTPException(404, "剧本不存在")
+    vp = state.store.get_video_plan_for_script(script_id)
+    if not vp:
+        raise HTTPException(404, "视频计划稿不存在")
+    return vp.model_dump()
+
+
 @router.post("/projects/{project_id}/scripts/{script_id}/chat")
 async def post_chat(project_id: str, script_id: str, body: ChatRequest):
     """
@@ -140,7 +152,7 @@ async def post_chat(project_id: str, script_id: str, body: ChatRequest):
             )
 
     try:
-        conversation_id = await state.super_video_master.run_from_message(
+        conversation_id, summary = await state.super_video_master.run_from_message(
             project_id,
             script_id,
             body.message,
@@ -150,11 +162,16 @@ async def post_chat(project_id: str, script_id: str, body: ChatRequest):
         raise HTTPException(400, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+    state.persist_store()
 
     script = state.store.get_script(script_id)
     plan = state.store.get_plan(script_id)
     return {
         "conversation_id": conversation_id,
+        "summary": summary,
         "script": script.model_dump() if script else None,
         "plan": plan.model_dump() if plan else None,
     }

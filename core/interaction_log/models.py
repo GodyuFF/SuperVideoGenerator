@@ -12,8 +12,8 @@ class InteractionRecord(BaseModel):
 
     id: str = Field(default_factory=lambda: new_id("ilog"))
     created_at: str = ""
-    kind: str  # llm_request | llm_response | llm_error | react_rule_fallback | api_request | agent_mock_action
-    source: str = ""  # llm | rule | mock | http
+    kind: str  # llm_request | llm_response | llm_error | agent_action | api_request
+    source: str = ""  # llm | agent | http
     project_id: str = ""
     script_id: str = ""
     agent_name: str = ""

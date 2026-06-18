@@ -77,26 +77,9 @@ def bind_react_session(
     llm_config: Any,
     llm_client: Any | None = None,
     interaction_recorder: Any | None = None,
-    fallback: Any | None = None,
 ) -> Any:
     """将 ReActSession 绑定为纯净 ReAct 实例（从 AI 配置加载 LLM）。"""
-    from core.agents.react_core import MasterRunContext, ReActDecision
     from core.llm.react import ReAct
-    from core.llm.rule_fallback import rule_decide_master
-
-    def _default_fallback(_react: ReAct) -> ReActDecision:
-        ctx = MasterRunContext(
-            project_id=session.project_id,
-            script_id=session.script_id,
-            user_message=session.user_summary,
-            style_mode=session.style_mode,
-            generation_mode=session.extra.get("generation_mode", ""),
-            conversation_id=session.conversation_id,
-            completed_step_types=set(session.completed_step_types),
-            observations=list(session.observations),
-            iteration=session.iteration,
-        )
-        return rule_decide_master(ctx)
 
     react = ReAct(
         agent_name=session.agent_name,
@@ -109,7 +92,6 @@ def bind_react_session(
         interaction_recorder=interaction_recorder,
         action_provider=session.available_actions,
         completed_provider=session.completed_labels,
-        fallback=fallback or _default_fallback,
         log_context={
             "project_id": session.project_id,
             "script_id": session.script_id,

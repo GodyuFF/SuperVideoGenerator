@@ -28,13 +28,51 @@ export interface A2UIConfirmationRequest {
 /** WebSocket 事件（通用字典） */
 export type WsEvent = Record<string, unknown>;
 
+/** Plan 步骤产出 */
+export interface StepOutput {
+  kind: string;
+  label: string;
+  asset_id: string;
+  url?: string;
+}
+
 /** Plan 执行步骤 */
 export interface PlanStep {
   id: string;
   type: string;
   title: string;
+  description?: string;
   status: string;
   error?: string;
+  outputs?: StepOutput[];
+}
+
+/** 分镜镜头 */
+export interface VideoPlanShot {
+  id: string;
+  order: number;
+  duration_ms: number;
+  camera_motion: string;
+  narration_text: string;
+}
+
+/** 视频计划稿 */
+export interface VideoPlan {
+  id: string;
+  script_id: string;
+  mode: string;
+  shots: VideoPlanShot[];
+}
+
+/** 剧本详情 */
+export interface ScriptDetail {
+  id: string;
+  title: string;
+  status: string;
+  content_md: string;
+  style_mode?: string;
+  style_locked?: boolean;
+  duration_sec?: number;
 }
 
 /** 文字资产 */

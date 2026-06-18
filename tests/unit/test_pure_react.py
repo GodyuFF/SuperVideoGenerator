@@ -10,12 +10,11 @@ from core.llm.react import (
     new_conversation_id,
 )
 from core.llm.settings import LLMConfigManager
-from core.llm.xml_protocol import build_pure_react_xml
+from core.llm.xml_protocol import build_pure_react_xml, format_react_xml
+from tests.support.scripted_llm import ScriptedLLMClient
 
 
-def test_pure_react_constructor_and_ai_config():
-    config = LLMConfigManager()
-    config.update(use_llm_react=False)
+def test_pure_react_constructor_and_ai_config(llm_config_with_key):
     agent = ReActAgentInfo(
         name="test_agent",
         display_name="测试 Agent",
@@ -33,14 +32,14 @@ def test_pure_react_constructor_and_ai_config():
         conversation_id="conv_unit",
         agent=agent,
         tools=tools,
-        llm_config=config,
+        llm_config=llm_config_with_key,
         task_brief="测试任务",
     )
     assert react.agent_name == "test_agent"
     assert react.conversation_id == "conv_unit"
     assert react.agent.display_name == "测试 Agent"
     assert len(react.tools) == 1
-    assert react.ai_config["use_llm_react"] is False
+    assert react.ai_config["llm_active"] is True
     assert "finish" in react.available_actions()
 
 
@@ -63,10 +62,18 @@ def test_build_pure_react_xml_fields():
 
 
 @pytest.mark.asyncio
-async def test_pure_react_run_with_handler():
-    config = LLMConfigManager()
-    config.update(use_llm_react=False)
+async def test_pure_react_run_with_handler(llm_config_with_key):
+    scripted = ScriptedLLMClient()
+    calls = 0
 
+    async def fake_xml_react(role_description, context_xml, log_context=None, on_delta=None):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return format_react_xml("ping", "tool_ping")
+        return format_react_xml("done", "finish")
+
+    scripted.complete_xml_react = fake_xml_react
     actions_run: list[str] = []
 
     async def on_action(action: str, action_input: dict) -> str:
@@ -75,19 +82,16 @@ async def test_pure_react_run_with_handler():
             return "pong"
         return "done"
 
-    def fallback(react: ReAct) -> ReActDecision:
-        if "tool_ping" not in react.completed:
-            return ReActDecision(thought="先 ping", action="tool_ping")
-        return ReActDecision(thought="结束", action="finish")
-
     react = ReAct(
         agent_name="test",
         conversation_id=new_conversation_id(),
         agent=ReActAgentInfo("test", "Test", "d"),
         tools=[ReActToolInfo("tool_ping", "ping", "ping tool")],
-        llm_config=config,
-        fallback=fallback,
+        llm_config=llm_config_with_key,
+        llm_client=scripted,
+        extra_actions=["tool_ping"],
     )
+
     history = await react.run(on_action)
 
     assert actions_run == ["tool_ping"]
@@ -98,7 +102,7 @@ async def test_pure_react_run_with_handler():
 
 
 @pytest.mark.asyncio
-async def test_pure_react_decide_fallback_without_key():
+async def test_pure_react_decide_requires_llm():
     config = LLMConfigManager()
     config.update(use_llm_react=False)
     react = ReAct(
@@ -108,8 +112,6 @@ async def test_pure_react_decide_fallback_without_key():
         tools=[],
         extra_actions=["act_a"],
         llm_config=config,
-        fallback=lambda r: ReActDecision(thought="fb", action="finish"),
     )
-    decision = await react.decide()
-    assert decision.action == "finish"
-    assert decision.thought == "fb"
+    with pytest.raises(RuntimeError, match="LLM"):
+        await react.decide()

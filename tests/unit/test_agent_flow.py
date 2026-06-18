@@ -11,6 +11,7 @@ from core.interaction_log.recorder import InteractionRecorder
 from core.llm.react_decider import LLMReActDecider
 from core.llm.settings import LLMConfigManager
 from core.store.memory import MemoryStore
+from tests.support.scripted_llm import ScriptedLLMClient
 
 
 @pytest.mark.asyncio
@@ -20,9 +21,9 @@ async def test_agent_role_prompt_flow_to_xml():
     emitter = EventEmitter()
     conversations = None  # 不需要真实 conversations
     config = LLMConfigManager()
-    config.update(use_llm_react=False)  # 使用规则回退，避免真实 LLM 调用
+    config.update(api_key="test-key", use_llm_react=True)
     recorder = InteractionRecorder(None, emitter)
-    decider = LLMReActDecider(config, None, recorder)
+    decider = LLMReActDecider(config, ScriptedLLMClient(), recorder)
 
     registry = AgentRegistry(store, emitter, conversations, decider, recorder)
 

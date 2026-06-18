@@ -4,54 +4,30 @@ import pytest
 
 from core.agents.conversation import ConversationStore
 from core.agents.registry import AgentRegistry
-from core.agents.react_core import MasterRunContext
 from core.events.emitter import EventEmitter
 from core.llm.client import LLMClient
 from core.llm.react_decider import LLMReActDecider
-from core.llm.rule_fallback import rule_decide_master
 from core.llm.settings import LLMConfigManager
 from core.logging.setup import setup_logging
-from core.models.entities import GenerationMode, Project, Script, VideoStyleMode
+from core.models.entities import Project, Script
 from core.store.memory import MemoryStore
-from core.super_video_master.actions import ACTION_TO_STEP
+from tests.conftest import inject_scripted_llm
+from tests.support.scripted_llm import ScriptedLLMClient
 
 
-def _make_decider() -> LLMReActDecider:
-    config = LLMConfigManager()
-    config.update(use_llm_react=False)
-    return LLMReActDecider(config, LLMClient(config))
-
-
-@pytest.mark.asyncio
-async def test_master_policy_dynamic_image_pipeline():
-    """主 Agent 规则回退：动态图片模式跳过 video_gen。"""
-    ctx = MasterRunContext(
-        project_id="p1",
-        script_id="s1",
-        user_message="都市短片",
-        style_mode=VideoStyleMode.DYNAMIC_IMAGE,
-        generation_mode=GenerationMode.AUTO,
-    )
-    actions = []
-    for _ in range(10):
-        decision = rule_decide_master(ctx)
-        if decision.action == "finish":
-            break
-        actions.append(decision.action)
-        ctx.completed_step_types.add(ACTION_TO_STEP[decision.action])
-
-    assert "delegate_video_gen" not in actions
-    assert len(actions) == 5
+def _make_decider(scripted: ScriptedLLMClient, config: LLMConfigManager) -> LLMReActDecider:
+    return LLMReActDecider(config, scripted)
 
 
 @pytest.mark.asyncio
-async def test_script_agent_react_isolated():
-    """剧本 Agent 在隔离会话中 ReAct 执行。"""
+async def test_script_agent_react_isolated(llm_config_with_key):
+    """剧本 Agent 在隔离会话中通过 LLM ReAct 执行。"""
     setup_logging("WARNING")
     store = MemoryStore()
     emitter = EventEmitter()
     conversations = ConversationStore()
-    decider = _make_decider()
+    scripted = ScriptedLLMClient()
+    decider = _make_decider(scripted, llm_config_with_key)
     registry = AgentRegistry(store, emitter, conversations, decider)
     agent = registry.get("script_agent")
 
@@ -79,3 +55,22 @@ async def test_script_agent_react_isolated():
     assert any(m.role.value == "task" for m in msgs)
     assert any(m.role.value == "thought" for m in msgs)
     assert any(e.get("type") == "agent_react_finished" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_decider_requires_llm():
+    """未配置 API Key 时应拒绝决策。"""
+    config = LLMConfigManager()
+    config.update(use_llm_react=False)
+    decider = LLMReActDecider(config, LLMClient(config))
+    from core.agents.react_core import AgentRunContext
+
+    ctx = AgentRunContext(
+        task_brief="t",
+        work_context={},
+        script_id="s1",
+        step_id="step1",
+        agent_name="script_agent",
+    )
+    with pytest.raises(RuntimeError, match="LLM"):
+        await decider.decide_agent(ctx, "剧本 Agent", ["parse_brief"])

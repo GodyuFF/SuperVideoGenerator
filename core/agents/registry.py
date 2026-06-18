@@ -21,9 +21,15 @@ class AgentRegistry:
         recorder: InteractionRecorder | None = None,
     ) -> None:
         agent_args = (store, emitter, conversations, llm_decider, recorder)
+        llm_client = llm_decider._client
+        llm_config = llm_decider._config
         self._agents: dict[str, ReActAgent] = {}
         for name, cls in AGENT_CLASSES.items():
-            agent = cls(*agent_args)
+            agent = cls(
+                *agent_args,
+                llm_config=llm_config,
+                llm_client=llm_client,
+            )
             definition = AGENT_DEFINITIONS.get(name)
             if definition:
                 agent.role_prompt = definition.role_prompt

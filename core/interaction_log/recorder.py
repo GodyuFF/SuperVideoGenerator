@@ -3,6 +3,7 @@
 from typing import Any
 
 from core.events.emitter import EventEmitter
+from core.interaction_log.file_store import InteractionFileStore
 from core.interaction_log.models import InteractionRecord
 from core.interaction_log.store import InteractionLogStore
 from core.logging.setup import get_logger, log_stage
@@ -17,9 +18,13 @@ class InteractionRecorder:
         self,
         store: InteractionLogStore,
         emitter: EventEmitter | None = None,
+        file_store: InteractionFileStore | None = None,
+        emit_ws_events: bool = False,
     ) -> None:
         self._store = store
         self._emitter = emitter
+        self._file_store = file_store
+        self._emit_ws_events = emit_ws_events
 
     @property
     def store(self) -> InteractionLogStore:
@@ -27,6 +32,8 @@ class InteractionRecorder:
 
     async def record(self, record: InteractionRecord) -> InteractionRecord:
         saved = self._store.append(record)
+        if self._file_store:
+            self._file_store.append(saved)
         log_stage(
             logger,
             "interaction",
@@ -35,7 +42,7 @@ class InteractionRecorder:
             source=saved.source,
             script_id=saved.script_id or "-",
         )
-        if self._emitter:
+        if self._emitter and self._emit_ws_events:
             await self._emitter.emit(
                 {
                     "type": "interaction_log",
@@ -46,30 +53,7 @@ class InteractionRecorder:
             )
         return saved
 
-    async def record_rule_fallback(
-        self,
-        *,
-        script_id: str,
-        project_id: str = "",
-        agent_name: str,
-        step_id: str = "",
-        reason: str,
-        iteration: int = 0,
-    ) -> InteractionRecord:
-        return await self.record(
-            InteractionRecord(
-                kind="react_rule_fallback",
-                source="rule",
-                project_id=project_id,
-                script_id=script_id,
-                agent_name=agent_name,
-                step_id=step_id,
-                summary=f"规则回退（未调用 LLM）：{reason}",
-                meta={"iteration": iteration, "reason": reason},
-            )
-        )
-
-    async def record_mock_action(
+    async def record_agent_action(
         self,
         *,
         script_id: str,
@@ -81,13 +65,13 @@ class InteractionRecorder:
     ) -> InteractionRecord:
         return await self.record(
             InteractionRecord(
-                kind="agent_mock_action",
-                source="mock",
+                kind="agent_action",
+                source="agent",
                 project_id=project_id,
                 script_id=script_id,
                 agent_name=agent_name,
                 step_id=step_id,
-                summary=f"Mock 执行 {action}",
+                summary=f"执行 {action}",
                 response_body=observation,
                 meta={"action": action},
             )

@@ -28,6 +28,7 @@ from core.models.entities import (
 )
 from core.store.memory import MemoryStore
 from core.tools.master_tools import MasterToolExecutor
+from core.llm.streaming import OnDelta, ReactXmlThoughtParser
 logger = get_logger("core.super_video_master.react")
 
 
@@ -37,8 +38,12 @@ class MasterReActPolicy:
     def __init__(self, llm_decider: LLMReActDecider) -> None:
         self._llm_decider = llm_decider
 
-    async def decide(self, session: ReActSession) -> ReActDecision:
-        return await self._llm_decider.decide_session(session)
+    async def decide(
+        self,
+        session: ReActSession,
+        on_delta: OnDelta | None = None,
+    ) -> ReActDecision:
+        return await self._llm_decider.decide_session(session, on_delta=on_delta)
 
 
 class MasterReActEngine:
@@ -64,18 +69,70 @@ class MasterReActEngine:
     async def _emit(self, script_id: str, event_type: str, payload: dict[str, Any]) -> None:
         await self._emitter.emit({"script_id": script_id, "type": event_type, **payload})
 
-    async def _emit_master_message(self, script_id: str, content: str) -> None:
-        self._conversations.add(
-            script_id, "master", ConversationRole.MASTER, content
-        )
-        await self._emitter.emit(
+    def _make_thought_stream_handler(
+        self,
+        script_id: str,
+        conversation_id: str,
+        stream_id: str,
+        iteration: int,
+    ) -> OnDelta:
+        parser = ReactXmlThoughtParser()
+
+        async def on_delta(raw_delta: str) -> None:
+            thought_delta = parser.feed(raw_delta)
+            if not thought_delta:
+                return
+            await self._emit(
+                script_id,
+                "llm_stream_delta",
+                {
+                    "stream_id": stream_id,
+                    "delta": thought_delta,
+                    "kind": "react_thought",
+                    "visibility": "user",
+                    "conversation_id": conversation_id,
+                    "iteration": iteration,
+                },
+            )
+
+        return on_delta
+
+    async def _start_llm_stream(
+        self,
+        script_id: str,
+        conversation_id: str,
+        stream_id: str,
+        kind: str,
+        **extra: Any,
+    ) -> None:
+        await self._emit(
+            script_id,
+            "llm_stream_start",
             {
-                "type": "master_message",
-                "script_id": script_id,
-                "role": "super_video_master",
-                "agent_name": MASTER_AGENT_NAME,
-                "content": content,
-            }
+                "stream_id": stream_id,
+                "kind": kind,
+                "conversation_id": conversation_id,
+                **extra,
+            },
+        )
+
+    async def _end_llm_stream(
+        self,
+        script_id: str,
+        conversation_id: str,
+        stream_id: str,
+        kind: str,
+        **extra: Any,
+    ) -> None:
+        await self._emit(
+            script_id,
+            "llm_stream_end",
+            {
+                "stream_id": stream_id,
+                "kind": kind,
+                "conversation_id": conversation_id,
+                **extra,
+            },
         )
 
     def _build_script_task_brief(self, ctx: MasterRunContext) -> str:
@@ -146,7 +203,7 @@ class MasterReActEngine:
         style_mode: VideoStyleMode,
         generation_mode: GenerationMode,
         conversation_id: str,
-    ) -> None:
+    ) -> list[str]:
         script = self._store.get_script(script_id)
         if not script:
             raise ValueError("剧本不存在")
@@ -194,126 +251,109 @@ class MasterReActEngine:
             },
         )
         await self._emit(script_id, "react_started", {"message": user_message, "conversation_id": conversation_id})
-        await self._emit_master_message(
-            script_id,
-            f"{MASTER_AGENT_NAME} 进入 ReAct 模式（对话 id={conversation_id}），可委派子 Agent 或调用工具。",
-        )
 
         execution_started = False
         last_step_id: str | None = None
 
-        for _ in range(MAX_REACT_ITERATIONS):
-            ctx.iteration += 1
-            session.iteration = ctx.iteration
-            session.observations = list(ctx.observations)
-            session.completed_step_types = set(ctx.completed_step_types)
+        try:
+            for _ in range(MAX_REACT_ITERATIONS):
+                ctx.iteration += 1
+                session.iteration = ctx.iteration
+                session.observations = list(ctx.observations)
+                session.completed_step_types = set(ctx.completed_step_types)
 
-            decision = await self._policy.decide(session)
-
-            if session.is_delegate_action(decision.action):
-                step_type = session.step_type_for_delegate(decision.action)
-                if step_type and step_type in ctx.completed_step_types:
-                    from core.llm.rule_fallback import rule_decide_master
-
-                    decision = rule_decide_master(ctx)
-
-            await self._emit(
-                script_id,
-                "react_thought",
-                {
-                    "iteration": ctx.iteration,
-                    "thought": decision.thought,
-                    "conversation_id": conversation_id,
-                },
-            )
-
-            if decision.action == "finish":
-                await self._emit(
+                stream_id = f"master-thought-{ctx.iteration}"
+                await self._start_llm_stream(
                     script_id,
-                    "react_action",
-                    {
-                        "iteration": ctx.iteration,
-                        "action": "finish",
-                        "action_input": {},
-                        "conversation_id": conversation_id,
-                    },
+                    conversation_id,
+                    stream_id,
+                    "react_thought",
+                    iteration=ctx.iteration,
+                    visibility="user",
                 )
-                break
-
-            if session.is_tool_action(decision.action):
-                await self._emit(
+                on_delta = self._make_thought_stream_handler(
                     script_id,
-                    "react_action",
-                    {
-                        "iteration": ctx.iteration,
-                        "action": decision.action,
-                        "action_input": decision.action_input,
-                        "conversation_id": conversation_id,
-                        "kind": "tool",
-                    },
+                    conversation_id,
+                    stream_id,
+                    ctx.iteration,
                 )
+
                 try:
-                    observation = await self._tool_executor.execute(
-                        decision.action, script_id
+                    decision = await self._policy.decide(session, on_delta=on_delta)
+                except (RuntimeError, ValueError) as e:
+                    observation = f"主编排决策失败：{e}"
+                    ctx.observations.append(observation)
+                    session.observations = list(ctx.observations)
+                    await self._emit(
+                        script_id,
+                        "react_observation",
+                        {
+                            "iteration": ctx.iteration,
+                            "observation": observation,
+                            "conversation_id": conversation_id,
+                            "kind": "master",
+                        },
                     )
-                except Exception as e:
-                    observation = f"工具 {decision.action} 执行失败：{e}"
-                session.completed_tools.add(decision.action.removeprefix("tool_"))
-                ctx.observations.append(observation)
-                await self._emit(
+                    await self._end_llm_stream(
+                        script_id,
+                        conversation_id,
+                        stream_id,
+                        "react_thought",
+                        iteration=ctx.iteration,
+                        visibility="user",
+                    )
+                    continue
+
+                await self._end_llm_stream(
                     script_id,
-                    "react_observation",
-                    {
-                        "iteration": ctx.iteration,
-                        "observation": observation,
-                        "conversation_id": conversation_id,
-                        "kind": "tool",
-                    },
+                    conversation_id,
+                    stream_id,
+                    "react_thought",
+                    iteration=ctx.iteration,
+                    visibility="user",
                 )
-                continue
 
-            if not session.is_delegate_action(decision.action):
-                observation = f"未知行动「{decision.action}」，已跳过。"
-                ctx.observations.append(observation)
-                await self._emit(
-                    script_id,
-                    "react_observation",
-                    {
-                        "iteration": ctx.iteration,
-                        "observation": observation,
-                        "conversation_id": conversation_id,
-                    },
-                )
-                continue
+                if session.is_delegate_action(decision.action):
+                    step_type = session.step_type_for_delegate(decision.action)
+                    if step_type and step_type in ctx.completed_step_types:
+                        ctx.observations.append(
+                            f"步骤 {step_type} 已完成，请勿重复委派 {decision.action}。"
+                        )
+                        session.observations = list(ctx.observations)
+                        continue
 
-            step_type = ACTION_TO_STEP[decision.action]
-            depends_on = [last_step_id] if last_step_id else []
-            step = self._make_step(step_type, depends_on)
-            plan.steps.append(step)
-            self._store.set_plan(script_id, plan)
-            last_step_id = step.id
+                if decision.action == "finish":
+                    await self._emit(
+                        script_id,
+                        "react_action",
+                        {
+                            "iteration": ctx.iteration,
+                            "action": "finish",
+                            "action_input": {},
+                            "conversation_id": conversation_id,
+                        },
+                    )
+                    break
 
-            await self._emit(
-                script_id,
-                "react_action",
-                {
-                    "iteration": ctx.iteration,
-                    "action": decision.action,
-                    "action_input": {"step_type": step_type, "step_id": step.id},
-                    "conversation_id": conversation_id,
-                    "kind": "sub_agent",
-                },
-            )
-            await self._emit(script_id, "plan_ready", {"plan": plan.model_dump()})
-
-            if not execution_started:
-                await self._emit(script_id, "execution_started", {})
-                execution_started = True
-
-            if step_type == "video_gen":
-                ok = await self._video_cost_gate(script_id, step, generation_mode)
-                if not ok:
-                    observation = f"步骤「{step.title}」因费用确认被拒绝。"
+                if session.is_tool_action(decision.action):
+                    await self._emit(
+                        script_id,
+                        "react_action",
+                        {
+                            "iteration": ctx.iteration,
+                            "action": decision.action,
+                            "action_input": decision.action_input,
+                            "conversation_id": conversation_id,
+                            "kind": "tool",
+                        },
+                    )
+                    try:
+                        observation = await self._tool_executor.execute(
+                            decision.action, script_id
+                        )
+                    except Exception as e:
+                        observation = f"工具 {decision.action} 执行失败：{e}"
+                    session.completed_tools.add(decision.action.removeprefix("tool_"))
                     ctx.observations.append(observation)
                     await self._emit(
                         script_id,
@@ -321,111 +361,177 @@ class MasterReActEngine:
                         {
                             "iteration": ctx.iteration,
                             "observation": observation,
-                            "step_id": step.id,
-                            "step_status": step.status.value,
+                            "conversation_id": conversation_id,
+                            "kind": "tool",
                         },
                     )
-                    break
+                    continue
 
-            step.status = StepStatus.RUNNING
-            await self._emit(
-                script_id,
-                "step_started",
-                {"step_id": step.id, "step_type": step.type},
-            )
-
-            task_brief = (
-                self._build_script_task_brief(ctx)
-                if step_type == "script_design"
-                else TASK_BRIEFS[step_type]
-            )
-
-            agent = self._registry.get(step.agent)
-            work_context = {
-                "project_id": project_id,
-                "script_id": script_id,
-                "style_mode": style_mode,
-                "generation_mode": generation_mode,
-                "conversation_id": conversation_id,
-            }
-
-            try:
-                sub_task = asyncio.create_task(
-                    agent.run(
-                        task_brief=task_brief,
-                        work_context=work_context,
-                        script_id=script_id,
-                        step_id=step.id,
+                if not session.is_delegate_action(decision.action):
+                    observation = f"未知行动「{decision.action}」，已跳过。"
+                    ctx.observations.append(observation)
+                    await self._emit(
+                        script_id,
+                        "react_observation",
+                        {
+                            "iteration": ctx.iteration,
+                            "observation": observation,
+                            "conversation_id": conversation_id,
+                        },
                     )
-                )
-                outputs = await sub_task
-                step.outputs = outputs
-                step.status = StepStatus.COMPLETED
-                step.progress = 100
+                    continue
+
+                step_type = ACTION_TO_STEP[decision.action]
+                depends_on = [last_step_id] if last_step_id else []
+                step = self._make_step(step_type, depends_on)
+                plan.steps.append(step)
+                self._store.set_plan(script_id, plan)
+                last_step_id = step.id
+
                 await self._emit(
                     script_id,
-                    "step_completed",
+                    "react_action",
                     {
-                        "step_id": step.id,
-                        "outputs": [o.model_dump() for o in outputs],
+                        "iteration": ctx.iteration,
+                        "action": decision.action,
+                        "action_input": {"step_type": step_type, "step_id": step.id},
+                        "conversation_id": conversation_id,
+                        "kind": "sub_agent",
                     },
                 )
-            except Exception as e:
-                step.status = StepStatus.FAILED
-                step.error = str(e)
+                await self._emit(script_id, "plan_ready", {"plan": plan.model_dump()})
+
+                if not execution_started:
+                    await self._emit(script_id, "execution_started", {})
+                    execution_started = True
+
+                if step_type == "video_gen":
+                    ok = await self._video_cost_gate(script_id, step, generation_mode)
+                    if not ok:
+                        observation = f"步骤「{step.title}」因费用确认被拒绝。"
+                        ctx.observations.append(observation)
+                        await self._emit(
+                            script_id,
+                            "react_observation",
+                            {
+                                "iteration": ctx.iteration,
+                                "observation": observation,
+                                "step_id": step.id,
+                                "step_status": step.status.value,
+                            },
+                        )
+                        break
+
+                step.status = StepStatus.RUNNING
                 await self._emit(
                     script_id,
-                    "step_failed",
-                    {"step_id": step.id, "error": str(e)},
+                    "step_started",
+                    {"step_id": step.id, "step_type": step.type},
                 )
 
-            labels = [o.label for o in step.outputs[:3]]
-            if step.status == StepStatus.COMPLETED:
-                suffix = f"，产出：{', '.join(labels)}" if labels else ""
-                observation = f"已委派 {agent.display_name}，步骤「{step.title}」完成{suffix}。"
-                ctx.completed_step_types.add(step_type)
-            else:
-                observation = (
-                    f"委派 {agent.display_name} 失败：{step.error or '未知错误'}。"
+                task_brief = (
+                    self._build_script_task_brief(ctx)
+                    if step_type == "script_design"
+                    else TASK_BRIEFS[step_type]
                 )
 
-            ctx.observations.append(observation)
+                agent = self._registry.get(step.agent)
+                work_context = {
+                    "project_id": project_id,
+                    "script_id": script_id,
+                    "style_mode": style_mode,
+                    "generation_mode": generation_mode,
+                    "conversation_id": conversation_id,
+                }
+
+                try:
+                    sub_task = asyncio.create_task(
+                        agent.run(
+                            task_brief=task_brief,
+                            work_context=work_context,
+                            script_id=script_id,
+                            step_id=step.id,
+                        )
+                    )
+                    outputs = await sub_task
+                    step.outputs = outputs
+                    step.status = StepStatus.COMPLETED
+                    step.progress = 100
+                    await self._emit(
+                        script_id,
+                        "step_completed",
+                        {
+                            "step_id": step.id,
+                            "outputs": [o.model_dump() for o in outputs],
+                        },
+                    )
+                except Exception as e:
+                    step.status = StepStatus.FAILED
+                    step.error = str(e)
+                    await self._emit(
+                        script_id,
+                        "step_failed",
+                        {"step_id": step.id, "error": str(e)},
+                    )
+
+                labels = [o.label for o in step.outputs[:3]]
+                if step.status == StepStatus.COMPLETED:
+                    suffix = f"，产出：{', '.join(labels)}" if labels else ""
+                    observation = f"已委派 {agent.display_name}，步骤「{step.title}」完成{suffix}。"
+                    ctx.completed_step_types.add(step_type)
+                else:
+                    observation = (
+                        f"委派 {agent.display_name} 失败：{step.error or '未知错误'}。"
+                    )
+
+                ctx.observations.append(observation)
+                await self._emit(
+                    script_id,
+                    "react_observation",
+                    {
+                        "iteration": ctx.iteration,
+                        "observation": observation,
+                        "step_id": step.id,
+                        "step_status": step.status.value,
+                        "conversation_id": conversation_id,
+                        "kind": "sub_agent",
+                    },
+                )
+
+                if step.status == StepStatus.FAILED:
+                    break
+
+            await self._finalize(script_id, plan)
+
             await self._emit(
                 script_id,
-                "react_observation",
+                "react_finished",
                 {
-                    "iteration": ctx.iteration,
-                    "observation": observation,
-                    "step_id": step.id,
-                    "step_status": step.status.value,
+                    "iterations": ctx.iteration,
+                    "status": script.status.value,
+                    "completed_steps": list(ctx.completed_step_types),
                     "conversation_id": conversation_id,
-                    "kind": "sub_agent",
                 },
             )
-
-            if step.status == StepStatus.FAILED:
-                break
-
-        await self._finalize(script_id, plan)
-
-        await self._emit(
-            script_id,
-            "react_finished",
-            {
-                "iterations": ctx.iteration,
-                "status": script.status.value,
-                "completed_steps": list(ctx.completed_step_types),
-                "conversation_id": conversation_id,
-            },
-        )
-        log_stage(
-            logger,
-            "master.react",
-            "主 Agent ReAct 结束",
-            script_id=script_id,
-            iterations=ctx.iteration,
-            status=script.status.value,
-        )
+            log_stage(
+                logger,
+                "master.react",
+                "主 Agent ReAct 结束",
+                script_id=script_id,
+                iterations=ctx.iteration,
+                status=script.status.value,
+            )
+            return list(ctx.observations)
+        except Exception as e:
+            script = self._store.get_script(script_id)
+            if script and script.status == ScriptStatus.EXECUTING:
+                script.status = ScriptStatus.FAILED
+            await self._emit(
+                script_id,
+                "execution_failed",
+                {"script_id": script_id, "error": str(e)},
+            )
+            raise
 
     async def _finalize(self, script_id: str, plan: PlanDocument) -> None:
         script = self._store.get_script(script_id)
