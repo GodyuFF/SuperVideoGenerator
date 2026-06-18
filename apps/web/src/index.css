@@ -1,0 +1,465 @@
+/* 全局样式：深色工作台与 A2UI 模态框 */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #0f1419;
+  color: #e7e9ea;
+}
+
+.loading {
+  padding: 2rem;
+  text-align: center;
+}
+
+.workbench {
+  min-height: 100vh;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid #2f3336;
+  background: #16181c;
+}
+
+.top-bar h1 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.status-badge {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: #1d3a2a;
+  color: #00ba7c;
+}
+
+.main-split {
+  display: grid;
+  grid-template-columns: 35% 65%;
+  min-height: calc(100vh - 52px);
+}
+
+.chat-panel,
+.script-panel {
+  padding: 1rem;
+  overflow: auto;
+}
+
+.chat-panel {
+  border-right: 1px solid #2f3336;
+  background: #16181c;
+}
+
+.script-panel {
+  background: #0f1419;
+}
+
+.config-bar {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.config-bar label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.75rem;
+  gap: 0.25rem;
+}
+
+.config-bar select {
+  padding: 0.35rem;
+  background: #0f1419;
+  border: 1px solid #2f3336;
+  color: inherit;
+  border-radius: 4px;
+}
+
+.chat-log {
+  height: 200px;
+  overflow-y: auto;
+  background: #0f1419;
+  border: 1px solid #2f3336;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.chat-line {
+  margin-bottom: 0.35rem;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.chat-input-row input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #2f3336;
+  border-radius: 6px;
+  background: #0f1419;
+  color: inherit;
+}
+
+.chat-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+button {
+  padding: 0.45rem 0.9rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #1d9bf0;
+  color: #fff;
+  font-size: 0.875rem;
+}
+
+button:hover {
+  background: #1a8cd8;
+}
+
+.event-log {
+  font-size: 0.75rem;
+  color: #71767b;
+}
+
+.event-line {
+  padding: 0.15rem 0;
+}
+
+.plan-list,
+.asset-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.plan-item,
+.asset-item {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #2f3336;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.step-type {
+  font-family: monospace;
+  color: #1d9bf0;
+}
+
+.step-status {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #71767b;
+}
+
+.status-completed .step-status {
+  color: #00ba7c;
+}
+
+.status-failed .step-status,
+.step-error {
+  color: #f4212e;
+}
+
+.asset-type,
+.asset-scope {
+  font-size: 0.75rem;
+  color: #71767b;
+}
+
+.muted {
+  color: #71767b;
+  font-size: 0.875rem;
+}
+
+.chat-hint {
+  margin: 0 0 0.75rem;
+  line-height: 1.4;
+}
+
+.status-badge.running {
+  background: #2a2a3d;
+  color: #1d9bf0;
+}
+
+.status-badge.style-locked {
+  background: #2d2a1a;
+  color: #ffad1f;
+}
+
+.locked-style {
+  display: block;
+  padding: 0.35rem 0;
+  font-size: 0.875rem;
+  color: #ffad1f;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* A2UI 确认模态框 */
+.a2ui-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.a2ui-modal {
+  background: #16181c;
+  border: 1px solid #2f3336;
+  border-radius: 12px;
+  padding: 1.5rem;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.a2ui-modal h2 {
+  margin: 0.5rem 0;
+  font-size: 1.1rem;
+}
+
+.a2ui-badge {
+  font-size: 0.7rem;
+  background: #3d2a1a;
+  color: #ff7a00;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+}
+
+.a2ui-desc {
+  color: #71767b;
+  font-size: 0.875rem;
+  margin: 0.5rem 0;
+}
+
+.a2ui-cost {
+  background: #1a2a1a;
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin: 0.75rem 0;
+}
+
+.a2ui-components {
+  margin: 1rem 0;
+}
+
+.a2ui-field {
+  margin-bottom: 0.75rem;
+}
+
+.a2ui-field.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.cost-summary ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.a2ui-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.btn-secondary {
+  background: #2f3336;
+}
+
+.btn-secondary:hover {
+  background: #3f4448;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.top-bar-spacer {
+  flex: 1;
+}
+
+.btn-config {
+  font-size: 0.8125rem;
+}
+
+.status-badge.ai-ready {
+  background: #1d3a2a;
+  color: #00ba7c;
+}
+
+.status-badge.ai-missing {
+  background: #3a1d1d;
+  color: #f4212e;
+}
+
+.ai-config-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: #2a1a1a;
+  border-bottom: 1px solid #5c2020;
+  color: #ff8a8a;
+  font-size: 0.875rem;
+}
+
+.ai-config-banner p {
+  margin: 0;
+  flex: 1;
+}
+
+.ai-config-banner button {
+  flex-shrink: 0;
+  background: #f4212e;
+}
+
+.ai-config-banner.loading-banner {
+  background: #1a2433;
+  border-bottom-color: #2f3336;
+  color: #71767b;
+}
+
+/* AI 配置页 */
+.settings-page {
+  min-height: 100vh;
+  background: #0f1419;
+}
+
+.settings-top-bar {
+  gap: 0.75rem;
+}
+
+.settings-main {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+.settings-intro {
+  margin: 0 0 1.25rem;
+  line-height: 1.5;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+}
+
+.settings-field input,
+.settings-field select {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #2f3336;
+  border-radius: 6px;
+  background: #16181c;
+  color: inherit;
+  font-size: 0.875rem;
+}
+
+.settings-field.checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.settings-field.checkbox-row input {
+  width: auto;
+}
+
+.field-hint {
+  font-size: 0.75rem;
+  color: #71767b;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.settings-alert {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+}
+
+.settings-alert.success {
+  background: #1a2e1a;
+  color: #00ba7c;
+  border: 1px solid #1d3a2a;
+}
+
+.settings-alert.error {
+  background: #2a1a1a;
+  color: #ff8a8a;
+  border: 1px solid #5c2020;
+}
+
+.settings-alert button {
+  margin-top: 0.5rem;
+}
+
+.interaction-section {
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #2f3336;
+}
+
+.interaction-stats strong {
+  color: #e7e9ea;
+}
+
+.warn-text {
+  color: #ffad1f;
+  font-size: 0.8125rem;
+  margin: 0.5rem 0 0;
+}

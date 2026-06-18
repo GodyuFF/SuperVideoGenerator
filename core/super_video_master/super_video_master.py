@@ -1,0 +1,153 @@
+"""超级视频大师主 Agent：ReAct 编排，与用户及子 Agent 对话隔离。"""
+
+from core.a2ui.manager import ConfirmationManager
+from core.agents.conversation import ConversationRole, ConversationStore
+from core.super_video_master import MASTER_AGENT_NAME
+from core.super_video_master.master_react import MasterReActEngine
+from core.events.emitter import EventEmitter
+from core.interaction_log.recorder import InteractionRecorder
+from core.logging.setup import get_logger, log_stage
+from core.dialogue.session_store import DialogueSessionStore
+from core.guards.script_style import bind_script_style
+from core.llm.client import LLMClient
+from core.llm.react_decider import LLMReActDecider
+from core.llm.settings import LLMConfigManager
+from core.models.entities import ScriptStatus, VideoStyleMode
+from core.agents.registry import AgentRegistry
+from core.store.memory import MemoryStore
+
+logger = get_logger("core.super_video_master")
+
+
+class SuperVideoMaster:
+    """主编排器（超级视频大师）：主会话 ReAct + 向子 Agent 下发隔离任务简报。"""
+
+    def __init__(
+        self,
+        store: MemoryStore,
+        emitter: EventEmitter,
+        confirmation_manager: ConfirmationManager,
+        conversations: ConversationStore | None = None,
+        llm_config: LLMConfigManager | None = None,
+        interaction_recorder: InteractionRecorder | None = None,
+    ) -> None:
+        self._store = store
+        self._emitter = emitter
+        self._confirmation = confirmation_manager
+        self._conversations = conversations or ConversationStore()
+        self._dialogue_sessions = DialogueSessionStore()
+        self._llm_config = llm_config or LLMConfigManager()
+        self._recorder = interaction_recorder
+        llm_client = LLMClient(self._llm_config, self._recorder)
+        self._llm_decider = LLMReActDecider(
+            self._llm_config, llm_client, self._recorder
+        )
+        self._registry = AgentRegistry(
+            store,
+            emitter,
+            self._conversations,
+            self._llm_decider,
+            self._recorder,
+        )
+        self._react = MasterReActEngine(
+            store,
+            emitter,
+            self._registry,
+            self._conversations,
+            confirmation_manager,
+            self._llm_decider,
+        )
+
+    async def _emit_master_message(self, script_id: str, content: str) -> None:
+        self._conversations.add(
+            script_id, "master", ConversationRole.MASTER, content
+        )
+        await self._emitter.emit(
+            {
+                "type": "master_message",
+                "script_id": script_id,
+                "role": "super_video_master",
+                "agent_name": MASTER_AGENT_NAME,
+                "content": content,
+            }
+        )
+
+    async def run_from_message(
+        self,
+        project_id: str,
+        script_id: str,
+        message: str,
+        requested_style: VideoStyleMode | None = None,
+    ) -> str:
+        """
+        对话入口：用户消息仅进入主会话；子 Agent 通过任务简报隔离调用。
+        返回本次对话的 conversation_id。
+        """
+        script = self._store.get_script(script_id)
+        project = self._store.get_project(project_id)
+        if not script or not project:
+            raise ValueError("项目或剧本不存在")
+        if script.status == ScriptStatus.EXECUTING:
+            raise ValueError("剧本正在执行中，请稍候")
+
+        style_mode = bind_script_style(script, project, requested_style)
+        await self._emitter.emit(
+            {
+                "type": "script_style_locked",
+                "script_id": script_id,
+                "style_mode": style_mode.value,
+            }
+        )
+        log_stage(
+            logger,
+            "super_video_master",
+            "剧本视频风格已绑定",
+            script_id=script_id,
+            style_mode=style_mode.value,
+        )
+
+        user_text = message.strip()
+        self._conversations.add(
+            script_id, "master", ConversationRole.USER, user_text
+        )
+
+        preview = user_text.replace("\n", " ")
+        if len(preview) > 48:
+            preview = preview[:48] + "…"
+        script.title = preview or script.title
+
+        log_stage(logger, "super_video_master", "ReAct 对话驱动开始", script_id=script_id)
+        conversation_id = self._dialogue_sessions.create(
+            project_id, script_id, user_text
+        )
+        await self._emit_master_message(
+            script_id,
+            f"已收到需求，{MASTER_AGENT_NAME} 将以 ReAct（XML+LLM）委派子 Agent 或调用工具。",
+        )
+
+        await self._react.run(
+            project_id=project_id,
+            script_id=script_id,
+            user_message=user_text,
+            style_mode=style_mode,
+            generation_mode=project.config.generation.mode,
+            conversation_id=conversation_id,
+        )
+
+        if script.status == ScriptStatus.COMPLETED:
+            content = "全部子 Agent 执行完成，成片已生成。"
+        elif script.status == ScriptStatus.FAILED:
+            content = "执行未完成，请查看右侧计划步骤中的错误信息。"
+        else:
+            content = f"当前状态：{script.status.value}"
+
+        await self._emit_master_message(script_id, content)
+        log_stage(
+            logger,
+            "super_video_master",
+            "ReAct 对话驱动结束",
+            script_id=script_id,
+            status=script.status.value,
+            conversation_id=conversation_id,
+        )
+        return conversation_id
