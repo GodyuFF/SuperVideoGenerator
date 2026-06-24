@@ -53,7 +53,7 @@ async def test_run_from_message_completes_pipeline(harness):
 
 @pytest.mark.asyncio
 async def test_conversation_isolation(harness):
-    """用户消息仅在主会话，子 Agent 会话为任务简报。"""
+    """用户消息仅在主会话；子 Agent 仅通过任务简报接收创意摘要，无 user 角色消息。"""
     store, emitter, conversations, _, master, project, script = harness
     await master.run_from_message(project.id, script.id, "用户私密创意内容")
 
@@ -62,8 +62,10 @@ async def test_conversation_isolation(harness):
 
     agent_msgs = conversations.list_messages(script.id, "agent", "script_agent")
     assert len(agent_msgs) > 0
-    assert all("用户私密创意内容" not in m.content for m in agent_msgs)
-    assert any(m.role.value == "task" for m in agent_msgs)
+    assert not any(m.role.value == "user" for m in agent_msgs)
+    assert any(
+        m.role.value == "task" and "用户创意" in m.content for m in agent_msgs
+    )
 
 
 @pytest.mark.asyncio
