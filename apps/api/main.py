@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from apps.api.middleware.interaction_log import interaction_logging_middleware
+from apps.api.routes.board import router as board_router
+from apps.api.routes.agents import router as agents_router
 from apps.api.routes.interactions import router as interactions_router
 from apps.api.routes.llm import router as llm_router
 from apps.api.routes.projects import router as projects_router
@@ -28,6 +30,8 @@ app.add_middleware(
 )
 app.middleware("http")(interaction_logging_middleware)
 
+app.include_router(board_router)
+app.include_router(agents_router)
 app.include_router(interactions_router)
 app.include_router(llm_router)
 app.include_router(projects_router)

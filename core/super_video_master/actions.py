@@ -69,6 +69,43 @@ TASK_BRIEFS: dict[str, str] = {
 }
 
 
+ACTION_LABELS: dict[str, str] = {
+    "delegate_script_design": "委派 · 剧本与文字资产设计",
+    "delegate_image_gen": "委派 · 图片素材生成",
+    "delegate_storyboard": "委派 · 分镜与视频计划稿",
+    "delegate_video_gen": "委派 · AI 视频生成",
+    "delegate_tts_gen": "委派 · 配音生成",
+    "delegate_edit_compose": "委派 · 剪辑合成",
+    "finish": "结束编排",
+}
+
+TOOL_LABELS: dict[str, str] = {
+    "tool_get_plan_summary": "调用工具 · 查询计划摘要",
+    "tool_list_assets": "调用工具 · 统计资产",
+    "tool_estimate_video_cost": "调用工具 · 估算视频费用",
+}
+
+
+def action_kind(action: str) -> str:
+    """返回行动类型：delegate | tool | finish。"""
+    if action == "finish":
+        return "finish"
+    if action.startswith("tool_"):
+        return "tool"
+    if action.startswith("delegate_"):
+        return "delegate"
+    return "unknown"
+
+
+def action_label(action: str) -> str:
+    """返回行动的中文展示名。"""
+    if action in ACTION_LABELS:
+        return ACTION_LABELS[action]
+    if action in TOOL_LABELS:
+        return TOOL_LABELS[action]
+    return action
+
+
 def pipeline_for_style(style_mode: VideoStyleMode) -> list[str]:
     base = [
         "delegate_script_design",

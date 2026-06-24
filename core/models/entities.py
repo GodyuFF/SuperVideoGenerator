@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def new_id(prefix: str) -> str:
@@ -102,11 +102,47 @@ class StyleConfig(BaseModel):
     bgm_enabled: bool = False
 
 
+class MediaAssetType(str, Enum):
+    """数字媒体资产类型。"""
+
+    IMAGE = "image"
+    VIDEO = "video"
+    AUDIO = "audio"
+    FINAL = "final"
+
+
+class MediaAsset(BaseModel):
+    """图片、视频、配音、成片等数字资产。"""
+
+    id: str = Field(default_factory=lambda: new_id("media"))
+    project_id: str
+    script_id: str | None = None
+    type: MediaAssetType
+    name: str
+    url: str = ""
+    source_asset_id: str | None = None
+    status: AssetStatus = AssetStatus.DRAFT
+
+
+class AgentPromptOverride(BaseModel):
+    """项目级单 Agent 提示词覆盖。"""
+
+    prompt_profile: str | None = None  # PromptProfile value
+    role_prompt: str | None = None
+
+
+class AgentsProjectConfig(BaseModel):
+    """项目级 Agent 配置。"""
+
+    overrides: dict[str, AgentPromptOverride] = Field(default_factory=dict)
+
+
 class ProjectConfig(BaseModel):
     """项目完整配置。"""
 
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     style: StyleConfig = Field(default_factory=StyleConfig)
+    agents: AgentsProjectConfig = Field(default_factory=AgentsProjectConfig)
 
 
 class Project(BaseModel):
@@ -146,6 +182,25 @@ class TextAsset(BaseModel):
     status: AssetStatus = AssetStatus.DRAFT
     user_edited: bool = False  # 用户是否在 UI 手工修改过
     source_script_id: str | None = None  # 首次创建来源剧本
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_string_content(cls, data: Any) -> Any:
+        """LLM 可能返回字符串 content，统一规范为 dict。"""
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("content")
+        if not isinstance(raw, str) or not raw.strip():
+            return data
+        asset_type = data.get("type")
+        type_val = asset_type.value if hasattr(asset_type, "value") else asset_type
+        if type_val == TextAssetType.CHARACTER.value:
+            key = "appearance"
+        elif type_val == TextAssetType.SCENE.value:
+            key = "description"
+        else:
+            key = "text"
+        return {**data, "content": {key: raw.strip()}}
 
 
 class AssetReference(BaseModel):

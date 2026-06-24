@@ -11,6 +11,8 @@ from core.super_video_master.actions import (
     ACTION_TO_STEP,
     STEP_META,
     TASK_BRIEFS,
+    action_kind,
+    action_label,
 )
 from core.agents.react_core import MasterRunContext, ReActDecision
 from core.constants import MAX_REACT_ITERATIONS, VIDEO_GEN_COST_PER_SHOT_USD
@@ -68,6 +70,32 @@ class MasterReActEngine:
 
     async def _emit(self, script_id: str, event_type: str, payload: dict[str, Any]) -> None:
         await self._emitter.emit({"script_id": script_id, "type": event_type, **payload})
+
+    def _react_action_payload(
+        self,
+        decision: ReActDecision,
+        conversation_id: str,
+        iteration: int,
+        *,
+        step_type: str | None = None,
+        step_id: str | None = None,
+    ) -> dict[str, Any]:
+        """构造 react_action 事件 payload，保留 LLM action_input 并附中文标签。"""
+        llm_input = dict(decision.action_input)
+        payload: dict[str, Any] = {
+            "iteration": iteration,
+            "action": decision.action,
+            "action_label": action_label(decision.action),
+            "action_kind": action_kind(decision.action),
+            "llm_action_input": llm_input,
+            "action_input": llm_input,
+            "conversation_id": conversation_id,
+        }
+        if step_type is not None:
+            payload["step_type"] = step_type
+        if step_id is not None:
+            payload["step_id"] = step_id
+        return payload
 
     def _make_thought_stream_handler(
         self,
@@ -135,14 +163,20 @@ class MasterReActEngine:
             },
         )
 
-    def _build_script_task_brief(self, ctx: MasterRunContext) -> str:
+    def _build_delegate_task_brief(
+        self,
+        ctx: MasterRunContext,
+        step_type: str,
+        decision: ReActDecision,
+    ) -> str:
+        parts = [TASK_BRIEFS[step_type], f"用户创意：{ctx.user_message}"]
+        note = decision.action_input.get("备注")
+        if note:
+            parts.append(f"主编排说明：{note}")
         script = self._store.get_script(ctx.script_id)
-        duration = script.duration_sec if script else 60
-        return (
-            f"{TASK_BRIEFS['script_design']} "
-            f"剧本 ID={ctx.script_id}，目标时长 {duration}s。"
-            f"（创意需求已保留在主会话，子 Agent 不接收用户原文。）"
-        )
+        if script and step_type == "script_design":
+            parts.append(f"目标时长 {script.duration_sec}s")
+        return " ".join(parts)
 
     def _make_step(self, step_type: str, depends_on: list[str]) -> PlanStep:
         meta = STEP_META[step_type]
@@ -326,12 +360,9 @@ class MasterReActEngine:
                     await self._emit(
                         script_id,
                         "react_action",
-                        {
-                            "iteration": ctx.iteration,
-                            "action": "finish",
-                            "action_input": {},
-                            "conversation_id": conversation_id,
-                        },
+                        self._react_action_payload(
+                            decision, conversation_id, ctx.iteration
+                        ),
                     )
                     break
 
@@ -339,13 +370,9 @@ class MasterReActEngine:
                     await self._emit(
                         script_id,
                         "react_action",
-                        {
-                            "iteration": ctx.iteration,
-                            "action": decision.action,
-                            "action_input": decision.action_input,
-                            "conversation_id": conversation_id,
-                            "kind": "tool",
-                        },
+                        self._react_action_payload(
+                            decision, conversation_id, ctx.iteration
+                        ),
                     )
                     try:
                         observation = await self._tool_executor.execute(
@@ -355,6 +382,9 @@ class MasterReActEngine:
                         observation = f"工具 {decision.action} 执行失败：{e}"
                     session.completed_tools.add(decision.action.removeprefix("tool_"))
                     ctx.observations.append(observation)
+                    self._conversations.add(
+                        script_id, "master", ConversationRole.OBSERVATION, observation, "super_video_master"
+                    )
                     await self._emit(
                         script_id,
                         "react_observation",
@@ -391,13 +421,13 @@ class MasterReActEngine:
                 await self._emit(
                     script_id,
                     "react_action",
-                    {
-                        "iteration": ctx.iteration,
-                        "action": decision.action,
-                        "action_input": {"step_type": step_type, "step_id": step.id},
-                        "conversation_id": conversation_id,
-                        "kind": "sub_agent",
-                    },
+                    self._react_action_payload(
+                        decision,
+                        conversation_id,
+                        ctx.iteration,
+                        step_type=step_type,
+                        step_id=step.id,
+                    ),
                 )
                 await self._emit(script_id, "plan_ready", {"plan": plan.model_dump()})
 
@@ -429,11 +459,7 @@ class MasterReActEngine:
                     {"step_id": step.id, "step_type": step.type},
                 )
 
-                task_brief = (
-                    self._build_script_task_brief(ctx)
-                    if step_type == "script_design"
-                    else TASK_BRIEFS[step_type]
-                )
+                task_brief = self._build_delegate_task_brief(ctx, step_type, decision)
 
                 agent = self._registry.get(step.agent)
                 work_context = {
@@ -442,6 +468,7 @@ class MasterReActEngine:
                     "style_mode": style_mode,
                     "generation_mode": generation_mode,
                     "conversation_id": conversation_id,
+                    "user_message": ctx.user_message,
                 }
 
                 try:

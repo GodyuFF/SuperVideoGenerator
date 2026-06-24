@@ -4,20 +4,23 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { A2UIModal } from "../components/A2UIModal";
-import { GeneratedContent } from "../components/GeneratedContent";
+import { ChatMessageList } from "../components/ChatMessageList";
+import { BoardPanel } from "../components/board/BoardPanel";
+import { ProjectSwitcher } from "../components/ProjectSwitcher";
 import { MASTER_AGENT_NAME, styleModeLabel, type StyleMode } from "../constants";
+import { useBoardData } from "../hooks/useBoardData";
 import { formatApiError, useProject, useWebSocket } from "../hooks/useApi";
-import type { LLMConfig, PlanStep, StepOutput, TextAsset, VideoPlan } from "../types";
+import type { BoardTabId } from "../types/board";
+import type {
+  ActionKind,
+  ChatMessage,
+} from "../types/chat";
+import { normalizeActionInput } from "../types/chat";
+import type { LLMConfig, PlanStep, StepOutput } from "../types";
 
 const API = "/api";
 
 type GenerationMode = "auto" | "cost_confirm";
-
-interface ChatLine {
-  id: string;
-  text: string;
-  streaming?: boolean;
-}
 
 interface ScriptMeta {
   style_mode?: string;
@@ -32,6 +35,7 @@ interface WorkbenchProps {
   llmLoading: boolean;
   needsAiConfig: boolean;
   onOpenSettings: () => void;
+  onOpenAgents: () => void;
   onOpenLogs: () => void;
 }
 
@@ -40,19 +44,20 @@ export function Workbench({
   llmLoading,
   needsAiConfig,
   onOpenSettings,
+  onOpenAgents,
   onOpenLogs,
 }: WorkbenchProps) {
-  const { projectId, scriptId, loading, initError, bootstrap } = useProject();
+  const { projectId, scriptId, loading, initError, bootstrap, switchProject, createNewProject } =
+    useProject();
+  const [boardTab, setBoardTab] = useState<BoardTabId>("overview");
+  const { board, loading: boardLoading, error: boardError, refresh: refreshBoard } =
+    useBoardData(projectId, scriptId, boardTab);
   const { events, pendingConfirmation, sendConfirmation } = useWebSocket(
     projectId,
     scriptId
   );
-  const [messages, setMessages] = useState<ChatLine[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [assets, setAssets] = useState<TextAsset[]>([]);
-  const [scriptTitle, setScriptTitle] = useState("");
-  const [scriptContentMd, setScriptContentMd] = useState("");
-  const [videoPlan, setVideoPlan] = useState<VideoPlan | null>(null);
   const [planSteps, setPlanSteps] = useState<PlanStep[]>([]);
   const [scriptStatus, setScriptStatus] = useState("draft");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("cost_confirm");
@@ -60,45 +65,83 @@ export function Workbench({
   const [styleLocked, setStyleLocked] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const lastEventIndex = useRef(0);
-  const streamLineIds = useRef<Map<string, string>>(new Map());
+  const streamMessageIds = useRef<Map<string, string>>(new Map());
 
-  const appendLine = useCallback((line: ChatLine) => {
-    setMessages((m) => [...m, line]);
+  const appendMessage = useCallback((message: ChatMessage) => {
+    setMessages((m) => [...m, message]);
   }, []);
 
-  const appendMasterLine = useCallback(
-    (text: string, streaming = false) => {
-      appendLine({
-        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        text: `${MASTER_AGENT_NAME}: ${text}`,
-        streaming,
+  const appendSystemMessage = useCallback(
+    (text: string) => {
+      appendMessage({
+        kind: "system",
+        id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        text,
       });
     },
-    [appendLine]
+    [appendMessage]
   );
 
-  const loadScript = useCallback(async () => {
+  const updateMessage = useCallback(
+    (id: string, updater: (msg: ChatMessage) => ChatMessage) => {
+      setMessages((m) => m.map((msg) => (msg.id === id ? updater(msg) : msg)));
+    },
+    []
+  );
+
+  const upsertReactAction = useCallback(
+    (
+      iteration: number,
+      action: string,
+      actionLabel: string | undefined,
+      actionKind: ActionKind | undefined,
+      actionInput: Record<string, string> | undefined
+    ) => {
+      setMessages((m) => {
+        const idx = m.findIndex(
+          (msg) => msg.kind === "react_turn" && msg.iteration === iteration
+        );
+        if (idx === -1) {
+          return [
+            ...m,
+            {
+              kind: "react_turn" as const,
+              id: `turn-${iteration}-${Date.now()}`,
+              iteration,
+              thought: "",
+              action,
+              actionLabel,
+              actionKind,
+              actionInput,
+            },
+          ];
+        }
+        return m.map((msg, i) =>
+          i === idx && msg.kind === "react_turn"
+            ? {
+                ...msg,
+                action,
+                actionLabel,
+                actionKind,
+                actionInput,
+              }
+            : msg
+        );
+      });
+    },
+    []
+  );
+
+  const loadScriptMeta = useCallback(async () => {
     if (!projectId || !scriptId) return;
     const r = await fetch(`${API}/projects/${projectId}/scripts/${scriptId}`);
     if (!r.ok) return;
     const script = (await r.json()) as ScriptMeta;
     if (script.status) setScriptStatus(script.status);
-    if (script.title) setScriptTitle(script.title);
-    if (script.content_md) setScriptContentMd(script.content_md);
     if (script.style_mode === "dynamic_image" || script.style_mode === "ai_video") {
       setStyleMode(script.style_mode);
     }
     setStyleLocked(Boolean(script.style_locked));
-  }, [projectId, scriptId]);
-
-  const loadVideoPlan = useCallback(async () => {
-    if (!projectId || !scriptId) return;
-    const r = await fetch(
-      `${API}/projects/${projectId}/scripts/${scriptId}/video-plan`
-    );
-    if (r.ok) {
-      setVideoPlan(await r.json());
-    }
   }, [projectId, scriptId]);
 
   const loadPlan = useCallback(async () => {
@@ -110,79 +153,138 @@ export function Workbench({
     }
   }, [projectId, scriptId]);
 
-  const refreshAssets = useCallback(async () => {
-    if (!projectId || !scriptId) return;
-    const r = await fetch(`${API}/projects/${projectId}/scripts/${scriptId}/assets`);
-    if (r.ok) setAssets(await r.json());
-  }, [projectId, scriptId]);
-
-  const refreshGeneratedContent = useCallback(async () => {
-    await loadScript();
-    await refreshAssets();
-    await loadVideoPlan();
+  const refreshWorkspace = useCallback(async () => {
+    await loadScriptMeta();
     await loadPlan();
-  }, [loadScript, refreshAssets, loadVideoPlan, loadPlan]);
+    await refreshBoard();
+  }, [loadScriptMeta, loadPlan, refreshBoard]);
 
   useEffect(() => {
     if (projectId && scriptId) {
-      refreshGeneratedContent();
+      refreshWorkspace();
     }
-  }, [projectId, scriptId, refreshGeneratedContent]);
+  }, [projectId, scriptId, refreshWorkspace]);
 
   useEffect(() => {
     const newEvents = events.slice(lastEventIndex.current);
     lastEventIndex.current = events.length;
 
     newEvents.forEach((e) => {
+      const streamKind = e.kind ? String(e.kind) : "";
+
       if (e.type === "llm_stream_start" && e.stream_id) {
         const streamId = String(e.stream_id);
-        const lineId = `stream-${streamId}`;
-        streamLineIds.current.set(streamId, lineId);
-        appendLine({
-          id: lineId,
-          text: `${MASTER_AGENT_NAME}: `,
-          streaming: true,
-        });
+        const messageId = `stream-${streamId}`;
+        streamMessageIds.current.set(streamId, messageId);
+
+        if (streamKind === "react_thought") {
+          const iteration = Number(e.iteration ?? 0);
+          appendMessage({
+            kind: "react_turn",
+            id: messageId,
+            iteration,
+            thought: "",
+            thoughtStreaming: true,
+          });
+        } else if (streamKind === "llm_summary") {
+          appendMessage({
+            kind: "assistant",
+            id: messageId,
+            text: "",
+            streaming: true,
+          });
+        }
       }
+
       if (e.type === "llm_stream_delta" && e.stream_id && e.delta) {
-        const lineId = streamLineIds.current.get(String(e.stream_id));
-        if (!lineId) return;
+        const messageId = streamMessageIds.current.get(String(e.stream_id));
+        if (!messageId) return;
         const delta = String(e.delta);
+
+        if (streamKind === "react_thought") {
+          updateMessage(messageId, (msg) => {
+            if (msg.kind !== "react_turn") return msg;
+            return { ...msg, thought: msg.thought + delta };
+          });
+        } else if (streamKind === "llm_summary") {
+          updateMessage(messageId, (msg) => {
+            if (msg.kind !== "assistant") return msg;
+            return { ...msg, text: msg.text + delta };
+          });
+        }
+      }
+
+      if (e.type === "llm_stream_end" && e.stream_id) {
+        const streamId = String(e.stream_id);
+        const messageId = streamMessageIds.current.get(streamId);
+        if (messageId) {
+          if (streamKind === "react_thought") {
+            updateMessage(messageId, (msg) => {
+              if (msg.kind !== "react_turn") return msg;
+              return { ...msg, thoughtStreaming: false };
+            });
+          } else if (streamKind === "llm_summary") {
+            updateMessage(messageId, (msg) => {
+              if (msg.kind !== "assistant") return msg;
+              return { ...msg, streaming: false };
+            });
+          }
+          streamMessageIds.current.delete(streamId);
+        }
+      }
+
+      if (e.type === "react_action") {
+        const iteration = Number(e.iteration ?? 0);
+        const action = String(e.action ?? "");
+        const actionLabel = e.action_label
+          ? String(e.action_label)
+          : undefined;
+        const actionKind = e.action_kind
+          ? (String(e.action_kind) as ActionKind)
+          : undefined;
+        const rawInput = e.llm_action_input ?? e.action_input;
+        upsertReactAction(
+          iteration,
+          action,
+          actionLabel,
+          actionKind,
+          normalizeActionInput(rawInput)
+        );
+      }
+
+      if (e.type === "react_observation" && e.observation) {
+        const iteration = Number(e.iteration ?? 0);
+        const obs = String(e.observation);
         setMessages((m) =>
-          m.map((line) =>
-            line.id === lineId ? { ...line, text: line.text + delta } : line
+          m.map((msg) =>
+            msg.kind === "react_turn" && msg.iteration === iteration
+              ? { ...msg, observation: obs }
+              : msg
           )
         );
       }
-      if (e.type === "llm_stream_end" && e.stream_id) {
-        const streamId = String(e.stream_id);
-        const lineId = streamLineIds.current.get(streamId);
-        if (lineId) {
-          setMessages((m) =>
-            m.map((line) =>
-              line.id === lineId ? { ...line, streaming: false } : line
-            )
-          );
-          streamLineIds.current.delete(streamId);
-        }
-      }
+
       if (e.type === "master_message" && e.content && e.source === "llm_summary") {
         const content = String(e.content);
-        const full = `${String(e.agent_name ?? MASTER_AGENT_NAME)}: ${content}`;
         setMessages((m) => {
-          if (m.some((line) => line.text === full)) return m;
+          if (
+            m.some(
+              (msg) => msg.kind === "assistant" && msg.text.trim() === content.trim()
+            )
+          ) {
+            return m;
+          }
           return [
             ...m,
             {
+              kind: "assistant" as const,
               id: `summary-${Date.now()}`,
-              text: full,
+              text: content,
             },
           ];
         });
       }
-      if (e.type === "react_thought" && e.thought && e.visibility === "user") {
-        appendMasterLine(String(e.thought));
-      }
+
       if (e.type === "script_style_locked" && e.style_mode) {
         const mode = String(e.style_mode);
         if (mode === "dynamic_image" || mode === "ai_video") {
@@ -197,6 +299,7 @@ export function Workbench({
         const plan = e.plan as { steps: PlanStep[] };
         setPlanSteps(plan.steps ?? []);
         setScriptStatus((prev) => (prev === "executing" ? prev : "planned"));
+        refreshWorkspace();
       }
       if (e.type === "react_started" || e.type === "execution_started") {
         setScriptStatus("executing");
@@ -217,7 +320,7 @@ export function Workbench({
               : s
           )
         );
-        refreshGeneratedContent();
+        refreshWorkspace();
       }
       if (e.type === "step_failed") {
         setPlanSteps((steps) =>
@@ -231,16 +334,19 @@ export function Workbench({
       if (e.type === "project_completed") {
         setScriptStatus("completed");
         setIsRunning(false);
-        refreshGeneratedContent();
+        refreshWorkspace();
       }
     });
-  }, [events, refreshGeneratedContent, appendLine, appendMasterLine]);
+  }, [
+    events,
+    refreshWorkspace,
+    appendMessage,
+    updateMessage,
+    upsertReactAction,
+  ]);
 
   function promptConfigureAi() {
-    appendLine({
-      id: `sys-${Date.now()}`,
-      text: "[系统] 请先配置 AI 模型与 API Key 后再开始对话。",
-    });
+    appendSystemMessage("请先配置 AI 模型与 API Key 后再开始对话。");
     onOpenSettings();
   }
 
@@ -262,16 +368,16 @@ export function Workbench({
         pid = ids.projectId;
         sid = ids.scriptId;
       } catch (e) {
-        appendMasterLine(`无法连接服务（${(e as Error).message}）`);
+        appendSystemMessage(`无法连接服务（${(e as Error).message}）`);
         return;
       }
     }
 
-    appendLine({ id: `user-${Date.now()}`, text: `你: ${text}` });
+    appendMessage({ kind: "user", id: `user-${Date.now()}`, text });
     setInput("");
     setIsRunning(true);
     lastEventIndex.current = events.length;
-    streamLineIds.current.clear();
+    streamMessageIds.current.clear();
 
     const postChat = async (p: string, s: string) =>
       fetch(`${API}/projects/${p}/scripts/${s}/chat`, {
@@ -288,7 +394,7 @@ export function Workbench({
       const r = await postChat(pid, sid);
 
       if (r.status === 404) {
-        appendMasterLine(
+        appendSystemMessage(
           "剧本或项目不存在（后端可能已重启）。请点击页面刷新或重新初始化后再发送。"
         );
         setIsRunning(false);
@@ -297,14 +403,12 @@ export function Workbench({
 
       if (!r.ok) {
         const err = (await r.json().catch(() => null)) as Record<string, unknown> | null;
-        appendMasterLine(`执行失败（${formatApiError(err, r.statusText)}）`);
+        appendSystemMessage(`执行失败（${formatApiError(err, r.statusText)}）`);
         setIsRunning(false);
         return;
       }
       const data = await r.json();
       if (data.script?.status) setScriptStatus(data.script.status);
-      if (data.script?.title) setScriptTitle(data.script.title);
-      if (data.script?.content_md) setScriptContentMd(data.script.content_md);
       if (data.script?.style_locked) setStyleLocked(true);
       if (
         data.script?.style_mode === "dynamic_image" ||
@@ -314,19 +418,30 @@ export function Workbench({
       }
       if (data.plan?.steps) setPlanSteps(data.plan.steps);
       if (data.summary) {
-        const summaryText = `${MASTER_AGENT_NAME}: ${data.summary}`;
+        const summaryText = String(data.summary);
         setMessages((m) => {
-          if (m.some((line) => line.text === summaryText)) return m;
+          if (
+            m.some(
+              (msg) =>
+                msg.kind === "assistant" && msg.text.trim() === summaryText.trim()
+            )
+          ) {
+            return m;
+          }
           return [
             ...m,
-            { id: `summary-api-${Date.now()}`, text: summaryText },
+            {
+              kind: "assistant" as const,
+              id: `summary-api-${Date.now()}`,
+              text: summaryText,
+            },
           ];
         });
       }
-      await refreshGeneratedContent();
+      await refreshWorkspace();
       setIsRunning(false);
     } catch {
-      appendMasterLine("网络错误，请确认后端已启动（端口 8000）。");
+      appendSystemMessage("网络错误，请确认后端已启动（端口 8000）。");
       setIsRunning(false);
     }
   }
@@ -366,7 +481,21 @@ export function Workbench({
         {isRunning && (
           <span className="status-badge running">{MASTER_AGENT_NAME} 执行中…</span>
         )}
+        <ProjectSwitcher
+          projectId={projectId}
+          scriptId={scriptId}
+          onSwitch={switchProject}
+          onCreateNew={createNewProject}
+          disabled={isRunning}
+        />
         <div className="top-bar-spacer" />
+        <button
+          type="button"
+          className="btn-secondary btn-config"
+          onClick={onOpenAgents}
+        >
+          Agent 配置
+        </button>
         <button
           type="button"
           className="btn-secondary btn-config"
@@ -436,14 +565,7 @@ export function Workbench({
             </label>
           </div>
           <div className="chat-log">
-            {messages.map((line) => (
-              <div
-                key={line.id}
-                className={`chat-line${line.streaming ? " streaming" : ""}`}
-              >
-                {line.text}
-              </div>
-            ))}
+            <ChatMessageList messages={messages} />
           </div>
           <div className="chat-input-row">
             <input
@@ -473,41 +595,31 @@ export function Workbench({
         </aside>
 
         <main className="script-panel">
-          <h2>剧本与资产</h2>
-          <section className="plan-section">
-            <h3>执行计划（{MASTER_AGENT_NAME} 自动编排）</h3>
+          <h2>看板与资产</h2>
+          <section className="plan-section plan-section-compact">
+            <h3>执行计划（固定顺序）</h3>
             {planSteps.length === 0 && (
-              <p className="muted">发送对话后，{MASTER_AGENT_NAME} 将在此展示子 Agent 执行进度</p>
+              <p className="muted">发送对话后按 剧本→图片→分镜→[视频]→配音→剪辑 顺序执行</p>
             )}
-            <ul className="plan-list">
+            <ul className="plan-list plan-list-inline">
               {planSteps.map((step) => (
                 <li key={step.id} className={`plan-item status-${step.status}`}>
                   <span className="step-type">{step.type}</span>
                   <span>{step.title}</span>
                   <span className="step-status">{step.status}</span>
-                  {step.outputs && step.outputs.length > 0 && (
-                    <span className="step-outputs">
-                      {step.outputs.map((o) => o.label).join(" · ")}
-                    </span>
-                  )}
-                  {step.error && <span className="step-error">{step.error}</span>}
                 </li>
               ))}
             </ul>
           </section>
-          <section className="generated-section">
-            <div className="section-header-row">
-              <h3>生成内容</h3>
-              <button type="button" onClick={refreshGeneratedContent}>刷新</button>
-            </div>
-            <GeneratedContent
-              scriptTitle={scriptTitle}
-              scriptContentMd={scriptContentMd}
-              assets={assets}
-              videoPlan={videoPlan}
-              planSteps={planSteps}
-            />
-          </section>
+          <BoardPanel
+            activeTab={boardTab}
+            onTabChange={setBoardTab}
+            board={board}
+            loading={boardLoading}
+            error={boardError}
+            onRefresh={refreshWorkspace}
+            onSelectScript={(sid) => switchProject(projectId!, sid)}
+          />
         </main>
       </div>
 

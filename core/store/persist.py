@@ -7,6 +7,7 @@ from pathlib import Path
 
 from core.models.entities import (
     AssetReference,
+    MediaAsset,
     PlanDocument,
     Project,
     Script,
@@ -57,6 +58,9 @@ def load_store(store: MemoryStore, path: Path | None = None) -> bool:
     store.video_plans = {
         k: VideoPlan.model_validate(v) for k, v in raw.get("video_plans", {}).items()
     }
+    store.media_assets = {
+        k: MediaAsset.model_validate(v) for k, v in raw.get("media_assets", {}).items()
+    }
     store._script_plans = dict(raw.get("script_plans", {}))
     return True
 
@@ -74,6 +78,7 @@ def save_store(store: MemoryStore, path: Path | None = None) -> None:
         "references": {k: v.model_dump() for k, v in store.references.items()},
         "plans": {k: v.model_dump() for k, v in store.plans.items()},
         "video_plans": {k: v.model_dump() for k, v in store.video_plans.items()},
+        "media_assets": {k: v.model_dump() for k, v in store.media_assets.items()},
         "script_plans": dict(store._script_plans),
     }
     with _lock:

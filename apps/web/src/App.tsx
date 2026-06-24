@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { useAppRoute } from "./hooks/useAppRoute";
 import { useLlmConfig } from "./hooks/useLlmConfig";
 import { useProject } from "./hooks/useApi";
+import { AgentSettingsPage } from "./pages/AgentSettingsPage";
 import { AiSettingsPage } from "./pages/AiSettingsPage";
 import { LogsPage } from "./pages/LogsPage";
 import { Workbench } from "./pages/Workbench";
@@ -21,6 +22,10 @@ export default function App() {
       llm.refresh();
     }
   }, [route]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (route === "agents") {
+    return <AgentSettingsPage onBack={() => navigate("chat")} />;
+  }
 
   if (route === "settings") {
     return (
@@ -50,6 +55,7 @@ export default function App() {
       llmLoading={llm.loading}
       needsAiConfig={llm.needsAiConfig}
       onOpenSettings={() => navigate("settings")}
+      onOpenAgents={() => navigate("agents")}
       onOpenLogs={() => navigate("logs")}
     />
   );

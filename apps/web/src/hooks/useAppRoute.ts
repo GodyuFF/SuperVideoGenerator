@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-export type AppRoute = "chat" | "settings" | "logs";
+export type AppRoute = "chat" | "settings" | "agents" | "logs";
 
 function parseHash(): AppRoute {
   const raw = window.location.hash.replace(/^#\/?/, "").trim();
   if (raw === "settings") return "settings";
+  if (raw === "agents") return "agents";
   if (raw === "logs") return "logs";
   return "chat";
 }
@@ -22,7 +23,13 @@ export function useAppRoute() {
 
   const navigate = useCallback((target: AppRoute) => {
     const hash =
-      target === "settings" ? "#/settings" : target === "logs" ? "#/logs" : "#/";
+      target === "settings"
+        ? "#/settings"
+        : target === "agents"
+          ? "#/agents"
+          : target === "logs"
+            ? "#/logs"
+            : "#/";
     window.location.hash = hash;
   }, []);
 

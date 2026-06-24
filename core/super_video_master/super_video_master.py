@@ -13,6 +13,7 @@ from core.llm.client import LLMClient
 from core.llm.react_decider import LLMReActDecider
 from core.llm.settings import LLMConfigManager
 from core.models.entities import ScriptStatus, VideoStyleMode
+from core.agents.config_manager import AgentConfigManager
 from core.agents.registry import AgentRegistry
 from core.store.memory import MemoryStore
 
@@ -30,6 +31,7 @@ class SuperVideoMaster:
         conversations: ConversationStore | None = None,
         llm_config: LLMConfigManager | None = None,
         interaction_recorder: InteractionRecorder | None = None,
+        agent_config: AgentConfigManager | None = None,
     ) -> None:
         self._store = store
         self._emitter = emitter
@@ -43,12 +45,14 @@ class SuperVideoMaster:
         self._llm_decider = LLMReActDecider(
             self._llm_config, llm_client, self._recorder
         )
+        self._agent_config = agent_config or AgentConfigManager()
         self._registry = AgentRegistry(
             store,
             emitter,
             self._conversations,
             self._llm_decider,
             self._recorder,
+            self._agent_config,
         )
         self._react = MasterReActEngine(
             store,

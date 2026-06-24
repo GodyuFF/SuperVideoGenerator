@@ -2,6 +2,9 @@
 
 from core.models.entities import (
     AssetReference,
+    AssetScope,
+    MediaAsset,
+    MediaAssetType,
     PlanDocument,
     Project,
     Script,
@@ -20,8 +23,23 @@ class MemoryStore:
         self.references: dict[str, AssetReference] = {}
         self.plans: dict[str, PlanDocument] = {}
         self.video_plans: dict[str, VideoPlan] = {}
+        self.media_assets: dict[str, MediaAsset] = {}
         # script_id -> 当前 plan 存储键
         self._script_plans: dict[str, str] = {}
+
+    def list_projects(self) -> list[Project]:
+        return sorted(
+            self.projects.values(),
+            key=lambda p: p.created_at or p.id,
+            reverse=True,
+        )
+
+    def list_shared_assets(self, project_id: str) -> list[TextAsset]:
+        return [
+            a
+            for a in self.text_assets.values()
+            if a.project_id == project_id and a.scope == AssetScope.PROJECT_SHARED
+        ]
 
     def add_project(self, project: Project) -> Project:
         self.projects[project.id] = project
@@ -93,3 +111,30 @@ class MemoryStore:
             if vp.script_id == script_id:
                 return vp
         return None
+
+    def add_media_asset(self, asset: MediaAsset) -> MediaAsset:
+        self.media_assets[asset.id] = asset
+        return asset
+
+    def list_media_for_script(
+        self,
+        script_id: str,
+        media_type: MediaAssetType | None = None,
+    ) -> list[MediaAsset]:
+        script = self.scripts.get(script_id)
+        if not script:
+            return []
+        items = [
+            m
+            for m in self.media_assets.values()
+            if m.script_id == script_id and m.project_id == script.project_id
+        ]
+        if media_type is not None:
+            items = [m for m in items if m.type == media_type]
+        return sorted(items, key=lambda m: m.name)
+
+    def list_media_for_project(self, project_id: str) -> list[MediaAsset]:
+        return sorted(
+            [m for m in self.media_assets.values() if m.project_id == project_id],
+            key=lambda m: (m.type.value, m.name),
+        )

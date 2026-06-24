@@ -39,6 +39,26 @@ class ChatRequest(BaseModel):
     style_mode: VideoStyleMode | None = None
 
 
+@router.get("/projects")
+def list_projects():
+    """列出本地持久化的所有项目。"""
+    projects = state.store.list_projects()
+    result = []
+    for p in projects:
+        scripts = state.store.list_scripts_for_project(p.id)
+        result.append(
+            {
+                **p.model_dump(),
+                "script_count": len(scripts),
+                "scripts": [
+                    {"id": s.id, "title": s.title, "status": s.status.value}
+                    for s in scripts
+                ],
+            }
+        )
+    return result
+
+
 @router.post("/projects")
 def post_project(body: CreateProjectRequest):
     """创建新项目。"""
@@ -122,6 +142,16 @@ def get_video_plan(project_id: str, script_id: str):
     if not vp:
         raise HTTPException(404, "视频计划稿不存在")
     return vp.model_dump()
+
+
+@router.get("/projects/{project_id}/scripts/{script_id}/media")
+def list_media(project_id: str, script_id: str):
+    """列出剧本相关数字媒体资产（图片/视频/配音/成片）。"""
+    script = state.store.get_script(script_id)
+    if not script or script.project_id != project_id:
+        raise HTTPException(404, "剧本不存在")
+    assets = state.store.list_media_for_script(script_id)
+    return [a.model_dump() for a in assets]
 
 
 @router.post("/projects/{project_id}/scripts/{script_id}/chat")

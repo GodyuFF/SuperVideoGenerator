@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from core.agents.conversation import ConversationStore
+from core.agents.prompt_resolver import resolve_agent_prompts
 from core.agents.react_core import AgentRunContext, ReActDecision, ReActRunner
 from core.events.emitter import EventEmitter
 from core.interaction_log.recorder import InteractionRecorder
@@ -30,7 +31,10 @@ class ReActAgent(ABC):
         recorder: InteractionRecorder | None = None,
         llm_config: LLMConfigManager | None = None,
         llm_client: LLMClient | None = None,
+        agent_config: Any | None = None,
     ) -> None:
+        from core.agents.config_manager import AgentConfigManager
+
         self._store = store
         self._emitter = emitter
         self._conversations = conversations
@@ -38,7 +42,36 @@ class ReActAgent(ABC):
         self._recorder = recorder
         self._llm_config = llm_config or llm_decider._config
         self._llm_client = llm_client or llm_decider._client
+        self._agent_config = agent_config or AgentConfigManager()
         self._runner = ReActRunner(emitter, conversations)
+
+    def resolve_role_prompt(self, ctx: AgentRunContext) -> str:
+        """按项目配置、全局模式与视频风格解析当前 role_prompt。"""
+        project_id = str(ctx.work_context.get("project_id", ""))
+        project = self._store.get_project(project_id) if project_id else None
+        style_mode = ctx.work_context.get("style_mode")
+        bundle = resolve_agent_prompts(
+            self.name,
+            style_mode=style_mode,
+            global_profiles=self._agent_config.get_profiles(),
+            project=project,
+        )
+        return bundle.role_prompt
+
+    def resolve_action_system_prompt(self, ctx: AgentRunContext) -> str:
+        """解析行动执行时的 system prompt（含模式 hint）。"""
+        from core.agents.llm_action import build_action_system_prompt
+
+        project_id = str(ctx.work_context.get("project_id", ""))
+        project = self._store.get_project(project_id) if project_id else None
+        style_mode = ctx.work_context.get("style_mode")
+        bundle = resolve_agent_prompts(
+            self.name,
+            style_mode=style_mode,
+            global_profiles=self._agent_config.get_profiles(),
+            project=project,
+        )
+        return build_action_system_prompt(bundle.action_hint)
 
     @abstractmethod
     def get_action_pipeline(self) -> list[str]:
@@ -49,10 +82,11 @@ class ReActAgent(ABC):
         """执行单个 Action 并返回 Observation 文本。"""
 
     async def decide(self, ctx: AgentRunContext) -> ReActDecision:
+        role_prompt = self.resolve_role_prompt(ctx)
         return await self._llm_decider.decide_agent(
             ctx,
             display_name=self.display_name,
-            role_prompt=self.role_prompt,
+            role_prompt=role_prompt,
             action_pipeline=self.get_action_pipeline(),
         )
 

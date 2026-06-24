@@ -3,6 +3,7 @@
  */
 
 import type { PlanStep, TextAsset, VideoPlan, VideoPlanShot } from "../types";
+import type { MediaAsset } from "../types/agents";
 
 const ASSET_TYPE_LABEL: Record<string, string> = {
   plot: "剧情",
@@ -44,11 +45,68 @@ function SimpleMarkdown({ text }: { text: string }) {
   );
 }
 
-function MediaOutputList({ steps }: { steps: PlanStep[] }) {
-  const items = steps.flatMap((step) =>
-    (step.outputs ?? []).map((o) => ({ ...o, stepTitle: step.title }))
+function isPlaceholderMediaUrl(url: string | undefined): boolean {
+  if (!url || !url.trim()) return true;
+  const u = url.trim().toLowerCase();
+  if (u.includes("example.com")) return true;
+  if (u.startsWith("/assets/")) return true;
+  return false;
+}
+
+function StoredMediaList({ items }: { items: MediaAsset[] }) {
+  const visible = items.filter((m) => !isPlaceholderMediaUrl(m.url));
+  if (visible.length === 0) return null;
+
+  const typeLabel: Record<string, string> = {
+    image: "图片",
+    video: "视频",
+    audio: "配音",
+    final: "成片",
+  };
+
+  return (
+    <section className="content-section media-section stored-media-section">
+      <h3>数字资产库（{visible.length}）</h3>
+      <ul className="media-output-list">
+        {visible.map((item) => (
+          <li key={item.id} className={`media-output-item kind-${item.type}`}>
+            <span className="media-kind">{typeLabel[item.type] ?? item.type}</span>
+            <strong>{item.name}</strong>
+            {item.url ? (
+              <a className="media-link" href={item.url} target="_blank" rel="noreferrer">
+                {item.url}
+              </a>
+            ) : (
+              <code className="media-id">{item.id}</code>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
-  if (items.length === 0) return null;
+}
+
+function MediaOutputList({ steps }: { steps: PlanStep[] }) {
+  const items = steps
+    .flatMap((step) =>
+      (step.outputs ?? []).map((o) => ({ ...o, stepTitle: step.title }))
+    )
+    .filter((item) => !isPlaceholderMediaUrl(item.url));
+
+  if (items.length === 0) {
+    const hasMediaSteps = steps.some((s) =>
+      (s.outputs ?? []).some((o) => o.kind === "image" || o.kind === "video" || o.kind === "audio")
+    );
+    if (!hasMediaSteps) return null;
+    return (
+      <section className="content-section media-section">
+        <h3>媒体产出</h3>
+        <p className="muted media-unavailable-hint">
+          媒体生成尚未接入，当前仅展示文字资产与分镜。
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="content-section media-section">
@@ -134,6 +192,7 @@ interface GeneratedContentProps {
   scriptTitle: string;
   scriptContentMd: string;
   assets: TextAsset[];
+  mediaAssets: MediaAsset[];
   videoPlan: VideoPlan | null;
   planSteps: PlanStep[];
 }
@@ -142,6 +201,7 @@ export function GeneratedContent({
   scriptTitle,
   scriptContentMd,
   assets,
+  mediaAssets,
   videoPlan,
   planSteps,
 }: GeneratedContentProps) {
@@ -149,6 +209,7 @@ export function GeneratedContent({
   const hasAny =
     hasScript ||
     assets.length > 0 ||
+    mediaAssets.length > 0 ||
     (videoPlan?.shots?.length ?? 0) > 0 ||
     planSteps.some((s) => (s.outputs?.length ?? 0) > 0);
 
@@ -175,6 +236,8 @@ export function GeneratedContent({
       )}
 
       <AssetCards assets={assets} />
+
+      <StoredMediaList items={mediaAssets} />
 
       <MediaOutputList steps={planSteps} />
     </div>

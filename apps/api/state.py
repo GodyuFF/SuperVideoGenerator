@@ -8,6 +8,7 @@ from core.interaction_log.file_store import InteractionFileStore
 from core.interaction_log.recorder import InteractionRecorder
 from core.interaction_log.store import InteractionLogStore
 from core.llm.settings import LLMConfigManager
+from core.agents.config_manager import AgentConfigManager
 from core.super_video_master.super_video_master import SuperVideoMaster
 from core.events.emitter import EventEmitter
 from core.logging.setup import setup_logging
@@ -25,6 +26,7 @@ class AppState:
         load_store(self.store)
         self.conversations = ConversationStore()
         self.llm_config = LLMConfigManager()
+        self.agent_config = AgentConfigManager()
         self.interaction_log_store = InteractionLogStore()
         self.interaction_file_store = InteractionFileStore()
         self.emitter = EventEmitter()
@@ -42,6 +44,7 @@ class AppState:
             self.conversations,
             self.llm_config,
             self.interaction_recorder,
+            self.agent_config,
         )
         self.ws_clients: dict[str, list] = {}
 
@@ -66,6 +69,7 @@ async def _ws_emit_handler(event: dict) -> None:
     broadcast_types = {
         "master_message",
         "react_thought",
+        "react_action",
         "llm_stream_start",
         "llm_stream_delta",
         "llm_stream_end",

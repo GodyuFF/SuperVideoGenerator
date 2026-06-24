@@ -18,9 +18,10 @@ class ScriptAgent(ReActAgent):
             self._llm_client,
             agent_name=self.name,
             display_name=self.display_name,
-            role_prompt=self.role_prompt,
+            role_prompt=self.resolve_role_prompt(ctx),
             action=action,
             ctx=ctx,
+            system_prompt=self.resolve_action_system_prompt(ctx),
         )
 
 
@@ -37,9 +38,10 @@ class ImageAgent(ReActAgent):
             self._llm_client,
             agent_name=self.name,
             display_name=self.display_name,
-            role_prompt=self.role_prompt,
+            role_prompt=self.resolve_role_prompt(ctx),
             action=action,
             ctx=ctx,
+            system_prompt=self.resolve_action_system_prompt(ctx),
         )
 
 
@@ -56,9 +58,10 @@ class StoryboardAgent(ReActAgent):
             self._llm_client,
             agent_name=self.name,
             display_name=self.display_name,
-            role_prompt=self.role_prompt,
+            role_prompt=self.resolve_role_prompt(ctx),
             action=action,
             ctx=ctx,
+            system_prompt=self.resolve_action_system_prompt(ctx),
         )
 
 
@@ -75,9 +78,10 @@ class VideoAgent(ReActAgent):
             self._llm_client,
             agent_name=self.name,
             display_name=self.display_name,
-            role_prompt=self.role_prompt,
+            role_prompt=self.resolve_role_prompt(ctx),
             action=action,
             ctx=ctx,
+            system_prompt=self.resolve_action_system_prompt(ctx),
         )
 
 
@@ -94,9 +98,10 @@ class TTSAgent(ReActAgent):
             self._llm_client,
             agent_name=self.name,
             display_name=self.display_name,
-            role_prompt=self.role_prompt,
+            role_prompt=self.resolve_role_prompt(ctx),
             action=action,
             ctx=ctx,
+            system_prompt=self.resolve_action_system_prompt(ctx),
         )
 
 
@@ -113,7 +118,8 @@ class EditingAgent(ReActAgent):
             self._llm_client,
             agent_name=self.name,
             display_name=self.display_name,
-            role_prompt=self.role_prompt,
+            role_prompt=self.resolve_role_prompt(ctx),
             action=action,
             ctx=ctx,
+            system_prompt=self.resolve_action_system_prompt(ctx),
         )
