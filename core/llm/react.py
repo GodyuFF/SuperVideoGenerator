@@ -114,25 +114,34 @@ class ReAct:
         return sorted(self.completed)
 
     def to_context_xml(self) -> str:
-        from core.llm.xml_protocol import build_pure_react_xml
+        """构建 User Prompt (JSON 格式)。"""
+        from core.prompt.builder import build_react_json_user
+        from core.prompt.context_window import prepare_master_context
+        from core.prompt.context_manager import AgentContextManager
+
+        prepared = prepare_master_context(self.observations)
+        llm_observations = prepared.observations
+        extra = dict(self.extra)
+        if prepared.history_summary:
+            extra["history_summary"] = prepared.history_summary
 
         if self._react_session is not None:
-            from core.llm.xml_protocol import build_react_session_xml
-
-            self._react_session.observations = list(self.observations)
+            self._react_session.observations = llm_observations
             self._react_session.iteration = self.iteration
-            return build_react_session_xml(self._react_session)
-        return build_pure_react_xml(
-            conversation_id=self.conversation_id,
-            agent_name=self.agent_name,
-            agent=self.agent,
-            tools=self.tools,
+            self._react_session.extra = extra
+            AgentContextManager.master.apply_prepared(self._react_session, prepared)
+            # 注意：这里仍然调用 XML 版本，因为 ReActSession 期望 XML 结构
+            # 如果需要 JSON，需要修改 ReActSession 或创建 JSON 版本
+            from core.prompt.builder import build_react_session_user
+            return build_react_session_user(self._react_session)
+        
+        # 对于无 session 的情况，使用 JSON 构建器
+        return build_react_json_user(
             task_brief=self.task_brief,
             available_actions=self.available_actions(),
             completed=self.completed_labels(),
-            observations=self.observations,
-            extra=self.extra,
-            user_summary=self.user_summary,
+            observations=llm_observations,
+            extra=extra,
         )
 
     def _sanitize_action(self, action: str, allowed: list[str]) -> str:
@@ -145,8 +154,9 @@ class ReAct:
         raise ValueError(f"非法 action「{action}」，允许: {allowed}")
 
     async def decide(self, on_delta: OnDelta | None = None) -> ReActDecision:
-        """单轮推理：LLM XML 决策（流式）。"""
-        from core.llm.xml_protocol import REACT_SYSTEM_PROMPT, parse_react_xml
+        """单轮推理：LLM JSON 决策（流式）。"""
+        from core.llm.json_protocol import parse_react_json
+        from core.prompt.builder import build_react_system, build_react_json_user
 
         allowed = self.available_actions()
 
@@ -155,7 +165,14 @@ class ReAct:
                 "未配置 API Key 或已关闭 LLM ReAct，请在 AI 配置中填写 Key 并启用 LLM ReAct"
             )
 
-        context_xml = self.to_context_xml()
+        # 构建 User Prompt (JSON 格式)
+        context_json = build_react_json_user(
+            task_brief=self.task_brief,
+            available_actions=self.available_actions(),
+            completed=self.completed_labels(),
+            observations=self.observations,
+            extra=self.extra,
+        )
         log_ctx = {
             **self._log_context,
             "conversation_id": self.conversation_id,
@@ -163,14 +180,15 @@ class ReAct:
             "iteration": self.iteration,
         }
 
+        role_prompt = self.agent.description if self.agent else ""
         try:
-            raw = await self._llm_client.complete_xml_react(
-                REACT_SYSTEM_PROMPT,
-                context_xml,
+            raw = await self._llm_client.complete_json(
+                build_react_system(role_prompt),
+                context_json,
                 log_context=log_ctx,
-                on_delta=on_delta,
+                response_format={"type": "json_object"},
             )
-            decision = parse_react_xml(raw)
+            decision = parse_react_json(raw)
             try:
                 decision.action = self._sanitize_action(decision.action, allowed)
             except ValueError as e:

@@ -6,25 +6,9 @@ from typing import Any
 
 from core.agents.react_core import ReActDecision
 from core.llm.react_models import ReActAgentInfo, ReActToolInfo
+from core.prompt.registry import get_react_system_prompt
 
-REACT_SYSTEM_PROMPT = """你是视频生产流水线中的智能 Agent，使用 ReAct（推理 + 行动）模式工作。
-
-你必须且只能使用以下 XML 格式回复，不要输出 Markdown 代码块或其它包裹格式：
-
-<react>
-  <thought>你的推理过程（中文）</thought>
-  <action>行动名称</action>
-  <action_input>
-    <备注>可选的补充说明</备注>
-  </action_input>
-</react>
-
-规则：
-1. action 必须从「可用行动」列表中选择；全部完成后 action 必须为 finish。
-2. delegate_* 行动表示委派子 Agent（异步执行并等待结果）；tool_* 表示调用工具查询状态。
-3. action_input 可为空：使用 <action_input/>。
-4. 不要编造未列出的 action。
-5. thought 应简洁说明为何选择该 action（委派子 Agent 或调用工具）。"""
+REACT_SYSTEM_PROMPT = get_react_system_prompt()
 
 
 def _escape_xml(text: str) -> str:
@@ -43,30 +27,16 @@ def build_context_xml(
     observations: list[str],
     extra: dict[str, Any] | None = None,
 ) -> str:
-    """构建发给 LLM 的用户侧 XML 上下文。"""
-    actions_xml = "\n".join(f"    <action>{a}</action>" for a in available_actions)
-    completed_xml = "\n".join(f"    <item>{c}</item>" for c in completed) or "    <item>无</item>"
-    obs_xml = "\n".join(
-        f"    <item>{_escape_xml(o)}</item>" for o in observations
-    ) or "    <item>无</item>"
-    extra_xml = ""
-    if extra:
-        parts = [f"    <{k}>{_escape_xml(str(v))}</{k}>" for k, v in extra.items()]
-        extra_xml = f"\n  <extra>\n" + "\n".join(parts) + "\n  </extra>"
+    """构建发给 LLM 的用户侧 XML 上下文（转调 PromptBuilder，请优先使用 build_react_user）。"""
+    from core.prompt.builder import build_react_user
 
-    return f"""<react_context>
-  <role>{_escape_xml(role_description)}</role>
-  <task_brief>{_escape_xml(task_brief)}</task_brief>
-  <available_actions>
-{actions_xml}
-  </available_actions>
-  <completed_actions>
-{completed_xml}
-  </completed_actions>
-  <observations>
-{obs_xml}
-  </observations>{extra_xml}
-</react_context>"""
+    return build_react_user(
+        task_brief=task_brief,
+        available_actions=available_actions,
+        completed=completed,
+        observations=observations,
+        extra=extra,
+    )
 
 
 def build_pure_react_xml(
@@ -133,67 +103,10 @@ def build_pure_react_xml(
 
 
 def build_react_session_xml(session: Any) -> str:
-    """根据 ReActSession（agent_name、对话 id、agent、tools、sub_agents）构建 LLM 上下文。"""
-    agents_xml = "\n".join(
-        f"    <sub_agent>"
-        f"<delegate_action>{_escape_xml(sa.delegate_action)}</delegate_action>"
-        f"<agent_name>{_escape_xml(sa.agent_name)}</agent_name>"
-        f"<display_name>{_escape_xml(sa.display_name)}</display_name>"
-        f"<description>{_escape_xml(sa.description)}</description>"
-        f"</sub_agent>"
-        for sa in session.sub_agents
-    )
-    tools_xml = "\n".join(
-        f"    <tool>"
-        f"<action>{_escape_xml(t.action_name)}</action>"
-        f"<name>{_escape_xml(t.name)}</name>"
-        f"<description>{_escape_xml(t.description)}</description>"
-        f"</tool>"
-        for t in session.tools
-    )
-    actions_xml = "\n".join(
-        f"    <action>{_escape_xml(a)}</action>" for a in session.available_actions()
-    )
-    completed_xml = "\n".join(
-        f"    <item>{_escape_xml(c)}</item>" for c in session.completed_labels()
-    ) or "    <item>无</item>"
-    obs_xml = "\n".join(
-        f"    <item>{_escape_xml(o)}</item>" for o in session.observations
-    ) or "    <item>无</item>"
-    extra_xml = ""
-    if session.extra:
-        parts = [
-            f"    <{k}>{_escape_xml(str(v))}</{k}>" for k, v in session.extra.items()
-        ]
-        extra_xml = f"\n  <extra>\n" + "\n".join(parts) + "\n  </extra>"
-    if session.user_summary:
-        extra_xml += f"\n  <user_summary>{_escape_xml(session.user_summary)}</user_summary>"
+    """根据 ReActSession 构建 LLM 上下文（转调 PromptBuilder）。"""
+    from core.prompt.builder import build_react_session_user
 
-    return f"""<react_session>
-  <conversation_id>{_escape_xml(session.conversation_id)}</conversation_id>
-  <agent_name>{_escape_xml(session.agent_name)}</agent_name>
-  <agent>
-    <name>{_escape_xml(session.agent.name)}</name>
-    <display_name>{_escape_xml(session.agent.display_name)}</display_name>
-    <description>{_escape_xml(session.agent.description)}</description>
-  </agent>
-  <task_brief>{_escape_xml(session.task_brief)}</task_brief>
-  <sub_agents>
-{agents_xml}
-  </sub_agents>
-  <tools>
-{tools_xml}
-  </tools>
-  <available_actions>
-{actions_xml}
-  </available_actions>
-  <completed>
-{completed_xml}
-  </completed>
-  <observations>
-{obs_xml}
-  </observations>{extra_xml}
-</react_session>"""
+    return build_react_session_user(session)
 
 
 def extract_xml_block(text: str) -> str:

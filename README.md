@@ -20,6 +20,7 @@ cd apps/web && npm install && npm run dev
 
 - [产品计划手册](docs/product-plan.md)
 - [代码设计计划](docs/code-design-plan.md)
+- [提示词架构](docs/prompt-architecture.md)（`core/prompt` 固定/动态分层）
 
 ## 生成模式
 

@@ -59,8 +59,9 @@ class MemoryStore:
         return [s for s in self.scripts.values() if s.project_id == project_id]
 
     def add_text_asset(self, asset: TextAsset) -> TextAsset:
-        self.text_assets[asset.id] = asset
-        return asset
+        validated = TextAsset.model_validate(asset.model_dump())
+        self.text_assets[validated.id] = validated
+        return validated
 
     def get_text_asset(self, asset_id: str) -> TextAsset | None:
         return self.text_assets.get(asset_id)
@@ -70,6 +71,23 @@ class MemoryStore:
             del self.text_assets[asset_id]
             return True
         return False
+
+    def update_text_asset(self, asset: TextAsset) -> TextAsset:
+        validated = TextAsset.model_validate(asset.model_dump())
+        self.text_assets[validated.id] = validated
+        return validated
+
+    def remove_reference(self, ref_id: str) -> bool:
+        if ref_id in self.references:
+            del self.references[ref_id]
+            return True
+        return False
+
+    def list_references_from(self, source_id: str) -> list[AssetReference]:
+        return [r for r in self.references.values() if r.source_id == source_id]
+
+    def list_references_to(self, target_id: str) -> list[AssetReference]:
+        return [r for r in self.references.values() if r.target_id == target_id]
 
     def list_assets_for_script(self, script_id: str) -> list[TextAsset]:
         """返回本片私有资产 + 同项目共享池资产。"""
@@ -138,3 +156,14 @@ class MemoryStore:
             [m for m in self.media_assets.values() if m.project_id == project_id],
             key=lambda m: (m.type.value, m.name),
         )
+
+    def clear(self) -> None:
+        """清空全部内存数据（保留同一实例，避免外部引用失效）。"""
+        self.projects.clear()
+        self.scripts.clear()
+        self.text_assets.clear()
+        self.references.clear()
+        self.plans.clear()
+        self.video_plans.clear()
+        self.media_assets.clear()
+        self._script_plans.clear()

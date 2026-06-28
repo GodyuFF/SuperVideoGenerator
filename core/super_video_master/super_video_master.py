@@ -96,6 +96,63 @@ class SuperVideoMaster:
         if script.status == ScriptStatus.EXECUTING:
             raise ValueError("剧本正在执行中，请稍候")
 
+        user_text = message.strip()
+
+        # 意图判断：仅视频相关意图进入 ReAct 工具调用流程
+        video_keywords = [
+            "视频", "剧本", "分镜", "配音", "剪辑", "生成", "制作",
+            "ai", "动态图片", "成片", "旁白", "短片", "影片", "故事", "创意", "费用",
+        ]
+        if not any(k in user_text.lower() for k in video_keywords):
+            self._conversations.add(
+                script_id, "master", ConversationRole.MASTER, "抱歉，我只能处理视频生成相关的请求。请描述您的视频创意。"
+            )
+            return "intent-skip", "抱歉，我只能处理视频生成相关的请求。"
+
+        # 信息完整性检查：风格已在请求或剧本中明确时跳过 A2UI 追问
+        style_known = requested_style is not None or script.style_locked
+        detail_keywords = [
+            "秒", "时长", "风格", "分钟", "视频", "ai", "动态",
+            "剧本", "短片", "影片", "创意", "制作", "费用",
+        ]
+        needs_clarification = not style_known and not any(
+            kw in user_text.lower() for kw in detail_keywords
+        )
+
+        if needs_clarification:
+            try:
+                req_response = await self._confirmation.request_script_requirements(
+                    script_id=script_id,
+                    initial_message=user_text,
+                )
+                # 用户已通过 A2UI 补充信息，将表单值合并到 user_text
+                values = req_response.values or {}
+                clarified_parts = []
+                if values.get("theme"):
+                    clarified_parts.append(str(values["theme"]))
+                if values.get("duration_sec"):
+                    clarified_parts.append(f"目标时长 {values['duration_sec']}s")
+                if values.get("style_mode"):
+                    clarified_parts.append(f"风格 {values['style_mode']}")
+                if values.get("main_characters"):
+                    clarified_parts.append(f"人物：{values['main_characters']}")
+                if values.get("main_scenes"):
+                    clarified_parts.append(f"场景：{values['main_scenes']}")
+
+                if clarified_parts:
+                    user_text = "；".join(clarified_parts)
+                    log_stage(
+                        logger,
+                        "super_video_master",
+                        "已通过 A2UI 收集剧本需求",
+                        script_id=script_id,
+                    )
+            except ConfirmationRejectedError:
+                self._conversations.add(
+                    script_id, "master", ConversationRole.MASTER, "已取消剧本生成。"
+                )
+                return "cancelled", "已取消。"
+
         style_mode = bind_script_style(script, project, requested_style)
         await self._emitter.emit(
             {
@@ -112,7 +169,6 @@ class SuperVideoMaster:
             style_mode=style_mode.value,
         )
 
-        user_text = message.strip()
         self._conversations.add(
             script_id, "master", ConversationRole.USER, user_text
         )

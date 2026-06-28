@@ -1,0 +1,25 @@
+<react_session>
+  <conversation_id>{{conversation_id}}</conversation_id>
+  <agent_name>{{agent_name}}</agent_name>
+  <agent>
+    <name>{{agent_name_inner}}</name>
+    <display_name>{{agent_display_name}}</display_name>
+    <description>{{agent_description}}</description>
+  </agent>
+  <task_brief>{{task_brief}}</task_brief>
+  <sub_agents>
+{{sub_agents_xml}}
+  </sub_agents>
+  <tools>
+{{tools_xml}}
+  </tools>
+  <available_actions>
+{{available_actions_xml}}
+  </available_actions>
+  <completed>
+{{completed_xml}}
+  </completed>
+  <observations>
+{{observations_xml}}
+  </observations>{{extra_xml}}
+</react_session>

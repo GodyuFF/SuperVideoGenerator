@@ -285,6 +285,9 @@ export function Workbench({
         });
       }
 
+      if (e.type === "assets_changed") {
+        refreshWorkspace();
+      }
       if (e.type === "script_style_locked" && e.style_mode) {
         const mode = String(e.style_mode);
         if (mode === "dynamic_image" || mode === "ai_video") {

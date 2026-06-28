@@ -6,7 +6,7 @@ from typing import Any
 
 from core.agents.prompts import AGENT_PROMPT_PROFILES, PromptProfile, list_prompt_profiles
 from core.agents.prompt_resolver import resolve_agent_prompts, resolve_prompt_profile
-from core.agents.tools.specs import AGENT_TOOLS
+from core.agents.tools.specs import AGENT_TOOLS, ad_hoc_actions, read_actions
 from core.models.entities import Project, VideoStyleMode
 
 
@@ -89,6 +89,8 @@ class AgentConfigManager:
                     "name": name,
                     "display_name": defn.display_name,
                     "action_pipeline": defn.action_pipeline,
+                    "ad_hoc_actions": ad_hoc_actions(name),
+                    "read_actions": read_actions(name),
                     "prompt_profile": profile.value if profile else None,
                     "effective_role_prompt": bundle.role_prompt,
                     "action_hint": bundle.action_hint,
@@ -97,6 +99,7 @@ class AgentConfigManager:
                             "name": t.name,
                             "description": t.description,
                             "action": t.action,
+                            "read_only": t.read_only,
                         }
                         for t in tools
                     ],

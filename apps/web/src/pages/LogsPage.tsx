@@ -35,10 +35,11 @@ interface LogFileInfo {
 
 interface LogsPageProps {
   scriptId: string | null;
+  projectId?: string | null;
   onBack: () => void;
 }
 
-export function LogsPage({ scriptId, onBack }: LogsPageProps) {
+export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
   const [records, setRecords] = useState<InteractionRecord[]>([]);
   const [kindFilter, setKindFilter] = useState("");
   const [loading, setLoading] = useState(false);
@@ -62,6 +63,7 @@ export function LogsPage({ scriptId, onBack }: LogsPageProps) {
     try {
       const params = new URLSearchParams({ limit: "100" });
       if (scriptId) params.set("script_id", scriptId);
+      if (projectId) params.set("project_id", projectId);
       if (kindFilter) params.set("kind", kindFilter);
       const r = await fetch(`${API}/interactions?${params}`);
       if (!r.ok) {
@@ -99,8 +101,85 @@ export function LogsPage({ scriptId, onBack }: LogsPageProps) {
 
   function formatBody(body: Record<string, unknown> | string | null | undefined) {
     if (body == null) return null;
-    if (typeof body === "string") return body;
-    return JSON.stringify(body, null, 2);
+
+    // 如果是对象，直接美化
+    if (typeof body === "object") {
+      return JSON.stringify(body, null, 2);
+    }
+
+    // 如果是字符串，尝试解析为 JSON
+    if (typeof body === "string") {
+      const trimmed = body.trim();
+      // 尝试解析 JSON
+      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || 
+          (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          return JSON.stringify(parsed, null, 2);
+        } catch {
+          // 解析失败，返回原字符串（保持原样）
+          return trimmed;
+        }
+      }
+      return trimmed;
+    }
+
+    return String(body);
+  }
+
+  /** 检测是否为 Claude Code 风格的结构化 payload */
+  function isClaudePayload(body: any): boolean {
+    return body && typeof body === "object" && body.model && Array.isArray(body.messages);
+  }
+
+  /** 渲染 Claude 风格的结构化日志 */
+  function renderClaudePayload(payload: any) {
+    return (
+      <div className="claude-payload">
+        <div className="payload-header">
+          <span className="model-badge">{payload.model}</span>
+          {payload.tools?.length > 0 && (
+            <span className="tools-badge">{payload.tools.length} tools</span>
+          )}
+        </div>
+
+        {payload.tools?.length > 0 && (
+          <details className="tools-section">
+            <summary>Tools ({payload.tools.length})</summary>
+            <ul>
+              {payload.tools.map((t: any, i: number) => (
+                <li key={i}>
+                  <strong>{t.function?.name}</strong>: {t.function?.description}
+                  <pre>{JSON.stringify(t.function?.parameters, null, 2)}</pre>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+
+        <details className="messages-section" open>
+          <summary>Messages ({payload.messages?.length || 0})</summary>
+          {payload.messages?.map((msg: any, idx: number) => (
+            <div key={idx} className={`message-block role-${msg.role}`}>
+              <div className="message-role">{msg.role}</div>
+              {Array.isArray(msg.content) ? (
+                msg.content.map((c: any, cIdx: number) => (
+                  <div key={cIdx} className="content-block">
+                    <span className="content-type">{c.type}</span>
+                    <pre className="content-text">{c.text}</pre>
+                    {c.cache_control && (
+                      <span className="cache-badge">{c.cache_control.type}</span>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <pre className="content-text">{JSON.stringify(msg.content)}</pre>
+              )}
+            </div>
+          ))}
+        </details>
+      </div>
+    );
   }
 
   return (
@@ -187,13 +266,21 @@ export function LogsPage({ scriptId, onBack }: LogsPageProps) {
                     {reqText && (
                       <div>
                         <strong>request_body</strong>
-                        <pre className="log-pre">{reqText}</pre>
+                        {isClaudePayload(rec.request_body) ? (
+                          renderClaudePayload(rec.request_body)
+                        ) : (
+                          <pre className="log-pre">{reqText}</pre>
+                        )}
                       </div>
                     )}
                     {resText && (
                       <div>
                         <strong>response_body</strong>
-                        <pre className="log-pre">{resText}</pre>
+                        {isClaudePayload(rec.response_body) ? (
+                          renderClaudePayload(rec.response_body)
+                        ) : (
+                          <pre className="log-pre">{resText}</pre>
+                        )}
                       </div>
                     )}
                     {!reqText && !resText && !rec.error && (

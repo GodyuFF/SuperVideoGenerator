@@ -34,6 +34,7 @@ class A2UIConfirmationKind(str):
     SCRIPT_STRUCTURE = "script_structure"  # 剧本结构/粒度确认
     PLAN_APPROVAL = "plan_approval"  # Plan 审批
     VIDEO_GENERATION_COST = "video_generation_cost"  # 视频生成费用确认
+    SCRIPT_REQUIREMENTS = "script_requirements"  # 剧本需求收集（AskUserQuestion）
     GENERIC = "generic"  # 通用确认
 
 
@@ -46,6 +47,7 @@ class A2UIConfirmationRequest(BaseModel):
         "script_structure",
         "plan_approval",
         "video_generation_cost",
+        "script_requirements",
         "generic",
     ]
     title: str

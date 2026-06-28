@@ -46,9 +46,19 @@ def load_store(store: MemoryStore, path: Path | None = None) -> bool:
     store.scripts = {
         k: Script.model_validate(v) for k, v in raw.get("scripts", {}).items()
     }
-    store.text_assets = {
-        k: TextAsset.model_validate(v) for k, v in raw.get("text_assets", {}).items()
-    }
+    store.text_assets = {}
+    for k, v in raw.get("text_assets", {}).items():
+        try:
+            asset = TextAsset.model_validate(v)
+            store.text_assets[k] = asset
+        except Exception:
+            # 兼容旧数据：content 可能为字符串，手动规范化
+            from core.agents.asset_content import normalize_asset_content
+            if isinstance(v, dict) and "content" in v and not isinstance(v["content"], dict):
+                v = dict(v)
+                v["content"] = normalize_asset_content(v["content"], asset_type=v.get("type"))
+            asset = TextAsset.model_validate(v)
+            store.text_assets[k] = asset
     store.references = {
         k: AssetReference.model_validate(v) for k, v in raw.get("references", {}).items()
     }

@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 
 def new_id(prefix: str) -> str:
@@ -190,17 +190,24 @@ class TextAsset(BaseModel):
         if not isinstance(data, dict):
             return data
         raw = data.get("content")
-        if not isinstance(raw, str) or not raw.strip():
+        if raw is None:
             return data
+        if isinstance(raw, dict):
+            return data
+        from core.agents.asset_content import normalize_asset_content
+
         asset_type = data.get("type")
-        type_val = asset_type.value if hasattr(asset_type, "value") else asset_type
-        if type_val == TextAssetType.CHARACTER.value:
-            key = "appearance"
-        elif type_val == TextAssetType.SCENE.value:
-            key = "description"
-        else:
-            key = "text"
-        return {**data, "content": {key: raw.strip()}}
+        normalized = normalize_asset_content(raw, asset_type=asset_type)
+        return {**data, "content": normalized}
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def _validate_content_dict(cls, value: Any, info: ValidationInfo) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        from core.agents.asset_content import normalize_asset_content
+
+        return normalize_asset_content(value, asset_type=info.data.get("type"))
 
 
 class AssetReference(BaseModel):

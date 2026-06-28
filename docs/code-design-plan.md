@@ -24,6 +24,7 @@ SuperVideoGenerator/
 │   ├── events/                 # 事件类型与 EventEmitter
 │   ├── store/                  # 内存/SQLite 仓储
 │   ├── super_video_master/     # ReAct 主编排
+│   ├── prompt/                 # Agent 提示词（fixed/dynamic 分层）
 │   └── agents/                 # 子 Agent（Mock → 真实 API）
 ├── apps/
 │   ├── api/                    # FastAPI + WebSocket
@@ -108,6 +109,26 @@ interface A2UIConfirmationResponse {
 ```
 
 环境变量 `LOG_LEVEL=DEBUG` 可打开详细日志。
+
+## 5.1 提示词数据流（core/prompt）
+
+固定区进入 LLM **system**，动态区进入 **user**（与 Claude Code 缓存边界一致）。详见 [prompt-architecture.md](prompt-architecture.md)。
+
+```
+fixed/role.*.md ──► prompt_resolver ──► role_prompt
+                                              │
+context_window  ◄── ConversationStore ────────┤
+       │                                      │
+       └────► AgentContextManager ──► PromptBuilder.build_react_user / build_action_user
+rules/*.md ──► PromptBuilder.build_react_system / build_action_system
+```
+
+| 组件 | 路径 | 职责 |
+|------|------|------|
+| `PromptBuilder` | `core/prompt/builder.py` | 渲染 templates、组装 system/user |
+| `AgentContextManager` | `core/prompt/context_manager.py` | 子 Agent / 主编排动态槽位 |
+| `prompt_resolver` | `core/agents/prompt_resolver.py` | Profile 与项目覆盖 |
+| `context_window` | `core/prompt/context_window.py` | observation 滑窗压缩 |
 
 ## 6. 实施阶段（本次交付）
 

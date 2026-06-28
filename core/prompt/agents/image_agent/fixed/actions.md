@@ -1,0 +1,3 @@
+- scan_text_assets: count（数字）
+- generate_images: items（[{asset_id, name, url, source_text_asset_id}]，无真实 API 时可省略 items）
+- list_images: observation 描述已生成图片列表

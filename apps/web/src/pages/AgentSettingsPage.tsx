@@ -96,6 +96,9 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
                 {tool.action && (
                   <span className="muted tool-action">→ {tool.action}</span>
                 )}
+                {tool.read_only && (
+                  <span className="muted tool-readonly">只读</span>
+                )}
               </li>
             ))}
           </ul>
@@ -104,6 +107,16 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
         <div className="agent-pipeline muted">
           行动流水线：{agent.action_pipeline.join(" → ")}
         </div>
+        {agent.read_actions.length > 0 && (
+          <div className="agent-pipeline muted">
+            只读查询：{agent.read_actions.join(" · ")}
+          </div>
+        )}
+        {agent.ad_hoc_actions.length > 0 && (
+          <div className="agent-pipeline muted">
+            随时可调：{agent.ad_hoc_actions.join(" · ")}
+          </div>
+        )}
       </article>
     );
   }

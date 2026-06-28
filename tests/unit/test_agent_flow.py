@@ -1,6 +1,6 @@
 """Agent 交互流程验证测试：验证 role_prompt 从 definitions 正确传递到 XML。"""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -16,10 +16,10 @@ from tests.support.scripted_llm import ScriptedLLMClient
 
 @pytest.mark.asyncio
 async def test_agent_role_prompt_flow_to_xml():
-    """验证 registry 设置的 role_prompt 正确传递到 decide_agent 的 role_description。"""
+    """验证 registry 设置的 role_prompt 与各 Agent 定义一致。"""
     store = MemoryStore()
     emitter = EventEmitter()
-    conversations = None  # 不需要真实 conversations
+    conversations = None
     config = LLMConfigManager()
     config.update(api_key="test-key", use_llm_react=True)
     recorder = InteractionRecorder(None, emitter)
@@ -27,37 +27,9 @@ async def test_agent_role_prompt_flow_to_xml():
 
     registry = AgentRegistry(store, emitter, conversations, decider, recorder)
 
-    captured_role_descriptions = {}
-
-    # Patch build_context_xml 以捕获 role_description
-    original_build = __import__("core.llm.xml_protocol", fromlist=["build_context_xml"]).build_context_xml
-
-    def capturing_build_context_xml(role_description, task_brief, available_actions, completed, observations, extra=None):
-        # 记录每个 agent 的 role_description
-        # 通过调用栈识别当前 agent
-        import inspect
-        frame = inspect.currentframe()
-        while frame:
-            if "ctx" in frame.f_locals:
-                ctx = frame.f_locals.get("ctx")
-                if ctx and hasattr(ctx, "agent_name"):
-                    captured_role_descriptions[ctx.agent_name] = role_description
-                    break
-            frame = frame.f_back
-        return original_build(role_description, task_brief, available_actions, completed, observations, extra)
-
-    with patch("core.llm.react_decider.build_context_xml", side_effect=capturing_build_context_xml):
-        # 测试每个 agent
-        for agent_name, definition in AGENT_DEFINITIONS.items():
-            agent = registry.get(agent_name)
-            # 验证 role_prompt 已从 definitions 设置
-            assert agent.role_prompt == definition.role_prompt, f"{agent_name} role_prompt 不匹配"
-
-    # 由于规则回退模式不会调用 LLM，captured_role_descriptions 可能为空
-    # 我们直接验证 registry 中 agent 的 role_prompt 是否正确
     for agent_name, definition in AGENT_DEFINITIONS.items():
         agent = registry.get(agent_name)
-        assert agent.role_prompt == definition.role_prompt
+        assert agent.role_prompt == definition.role_prompt, f"{agent_name} role_prompt 不匹配"
         assert agent.display_name == definition.display_name
 
 

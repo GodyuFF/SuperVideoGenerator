@@ -4,8 +4,7 @@ from core.llm.client import LLMClient
 from core.llm.streaming import OnDelta
 from core.models.entities import PlanDocument, Script, ScriptStatus
 
-SUMMARY_SYSTEM = """你是视频制作助手。根据执行结果为用户写一段简短中文回复（2-4 句）。
-直接输出正文，不要使用 JSON、Markdown 或代码块。"""
+from core.prompt.builder import get_summary_system_prompt
 
 
 async def generate_user_summary(
@@ -42,7 +41,7 @@ async def generate_user_summary(
     }
     try:
         summary = await llm_client.complete_text(
-            SUMMARY_SYSTEM,
+            get_summary_system_prompt(),
             user_content,
             log_context=log_ctx,
             summary_prefix="用户摘要",

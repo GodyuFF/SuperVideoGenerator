@@ -1,0 +1,4 @@
+- load_context: asset_count
+- create_shots: shots（[{order, duration_ms, narration_text, camera_motion}]，必填且至少 1 镜）
+- persist_plan: 无额外字段
+- get_plan: observation 描述当前计划稿

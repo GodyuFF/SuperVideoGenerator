@@ -66,14 +66,21 @@ async def test_pure_react_run_with_handler(llm_config_with_key):
     scripted = ScriptedLLMClient()
     calls = 0
 
-    async def fake_xml_react(role_description, context_xml, log_context=None, on_delta=None):
+    async def fake_json_react(
+        system_prompt,
+        user_content,
+        log_context=None,
+        on_delta=None,
+        response_format=None,
+        **kwargs,
+    ):
         nonlocal calls
         calls += 1
         if calls == 1:
-            return format_react_xml("ping", "tool_ping")
-        return format_react_xml("done", "finish")
+            return {"thought": "ping", "action": "tool_ping", "action_input": {}}
+        return {"thought": "done", "action": "finish", "action_input": {}}
 
-    scripted.complete_xml_react = fake_xml_react
+    scripted.complete_json = fake_json_react
     actions_run: list[str] = []
 
     async def on_action(action: str, action_input: dict) -> str:

@@ -1,0 +1,3 @@
+- gather_media: summary
+- compose_final: asset_id, url, label（无真实 url 时省略 url）
+- list_final: observation 描述成片列表

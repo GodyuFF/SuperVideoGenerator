@@ -361,6 +361,8 @@ interface PlanStep {
 
 ## 8. 子 Agent 设计
 
+> **提示词**：各 Agent 的固定角色说明与行动约束存放在 [`core/prompt/agents/*/fixed/`](../core/prompt/agents/)，动态上下文由 `PromptBuilder` + `AgentContextManager` 按轮次注入。详见 [提示词架构](prompt-architecture.md)。
+
 ### 8.1 剧本 Agent（Script Agent）
 
 **职责**：内容创作的入口 Agent，管理剧本与文字/声音资产。
@@ -685,6 +687,7 @@ SuperVideoGenerator/
 │       └── websocket/
 ├── core/
 │   ├── super_video_master/           # ReAct 主编排 (MasterReActEngine)
+│   ├── prompt/                       # 提示词：fixed 角色 + dynamic 模板 + 滑窗压缩
 │   ├── agents/
 │   │   ├── script_agent/
 │   │   ├── image_agent/

@@ -5,6 +5,7 @@ from typing import Any
 
 from core.llm.react_models import new_conversation_id, ReActAgentInfo, ReActToolInfo
 from core.models.entities import VideoStyleMode
+from core.prompt.registry import PromptProfile, get_agent_role_prompt
 from core.super_video_master.actions import ACTION_TO_STEP, pipeline_for_style, STEP_META
 from core.tools.master_tools import build_master_tools
 
@@ -155,7 +156,7 @@ def create_master_react_session(
         agent=ReActAgentInfo(
             name=agent_name,
             display_name=agent_display_name,
-            description="主编排 Agent：与用户对话隔离，通过 ReAct 委派子 Agent 或调用工具。",
+            description=get_agent_role_prompt(agent_name, PromptProfile.DEFAULT),
         ),
         tools=build_master_tools(),
         sub_agents=build_master_sub_agents(),

@@ -1,0 +1,5 @@
+- parse_brief / update_script: script_md（剧本 markdown）、title（可选）
+- create_plot / create_character / create_scene: asset_name, content（**必须是对象 (dict)**，例如 {"text": "剧情描述文本"} 或 {"appearance": "角色外貌描述"} 或 {"description": "场景描述"}，**绝对禁止返回纯字符串**，否则系统验证失败）
+- update_plot / update_character / update_scene: asset_id（必填）, asset_name（可选）, content（可选）
+- delete_plot / delete_character / delete_scene: asset_id（必填）
+- scan_text_assets / list_text_assets: count 或 observation 描述列表结果

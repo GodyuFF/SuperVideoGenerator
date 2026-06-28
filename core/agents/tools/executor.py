@@ -12,32 +12,40 @@ class AgentToolExecutor:
     def __init__(self, store: MemoryStore) -> None:
         self._store = store
 
-    def execute(self, agent_name: str, tool_name: str, ctx: AgentRunContext) -> str:
+    def execute_by_action(self, agent_name: str, action: str, ctx: AgentRunContext) -> str:
+        """按运行时 action 名执行只读工具。"""
         script_id = ctx.script_id
         project_id = str(ctx.work_context.get("project_id", ""))
 
-        if tool_name == "script.list_text_assets":
+        if action == "list_text_assets":
             return self._list_text_assets(script_id)
-        if tool_name == "image.list":
+        if action == "list_images":
             return self._list_media(project_id, script_id, MediaAssetType.IMAGE)
-        if tool_name == "storyboard.get_plan":
+        if action == "get_plan":
             return self._get_video_plan(script_id)
-        if tool_name == "video.list":
+        if action == "list_videos":
             return self._list_media(project_id, script_id, MediaAssetType.VIDEO)
-        if tool_name == "tts.list":
+        if action == "list_audio":
             return self._list_media(project_id, script_id, MediaAssetType.AUDIO)
-        if tool_name == "edit.list_final":
+        if action == "list_final":
             return self._list_media(project_id, script_id, MediaAssetType.FINAL)
 
-        raise ValueError(f"Agent {agent_name} 不支持工具 {tool_name}")
+        raise ValueError(f"Agent {agent_name} 不支持只读 action「{action}」")
 
     def _list_text_assets(self, script_id: str) -> str:
         assets = self._store.list_assets_for_script(script_id)
         if not assets:
             return "当前无文字资产。"
-        lines = [f"共 {len(assets)} 项文字资产："]
+        refs = self._store.list_references_from(script_id)
+        ref_map = {r.target_id: r.relation.value for r in refs}
+        lines = [f"共 {len(assets)} 项文字资产（剧本 {script_id}）："]
         for a in assets:
-            lines.append(f"- [{a.type.value}] {a.name} ({a.id})")
+            rel = ref_map.get(a.id, "—")
+            src = f" source_script={a.source_script_id}" if a.source_script_id else ""
+            lines.append(
+                f"- [{a.type.value}] {a.name} ({a.id})"
+                f" scope={a.scope.value} relation={rel}{src}"
+            )
         return "\n".join(lines)
 
     def _list_media(

@@ -321,14 +321,27 @@ class BoardBuilder:
             for a in self._store.list_assets_for_script(script_id)
             if a.script_id == script_id
         ]
+        refs = {
+            r.target_id: r.relation.value
+            for r in self._store.list_references_from(script_id)
+        }
+        shared_linked = [
+            a
+            for a in self._store.list_assets_for_script(script_id)
+            if a.script_id != script_id and a.id in refs
+        ]
+        all_assets = private + [a for a in shared_linked if a not in private]
         items = [
             {
                 "id": a.id,
                 "type": a.type.value,
                 "name": a.name,
                 "preview": _asset_preview(a.content),
+                "scope": a.scope.value,
+                "relation": refs.get(a.id),
+                "source_script_id": a.source_script_id,
             }
-            for a in private
+            for a in all_assets
         ]
 
         return BoardView(
@@ -342,6 +355,7 @@ class BoardBuilder:
                 "content_md": script.content_md,
                 "style_mode": script.style_mode.value if script.style_mode else None,
                 "duration_sec": script.duration_sec,
+                "linked_asset_count": len(refs),
             },
         )
 

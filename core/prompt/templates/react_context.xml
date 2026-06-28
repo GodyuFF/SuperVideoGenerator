@@ -1,0 +1,12 @@
+<react_context>
+  <task_brief>{{task_brief}}</task_brief>
+  <available_actions>
+{{available_actions_xml}}
+  </available_actions>
+  <completed_actions>
+{{completed_actions_xml}}
+  </completed_actions>
+  <observations>
+{{observations_xml}}
+  </observations>{{extra_xml}}
+</react_context>

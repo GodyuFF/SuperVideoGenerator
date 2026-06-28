@@ -1,0 +1,3 @@
+- extract_narration: line_count
+- synthesize: asset_id, url, label（无真实 url 时省略 url）
+- list_audio: observation 描述音频列表

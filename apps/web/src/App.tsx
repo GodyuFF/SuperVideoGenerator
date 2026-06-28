@@ -14,7 +14,7 @@ import { Workbench } from "./pages/Workbench";
 export default function App() {
   const { route, navigate } = useAppRoute();
   const llm = useLlmConfig();
-  const { scriptId } = useProject();
+  const { projectId, scriptId } = useProject();
 
   // 从配置页返回时刷新 AI 状态
   useEffect(() => {
@@ -44,6 +44,7 @@ export default function App() {
     return (
       <LogsPage
         scriptId={scriptId}
+        projectId={projectId}
         onBack={() => navigate("chat")}
       />
     );

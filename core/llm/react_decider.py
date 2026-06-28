@@ -6,11 +6,10 @@ from core.agents.react_core import AgentRunContext, ReActDecision
 from core.llm.client import LLMClient
 from core.llm.settings import LLMConfigManager
 from core.interaction_log.recorder import InteractionRecorder
-from core.llm.xml_protocol import (
-    REACT_SYSTEM_PROMPT,
-    build_context_xml,
-    parse_react_xml,
-)
+from core.llm.json_protocol import parse_react_json
+from core.prompt.builder import build_react_system, build_react_json_user
+from core.prompt.registry import PromptProfile
+from core.prompt.context_manager import AgentContextManager
 from core.llm.react_session import ReActSession
 from core.llm.streaming import OnDelta
 from core.logging.setup import get_logger, log_stage
@@ -68,27 +67,24 @@ class LLMReActDecider:
         display_name: str,
         action_pipeline: list[str],
         role_prompt: str = "",
+        read_actions: list[str] | None = None,
+        ad_hoc_actions: list[str] | None = None,
     ) -> ReActDecision:
         self._require_llm()
-        available = list(action_pipeline) + ["finish"]
-
-        extra: dict[str, Any] = {
-            "agent": ctx.agent_name,
-            "step_id": ctx.step_id,
-            "iteration": ctx.iteration,
-        }
-        if ctx.work_context.get("style_mode") is not None:
-            sm = ctx.work_context["style_mode"]
-            extra["style_mode"] = str(sm.value if hasattr(sm, "value") else sm)
-
-        context_xml = build_context_xml(
-            role_description=role_prompt or f"你是{display_name}",
-            task_brief=ctx.task_brief,
-            available_actions=available,
-            completed=list(ctx.completed_actions),
-            observations=ctx.observations,
-            extra=extra,
+        available = (
+            list(action_pipeline)
+            + list(ad_hoc_actions or [])
+            + list(read_actions or [])
+            + ["finish"]
         )
+
+        react_inputs = AgentContextManager.sub_agent.build_react_inputs(
+            ctx,
+            role_prompt=role_prompt,
+            display_name=display_name,
+            available_actions=available,
+        )
+        context_json = build_react_json_user(**react_inputs)
         log_ctx = {
             "project_id": ctx.work_context.get("project_id", ""),
             "script_id": ctx.script_id,
@@ -99,12 +95,13 @@ class LLMReActDecider:
         }
 
         try:
-            raw = await self._client.complete_xml_react(
-                REACT_SYSTEM_PROMPT,
-                context_xml,
+            raw = await self._client.complete_json(
+                build_react_system(role_prompt),
+                context_json,
                 log_context=log_ctx,
+                response_format={"type": "json_object"},
             )
-            decision = parse_react_xml(raw)
+            decision = parse_react_json(raw)
             try:
                 decision.action = self._sanitize_action(decision.action, available)
             except ValueError as e:

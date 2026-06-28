@@ -1,5 +1,6 @@
 """测试用脚本化 LLM 客户端：不发起真实 HTTP，按流水线返回确定性响应。"""
 
+import json
 import re
 from typing import Any
 
@@ -92,10 +93,48 @@ class ScriptedLLMClient:
         log_context: dict[str, Any] | None = None,
         summary_prefix: str = "LLM JSON",
         on_delta: Any = None,
+        response_format: Any = None,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         action_match = re.search(r"当前行动：(\S+)", user_content)
-        action = action_match.group(1) if action_match else "unknown"
-        return _scripted_action_json(action)
+        if action_match:
+            return _scripted_action_json(action_match.group(1))
+
+        ctx = log_context or {}
+        completed = _parse_completed_json(user_content)
+        role = ctx.get("role", "")
+        if role == "master":
+            return self._master_react_json(completed)
+        if role == "sub_agent":
+            return self._sub_agent_react_json(str(ctx.get("agent_name", "")), completed)
+
+        try:
+            data = json.loads(user_content)
+        except json.JSONDecodeError:
+            return _format_react_json("默认结束", "finish")
+
+        for action in data.get("available_actions", []):
+            if action not in completed and action != "finish":
+                return _format_react_json(f"执行 {action}", action)
+        return _format_react_json("完成", "finish")
+
+    def _master_react_json(self, completed: set[str]) -> dict[str, Any]:
+        pipeline = pipeline_for_style(self._style_mode)
+        for action in pipeline:
+            step_type = ACTION_TO_STEP[action]
+            if step_type not in completed:
+                meta = STEP_META[step_type]
+                return _format_react_json(f"委派 {meta['title']}", action)
+        return _format_react_json("全部完成", "finish")
+
+    def _sub_agent_react_json(
+        self, agent_name: str, completed: set[str]
+    ) -> dict[str, Any]:
+        pipeline = self._pipeline_for_agent(agent_name)
+        for action in pipeline:
+            if action not in completed:
+                return _format_react_json(f"[{agent_name}] 执行 {action}", action)
+        return _format_react_json("任务完成", "finish")
 
     async def complete_text(
         self,
@@ -110,6 +149,25 @@ class ScriptedLLMClient:
             for char in text:
                 await on_delta(char)
         return text
+
+
+def _parse_completed_json(user_content: str) -> set[str]:
+    try:
+        data = json.loads(user_content)
+    except json.JSONDecodeError:
+        return set()
+    completed: set[str] = set()
+    for item in data.get("completed_actions", []):
+        text = str(item).strip()
+        if text and text != "无" and not text.startswith("tool:"):
+            completed.add(text)
+    return completed
+
+
+def _format_react_json(
+    thought: str, action: str, action_input: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    return {"thought": thought, "action": action, "action_input": action_input or {}}
 
 
 def _scripted_action_json(action: str) -> dict[str, Any]:
@@ -133,6 +191,19 @@ def _scripted_action_json(action: str) -> dict[str, Any]:
             "observation": "已创建场景资产。",
             "asset_name": "城市街道",
             "content": {"description": "现代都市黄昏"},
+        },
+        "update_script": {
+            "observation": "已更新剧本正文。",
+            "script_md": "# 测试剧本\n\n更新后的内容。",
+        },
+        "update_plot": {
+            "observation": "已更新剧情。",
+            "asset_id": "plot_existing",
+            "content": {"text": "修订后的剧情。"},
+        },
+        "delete_scene": {
+            "observation": "已删除场景。",
+            "asset_id": "scene_to_delete",
         },
         "scan_text_assets": {"observation": "扫描完成。", "count": 2},
         "generate_images": {"observation": "图片已生成。"},

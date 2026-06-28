@@ -9,12 +9,15 @@ export interface AgentToolInfo {
   name: string;
   description: string;
   action: string | null;
+  read_only: boolean;
 }
 
 export interface AgentInfo {
   name: string;
   display_name: string;
   action_pipeline: string[];
+  ad_hoc_actions: string[];
+  read_actions: string[];
   prompt_profile: string | null;
   effective_role_prompt: string;
   action_hint: string;

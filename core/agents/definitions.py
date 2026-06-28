@@ -11,7 +11,7 @@ from core.agents.llm_agents import (
     VideoAgent,
 )
 from core.agents.prompts import default_role_prompt
-from core.agents.tools.specs import AGENT_TOOLS, AgentToolSpec
+from core.agents.tools.specs import AGENT_TOOLS, AgentToolSpec, ad_hoc_actions, pipeline_actions, read_actions
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,8 @@ class AgentDefinition:
     name: str
     display_name: str
     action_pipeline: list[str]
+    ad_hoc_actions: list[str]
+    read_actions: list[str]
     tools: tuple[AgentToolSpec, ...] = ()
 
     @property
@@ -27,50 +29,25 @@ class AgentDefinition:
         return default_role_prompt(self.name)
 
 
-def _def(
-    name: str,
-    display_name: str,
-    action_pipeline: list[str],
-) -> AgentDefinition:
+def _def(name: str, display_name: str) -> AgentDefinition:
+    tools = tuple(AGENT_TOOLS.get(name, []))
     return AgentDefinition(
         name=name,
         display_name=display_name,
-        action_pipeline=action_pipeline,
-        tools=tuple(AGENT_TOOLS.get(name, [])),
+        action_pipeline=pipeline_actions(name),
+        ad_hoc_actions=ad_hoc_actions(name),
+        read_actions=read_actions(name),
+        tools=tools,
     )
 
 
 AGENT_DEFINITIONS: dict[str, AgentDefinition] = {
-    "script_agent": _def(
-        "script_agent",
-        "剧本 Agent",
-        ["parse_brief", "create_plot", "create_character", "create_scene"],
-    ),
-    "image_agent": _def(
-        "image_agent",
-        "图片 Agent",
-        ["scan_text_assets", "generate_images"],
-    ),
-    "storyboard_agent": _def(
-        "storyboard_agent",
-        "分镜 Agent",
-        ["load_context", "create_shots", "persist_plan"],
-    ),
-    "video_agent": _def(
-        "video_agent",
-        "视频 Agent",
-        ["load_shots", "generate_clips"],
-    ),
-    "tts_agent": _def(
-        "tts_agent",
-        "配音 Agent",
-        ["extract_narration", "synthesize"],
-    ),
-    "editing_agent": _def(
-        "editing_agent",
-        "剪辑 Agent",
-        ["gather_media", "compose_final"],
-    ),
+    "script_agent": _def("script_agent", "剧本 Agent"),
+    "image_agent": _def("image_agent", "图片 Agent"),
+    "storyboard_agent": _def("storyboard_agent", "分镜 Agent"),
+    "video_agent": _def("video_agent", "视频 Agent"),
+    "tts_agent": _def("tts_agent", "配音 Agent"),
+    "editing_agent": _def("editing_agent", "剪辑 Agent"),
 }
 
 AGENT_CLASSES: dict[str, type] = {

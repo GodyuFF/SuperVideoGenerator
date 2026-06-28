@@ -20,6 +20,17 @@ def test_all_agents_have_tools():
     for name in AGENT_DEFINITIONS:
         tools = AGENT_TOOLS.get(name, [])
         assert len(tools) >= 2, f"{name} 应至少定义 2 个工具"
+        defn = AGENT_DEFINITIONS[name]
+        assert defn.read_actions, f"{name} 应定义只读 action"
+
+
+def test_agent_config_includes_read_actions():
+    mgr = AgentConfigManager()
+    agents = mgr.list_agents_public()
+    for item in agents:
+        assert item["read_actions"]
+        for tool in item["tools"]:
+            assert "read_only" in tool
 
 
 def test_style_mode_selects_dynamic_image_prompt():

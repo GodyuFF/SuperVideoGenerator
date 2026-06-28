@@ -14,7 +14,9 @@ from core.events.emitter import EventEmitter
 from core.logging.setup import setup_logging
 from core.models.entities import Project, Script
 from core.store.memory import MemoryStore
-from core.store.persist import load_store, schedule_save
+from core.store.persist import load_store, save_store, schedule_save
+import shutil
+from pathlib import Path
 
 
 class AppState:
@@ -88,7 +90,29 @@ async def _ws_emit_handler(event: dict) -> None:
 state.emitter.subscribe(_ws_emit_handler)
 
 
-def create_project(title: str) -> Project:
+def reset_history() -> None:
+    """清理历史数据文件与日志（新建项目时调用）。"""
+    # 清空 dev_store.json
+    store_path = Path("data/dev_store.json")
+    if store_path.exists():
+        store_path.unlink()
+    # 清空 interaction logs
+    log_dir = Path("data/logs/interactions")
+    if log_dir.exists():
+        shutil.rmtree(log_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+    # 重置内存 store（就地清空，保持 super_video_master 等组件引用一致）
+    state.store.clear()
+    load_store(state.store)
+
+
+def create_project(title: str | None = None) -> Project:
+    # 新建项目前清理历史
+    reset_history()
+    if not title or not title.strip():
+        now = datetime.now(timezone.utc)
+        short = now.strftime("%m%d%H%M")
+        title = f"视频项目-{short}"
     project = Project(title=title, created_at=datetime.now(timezone.utc).isoformat())
     state.store.add_project(project)
     state.persist_store()

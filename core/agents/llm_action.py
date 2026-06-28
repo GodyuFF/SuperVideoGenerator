@@ -2,11 +2,21 @@
 
 from typing import Any
 
+from core.agents.asset_content import extract_llm_content_field, normalize_asset_content
 from core.agents.react_core import AgentRunContext
 from core.constants import VIDEO_GEN_COST_PER_SHOT_USD
 from core.llm.client import LLMClient
 from core.logging.setup import get_logger, log_stage
 from core.agents.tools.executor import AgentToolExecutor
+from core.agents.script_assets import (
+    create_text_asset_for_action,
+    delete_text_asset_for_action,
+    update_text_asset_for_action,
+)
+from core.prompt.config import ASSET_SUMMARY_MAX, SCRIPT_MD_CONTEXT_MAX
+from core.prompt.builder import build_action_system, build_action_user
+from core.prompt.context_manager import AgentContextManager
+from core.prompt.registry import PromptProfile
 from core.models.entities import (
     AssetReference,
     AssetScope,
@@ -27,47 +37,13 @@ from core.store.persist import schedule_save
 
 logger = get_logger("core.agents.llm_action")
 
-ACTION_JSON_SYSTEM_BASE = """你是视频制作流水线中的专业 Agent，正在执行 ReAct 循环中的单个行动。
-根据任务简报、历史观察与当前行动，生成执行结果。
 
-必须且只能返回一个 JSON 对象（不要 Markdown 代码块），至少包含：
-{"observation": "给 ReAct 的简短观察（中文）"}
+def build_action_system_prompt(
+    agent_name: str,
+    profile: PromptProfile = PromptProfile.DEFAULT,
+) -> str:
+    return build_action_system(agent_name, profile)
 
-规则：
-1. 剧情、人物、场景、旁白必须紧扣任务简报中的「用户创意」，禁止通用模板文案（如「开场旁白」「情节发展」）。
-2. create_shots 的 narration_text 须引用当前剧本与文字资产中的具体内容。
-3. 未接入真实媒体 API 时，generate_images / generate_clips / synthesize / compose_final 不要编造 url，只返回 observation。
-
-按行动补充字段（示例）：
-- parse_brief: script_md（剧本 markdown 字符串）
-- create_plot / create_character / create_scene: asset_name, content（对象或字符串）
-- scan_text_assets: count（数字）
-- generate_images: items（[{asset_id, name, url, source_text_asset_id}]，无真实 API 时可省略 items）
-- load_context: asset_count
-- create_shots: shots（[{order, duration_ms, narration_text, camera_motion}]，必填且至少 1 镜）
-- persist_plan: 无额外字段
-- load_shots: shot_count, estimated_cost_usd
-- generate_clips: clips（[{label, asset_id, url}]，无真实 API 时可省略 clips）
-- extract_narration: line_count
-- synthesize: asset_id, url, label（无真实 url 时省略 url）
-- gather_media: summary
-- compose_final: asset_id, url, label（无真实 url 时省略 url）
-"""
-
-
-def build_action_system_prompt(action_hint: str = "") -> str:
-    if not action_hint.strip():
-        return ACTION_JSON_SYSTEM_BASE
-    return f"{ACTION_JSON_SYSTEM_BASE}\n模式补充：{action_hint.strip()}\n"
-
-_SCRIPT_MD_MAX = 2000
-_ASSET_SUMMARY_MAX = 120
-
-_ASSET_CONTENT_KEY: dict[str, str] = {
-    "create_plot": "text",
-    "create_character": "appearance",
-    "create_scene": "description",
-}
 
 
 def _persist_media(
@@ -116,14 +92,7 @@ def _is_placeholder_url(url: str) -> bool:
 
 def _coerce_asset_content(action: str, raw: Any, observation: str) -> dict[str, Any]:
     """将 LLM 返回的 content（可能是 str 或 dict）规范为 TextAsset 所需的 dict。"""
-    key = _ASSET_CONTENT_KEY.get(action, "text")
-    if isinstance(raw, dict) and raw:
-        return raw
-    if isinstance(raw, str) and raw.strip():
-        return {key: raw.strip()}
-    if observation.strip():
-        return {key: observation.strip()}
-    return {key: ""}
+    return normalize_asset_content(raw, action=action, observation=observation)
 
 
 def _asset_content_summary(content: dict[str, Any]) -> str:
@@ -131,8 +100,8 @@ def _asset_content_summary(content: dict[str, Any]) -> str:
         val = content.get(key)
         if isinstance(val, str) and val.strip():
             text = val.strip()
-            if len(text) > _ASSET_SUMMARY_MAX:
-                return text[:_ASSET_SUMMARY_MAX] + "…"
+            if len(text) > ASSET_SUMMARY_MAX:
+                return text[:ASSET_SUMMARY_MAX] + "…"
             return text
     return ""
 
@@ -148,8 +117,8 @@ def _build_store_context_block(store: MemoryStore, work_context: dict[str, Any])
     script = store.get_script(script_id) if script_id else None
     if script and script.content_md.strip():
         md = script.content_md.strip()
-        if len(md) > _SCRIPT_MD_MAX:
-            md = md[:_SCRIPT_MD_MAX] + "…"
+        if len(md) > SCRIPT_MD_CONTEXT_MAX:
+            md = md[:SCRIPT_MD_CONTEXT_MAX] + "…"
         lines.append(f"当前剧本正文：\n{md}")
 
     assets = store.list_assets_for_script(script_id) if script_id else []
@@ -194,28 +163,28 @@ def build_action_user_content(
     observations: list[str],
     completed_actions: set[str],
     work_context: dict[str, Any],
+    history_summary: str = "",
 ) -> str:
-    obs = "\n".join(f"- {o}" for o in observations) or "- 无"
-    done = ", ".join(sorted(completed_actions)) or "无"
-    ctx_parts = []
-    for key in ("script_id", "project_id", "style_mode"):
-        if key in work_context:
-            val = work_context[key]
-            if hasattr(val, "value"):
-                val = val.value
-            ctx_parts.append(f"{key}={val}")
-    ctx_line = ", ".join(ctx_parts)
-    store_block = _build_store_context_block(store, work_context)
-    return (
-        f"角色：{display_name}\n"
-        f"角色说明：{role_prompt}\n"
-        f"任务简报：{task_brief}\n"
-        f"工作上下文：{ctx_line}\n"
-        f"{store_block}"
-        f"当前行动：{action}\n"
-        f"已完成行动：{done}\n"
-        f"历史观察：\n{obs}\n"
+    ctx = AgentRunContext(
+        task_brief=task_brief,
+        work_context=work_context,
+        script_id=str(work_context.get("script_id", "")),
+        step_id="",
+        agent_name="",
+        completed_actions=completed_actions,
+        observations=observations,
+        history_summary=history_summary,
     )
+    store_block = _build_store_context_block(store, work_context)
+    slots = AgentContextManager.sub_agent.build_action_slots(
+        ctx,
+        store,
+        role_prompt=role_prompt,
+        display_name=display_name,
+        action=action,
+        store_context_block=store_block,
+    )
+    return build_action_user(slots)
 
 
 def apply_action_result(
@@ -239,52 +208,106 @@ def apply_action_result(
             title = script.title or user_message or "未命名剧本"
             body = observation or user_message or "待补充剧情"
             script.content_md = f"# {title}\n\n{body}"
+        if script and data.get("title"):
+            script.title = str(data["title"])
         if not observation:
-            observation = f"已解析任务简报，剧本 ID={script_id}。"
+            observation = f"已解析任务简报并设计剧本，剧本 ID={script_id}。"
+
+    elif action == "update_script":
+        script = store.get_script(script_id)
+        if not script:
+            observation = observation or f"剧本 {script_id} 不存在。"
+        else:
+            if data.get("title"):
+                script.title = str(data["title"])
+            if data.get("script_md"):
+                script.content_md = str(data["script_md"])
+            if not observation:
+                observation = f"已更新剧本「{script.title}」正文。"
 
     elif action == "create_plot":
-        plot = TextAsset(
+        plot = create_text_asset_for_action(
+            store,
+            action=action,
             project_id=project_id,
             script_id=script_id,
-            scope=AssetScope.SCRIPT_PRIVATE,
-            type=TextAssetType.PLOT,
-            name=str(data.get("asset_name", "剧情段落1")),
-            content=_coerce_asset_content(action, data.get("content"), observation),
+            asset_name=str(data.get("asset_name", "剧情段落1")),
+            content=extract_llm_content_field(data, action),
+            observation=observation,
         )
-        store.add_text_asset(plot)
         ctx.outputs.append(StepOutput(kind="json", label="plot", asset_id=plot.id))
         if not observation:
-            observation = f"已创建剧情资产 {plot.id}。"
+            observation = f"已创建剧情资产 {plot.id}，并关联到剧本。"
 
     elif action == "create_character":
-        character = TextAsset(
+        character = create_text_asset_for_action(
+            store,
+            action=action,
             project_id=project_id,
-            scope=AssetScope.PROJECT_SHARED,
-            type=TextAssetType.CHARACTER,
-            name=str(data.get("asset_name", "主角")),
-            content=_coerce_asset_content(action, data.get("content"), observation),
-            source_script_id=script_id,
+            script_id=script_id,
+            asset_name=str(data.get("asset_name", "主角")),
+            content=extract_llm_content_field(data, action),
+            observation=observation,
         )
-        store.add_text_asset(character)
         ctx.outputs.append(
             StepOutput(kind="json", label="character", asset_id=character.id)
         )
         if not observation:
-            observation = f"已创建人物资产 {character.id}。"
+            observation = f"已创建人物资产 {character.id}，并关联到剧本。"
 
     elif action == "create_scene":
-        scene = TextAsset(
+        scene = create_text_asset_for_action(
+            store,
+            action=action,
             project_id=project_id,
-            scope=AssetScope.PROJECT_SHARED,
-            type=TextAssetType.SCENE,
-            name=str(data.get("asset_name", "场景")),
-            content=_coerce_asset_content(action, data.get("content"), observation),
-            source_script_id=script_id,
+            script_id=script_id,
+            asset_name=str(data.get("asset_name", "场景")),
+            content=extract_llm_content_field(data, action),
+            observation=observation,
         )
-        store.add_text_asset(scene)
         ctx.outputs.append(StepOutput(kind="json", label="scene", asset_id=scene.id))
         if not observation:
-            observation = f"已创建场景资产 {scene.id}。"
+            observation = f"已创建场景资产 {scene.id}，并关联到剧本。"
+
+    elif action in ("update_plot", "update_character", "update_scene"):
+        asset_id = str(data.get("asset_id", "")).strip()
+        if not asset_id:
+            observation = observation or "更新失败：缺少 asset_id。"
+        else:
+            try:
+                asset = update_text_asset_for_action(
+                    store,
+                    action=action,
+                    script_id=script_id,
+                    asset_id=asset_id,
+                    asset_name=str(data["asset_name"]) if data.get("asset_name") else None,
+                    content=extract_llm_content_field(data, action),
+                    observation=observation,
+                )
+                ctx.outputs.append(
+                    StepOutput(kind="json", label=asset.type.value, asset_id=asset.id)
+                )
+                if not observation:
+                    observation = f"已更新{asset.type.value}资产 {asset.id}。"
+            except Exception as e:
+                observation = observation or f"更新失败：{e}"
+
+    elif action in ("delete_plot", "delete_character", "delete_scene"):
+        asset_id = str(data.get("asset_id", "")).strip()
+        if not asset_id:
+            observation = observation or "删除失败：缺少 asset_id。"
+        else:
+            try:
+                delete_text_asset_for_action(
+                    store,
+                    action=action,
+                    script_id=script_id,
+                    asset_id=asset_id,
+                )
+                if not observation:
+                    observation = f"已删除资产 {asset_id} 并解除与剧本的关联。"
+            except Exception as e:
+                observation = observation or f"删除失败：{e}"
 
     elif action == "scan_text_assets":
         summary = AgentToolExecutor.scan_summary(store, script_id)
@@ -506,9 +529,10 @@ async def run_llm_action(
         display_name=display_name,
         action=action,
         task_brief=ctx.task_brief,
-        observations=ctx.observations,
+        observations=ctx.llm_observations or ctx.observations,
         completed_actions=ctx.completed_actions,
         work_context=ctx.work_context,
+        history_summary=ctx.history_summary,
     )
     log_ctx = {
         "project_id": ctx.work_context.get("project_id", ""),
@@ -519,7 +543,7 @@ async def run_llm_action(
         "action": action,
     }
     data = await llm_client.complete_json(
-        system_prompt or build_action_system_prompt(),
+        system_prompt or build_action_system_prompt(agent_name),
         user_content,
         log_context=log_ctx,
         summary_prefix=f"动作 {action}",

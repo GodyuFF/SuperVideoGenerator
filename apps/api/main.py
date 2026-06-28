@@ -59,3 +59,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 def health():
     """健康检查。"""
     return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

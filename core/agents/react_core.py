@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 from core.agents.conversation import ConversationRole, ConversationStore
+from core.agents.script_assets import SCRIPT_MUTATION_ACTIONS
 from core.constants import MAX_REACT_ITERATIONS, VIDEO_GEN_COST_PER_SHOT_USD
 from core.events.emitter import EventEmitter
 from core.logging.setup import get_logger, log_stage
@@ -32,6 +33,8 @@ class AgentRunContext:
     agent_name: str
     completed_actions: set[str] = field(default_factory=set)
     observations: list[str] = field(default_factory=list)
+    llm_observations: list[str] = field(default_factory=list)
+    history_summary: str = ""
     outputs: list[StepOutput] = field(default_factory=list)
     iteration: int = 0
 
@@ -93,8 +96,13 @@ class ReActRunner:
 
         log_stage(logger, "react.agent", "子 Agent ReAct 开始", agent=agent_name, step_id=step_id)
 
+        from core.prompt.context_window import prepare_sub_agent_context
+
         for _ in range(MAX_REACT_ITERATIONS):
             ctx.iteration += 1
+            prepared = prepare_sub_agent_context(ctx, self._conversations)
+            ctx.llm_observations = prepared.observations
+            ctx.history_summary = prepared.history_summary
             decision = await decide(ctx)
 
             self._conversations.add(
@@ -151,6 +159,17 @@ class ReActRunner:
                     "action": decision.action,
                 },
             )
+
+            if agent_name == "script_agent" and decision.action in SCRIPT_MUTATION_ACTIONS:
+                await self._emitter.emit(
+                    {
+                        "type": "assets_changed",
+                        "script_id": script_id,
+                        "agent_name": agent_name,
+                        "action": decision.action,
+                        "step_id": step_id,
+                    }
+                )
 
         log_stage(
             logger,

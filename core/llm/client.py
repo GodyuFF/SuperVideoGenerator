@@ -202,12 +202,16 @@ class LLMClient:
 
     async def complete_xml_react(
         self,
-        role_description: str,
+        role_description: str | list[dict[str, Any]],
         context_xml: str,
         log_context: dict[str, Any] | None = None,
         on_delta: OnDelta | None = None,
     ) -> str:
-        """发送系统提示 + XML 上下文，流式返回模型原始文本（应含 <react>）。"""
+        """发送系统提示 + XML 上下文，流式返回模型原始文本（应含 <react>）。
+
+        role_description 支持 str（旧版）或 list[dict]（Claude Code 风格多块 system）。
+        list 情况下会提取 text 字段拼接为单字符串（兼容 OpenAI 格式），cache_control 保留为元数据供未来 Anthropic 客户端使用。
+        """
         ctx = log_context or {}
         api_key = self._config.resolved_api_key()
         if not api_key:
@@ -216,13 +220,33 @@ class LLMClient:
         settings = self._config.get_settings()
         url = f"{self._config.resolved_base_url()}/chat/completions"
         model = self._config.resolved_model()
+
+        if isinstance(role_description, list):
+            system_text = "\n\n".join(
+                b.get("text", "") for b in role_description if isinstance(b, dict) and b.get("text")
+            )
+        else:
+            system_text = role_description
+
+        # 构建 Claude Code 风格的结构化 payload（用于日志展示）
+        claude_payload = {
+            "model": model,
+            "tools": [],  # ReAct 暂无 tools，未来可扩展
+            "messages": [
+                {
+                    "role": "system",
+                    "content": [
+                        {"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}
+                    ]
+                },
+                {"role": "user", "content": context_xml}
+            ]
+        }
+
         messages = [
             {
                 "role": "system",
-                "content": (
-                    f"{role_description}\n\n"
-                    "下方用户消息为 XML 格式的 ReAct 上下文，请仅用 XML 的 <react> 块回复。"
-                ),
+                "content": system_text,
             },
             {"role": "user", "content": context_xml},
         ]
@@ -251,6 +275,7 @@ class LLMClient:
         log_context: dict[str, Any] | None = None,
         summary_prefix: str = "LLM 文本",
         on_delta: OnDelta | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> str:
         """流式文本补全，返回完整字符串。"""
         ctx = log_context or {}
@@ -270,9 +295,12 @@ class LLMClient:
             "Content-Type": "application/json",
         }
 
+        extra = {}
+        if response_format:
+            extra["response_format"] = response_format
         return await self._stream_chat_completions(
             messages,
-            {},
+            extra,
             log_context=ctx,
             summary_prefix=summary_prefix,
             url=url,
@@ -290,6 +318,7 @@ class LLMClient:
         log_context: dict[str, Any] | None = None,
         summary_prefix: str = "LLM JSON",
         on_delta: OnDelta | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """通用 JSON 补全：流式接收后解析 JSON。"""
         ctx = log_context or {}
@@ -299,6 +328,7 @@ class LLMClient:
             log_context=ctx,
             summary_prefix=summary_prefix,
             on_delta=on_delta,
+            response_format=response_format,
         )
         parsed = self._parse_json_content(content)
         log_stage(

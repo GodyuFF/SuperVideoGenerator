@@ -3,6 +3,7 @@
 from typing import Literal
 
 from core.models.entities import VideoStyleMode
+from core.prompt.registry import PromptProfile, extract_role_summary, get_agent_role_prompt
 
 MasterActionName = Literal[
     "delegate_script_design",
@@ -23,35 +24,42 @@ ACTION_TO_STEP: dict[str, str] = {
     "delegate_edit_compose": "edit_compose",
 }
 
+
+def _step_description(agent_name: str) -> str:
+    """从 Agent 固定 role 提示词提取一步骤摘要。"""
+    role = get_agent_role_prompt(agent_name, PromptProfile.DEFAULT)
+    return extract_role_summary(role) or agent_name
+
+
 STEP_META: dict[str, dict[str, str]] = {
     "script_design": {
         "title": "剧本与文字资产设计",
-        "description": "生成剧情、角色、场景等文字资产",
+        "description": _step_description("script_agent"),
         "agent": "script_agent",
     },
     "image_gen": {
         "title": "图片素材生成",
-        "description": "为文字资产生成图片",
+        "description": _step_description("image_agent"),
         "agent": "image_agent",
     },
     "storyboard": {
         "title": "分镜与视频计划稿",
-        "description": "生成镜头列表与运镜",
+        "description": _step_description("storyboard_agent"),
         "agent": "storyboard_agent",
     },
     "video_gen": {
         "title": "AI 视频生成",
-        "description": "按镜头调用视频生成 API",
+        "description": _step_description("video_agent"),
         "agent": "video_agent",
     },
     "tts_gen": {
         "title": "配音生成",
-        "description": "TTS 生成旁白音频",
+        "description": _step_description("tts_agent"),
         "agent": "tts_agent",
     },
     "edit_compose": {
         "title": "剪辑合成",
-        "description": "合成最终成片",
+        "description": _step_description("editing_agent"),
         "agent": "editing_agent",
     },
 }
