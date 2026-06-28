@@ -128,7 +128,7 @@ async def test_ai_video_cost_confirm_requires_approval(harness):
                     return
 
     approve_task = asyncio.create_task(auto_approve())
-    await master.run_from_message(project.id, script.id, "费用确认测试")
+    await master.run_from_message(project.id, script.id, "视频费用确认测试")
     await approve_task
 
     assert script.status == ScriptStatus.COMPLETED
@@ -164,7 +164,7 @@ async def test_ai_video_cost_confirm_rejected_fails(harness):
                     return
 
     reject_task = asyncio.create_task(auto_reject())
-    await master.run_from_message(project.id, script.id, "拒绝费用测试")
+    await master.run_from_message(project.id, script.id, "视频费用拒绝测试")
     await reject_task
 
     assert script.status == ScriptStatus.FAILED
@@ -183,7 +183,7 @@ async def test_sub_agents_emit_react_events(harness):
         events.append(e)
 
     emitter.subscribe(capture)
-    await master.run_from_message(project.id, script.id, "事件测试")
+    await master.run_from_message(project.id, script.id, "视频流水线事件测试")
 
     agent_thoughts = [e for e in events if e.get("type") == "agent_react_thought"]
     assert len(agent_thoughts) >= 5

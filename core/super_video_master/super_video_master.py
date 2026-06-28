@@ -109,15 +109,16 @@ class SuperVideoMaster:
             )
             return "intent-skip", "抱歉，我只能处理视频生成相关的请求。"
 
-        # 信息完整性检查：风格已在请求或剧本中明确时跳过 A2UI 追问
-        style_known = requested_style is not None or script.style_locked
-        detail_keywords = [
-            "秒", "时长", "风格", "分钟", "视频", "ai", "动态",
-            "剧本", "短片", "影片", "创意", "制作", "费用",
-        ]
-        needs_clarification = not style_known and not any(
-            kw in user_text.lower() for kw in detail_keywords
+        # 信息完整性检查：项目/剧本已具备风格与时长上下文时跳过 A2UI 追问
+        style_known = (
+            requested_style is not None
+            or script.style_locked
+            or project.config.style.mode is not None
         )
+        has_duration_context = bool(script.duration_sec) or any(
+            kw in user_text.lower() for kw in ["秒", "时长", "分钟"]
+        )
+        needs_clarification = not (style_known and has_duration_context)
 
         if needs_clarification:
             try:
