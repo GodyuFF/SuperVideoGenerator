@@ -1,4 +1,3 @@
 """全局常量（避免多处重复定义）。"""
 
 MAX_REACT_ITERATIONS = 20
-VIDEO_GEN_COST_PER_SHOT_USD = 0.15

@@ -13,13 +13,21 @@
 | 项目规则 | CLAUDE.md 注入对话 | 项目 `role_prompt` override（`prompt_resolver`） |
 | 按需加载 | Skills / MCP | `PromptProfile`（default / dynamic_image / ai_video） |
 
-**边界约定**：LLM 调用时 `system` 仅含固定区；`user` 含全部动态上下文（ReAct JSON 或行动文本）。
+**边界约定**：LLM 调用时 `system` 仅含固定区；动态上下文以 **多轮 Chat 消息**（`user` / `assistant`）+ 末条状态 `user` 注入。
+
+| Chat 角色 | 来源（ConversationRole） |
+|-----------|-------------------------|
+| `user` | `USER`、`TASK`、`OBSERVATION` |
+| `assistant` | `MASTER`、`THOUGHT`、`ACTION` |
+
+历史由 `core/prompt/chat_messages.py` 从 `ConversationStore` 构建，并经 `context_window.fit_chat_history` 滑窗压缩。
 
 ## 2. 目录结构
 
 ```
 core/prompt/
 ├── builder.py              # PromptBuilder：组装 system / user
+├── chat_messages.py        # ConversationMessage → Chat API 多轮历史
 ├── context_manager.py      # 每 Agent 动态槽位 Provider
 ├── context_window.py       # observation / 历史滑窗压缩
 ├── registry.py             # 加载 fixed 提示词、PromptProfile
@@ -38,7 +46,6 @@ core/prompt/
         ├── role.ai_video.md        # 可选
         ├── actions.md              # 该 Agent JSON 字段说明
         ├── hint.{profile}.md       # 模式补充（拼入 action system）
-        ├── intent.md               # 对话入口意图门卫（LLM JSON）
         └── summary.md              # 仅 super_video_master
 ```
 
@@ -59,20 +66,19 @@ core/prompt/
 统一 JSON 协议（`rules/react_json.md`），主编排与子 Agent 共用 `decide_react`：
 
 ```
-system: build_react_system(role_prompt)  ← rules/react_json.md + 角色 fixed/role.*
-user:   build_react_json_user(slots)     ← JSON 动态槽位
-        子 Agent：slots 由 AgentContextManager.sub_agent 填充
-        主编排：build_master_context_json(session)（含 sub_agents、tools）
+system:  build_react_system(role_prompt)     ← 固定区
+history: build_*_react_chat_history(store)   ← 多轮 user/assistant（滑窗压缩）
+user:    build_react_json_user(状态快照)      ← 末条：available_actions / completed 等
+         有 history 时省略 observations / history_summary，避免重复
 ```
 
 ### 3.2 行动执行（JSON observation）
 
 ```
-system: build_action_system(agent, profile)
-        ← rules/action_json.md + fixed/actions.md + fixed/hint.*
-user:   build_action_user(slots)
-        ← templates/action_context.txt
-        slots 含 store 快照、历史观察、当前 action
+system:  build_action_system(agent, profile)
+history: build_agent_react_chat_history(store, agent)
+user:    build_action_user(slots)              ← 当前 action + store 快照
+         有 history 时省略 observations_block / history_summary_block
 ```
 
 ## 4. 动态槽位
@@ -83,12 +89,12 @@ user:   build_action_user(slots)
 | `task_brief` | 主编排委派 / 会话 | ✓ | ✓ |
 | `available_actions` | `tools/specs.py` | ✓ | — |
 | `completed_actions` | `AgentRunContext` | ✓ | ✓ |
-| `observations` | `PreparedContext`（滑窗压缩） | ✓ | ✓ |
-| `history_summary` | `context_window` | ✓ | ✓ |
+| `observations` | `PreparedContext` / 会话 OBSERVATION 消息 | ✓（无 history 时） | ✓（无 history 时） |
+| `history_summary` | `context_window` 压缩摘要 | ✓（无 history 时） | ✓（无 history 时） |
 | `store_context` | MemoryStore 快照 | — | ✓ |
 | `style_mode` / `iteration` | work_context / extra | ✓ | — |
 
-子 Agent 会话历史由 `ConversationStore` 按 `(script_id, agent_name)` 隔离；压缩逻辑见 `context_window.py`。
+子 Agent 会话历史由 `ConversationStore` 按 `(conversation_id, agent_name)` 隔离；主会话按 `conversation_id`；压缩逻辑见 `context_window.py`。
 
 ## 5. Profile 解析优先级
 
@@ -113,20 +119,21 @@ user:   build_action_user(slots)
 | 模块 | 职责 |
 |------|------|
 | [`core/prompt/builder.py`](../core/prompt/builder.py) | 固定/动态组装 |
+| [`core/prompt/chat_messages.py`](../core/prompt/chat_messages.py) | 多轮 Chat 历史构建 |
 | [`core/prompt/context_manager.py`](../core/prompt/context_manager.py) | 动态槽位 |
 | [`core/agents/base.py`](../core/agents/base.py) | 子 Agent ReAct / action 入口 |
 | [`core/llm/react_decide.py`](../core/llm/react_decide.py) | 统一 JSON ReAct 决策（主编排 + 子 Agent） |
 | [`core/llm/protocol.py`](../core/llm/protocol.py) | `parse_react_json` |
 | [`core/llm/master/`](../core/llm/master/) | 主编排 ReActSession、actions、tools、`MasterReActEngine` |
 | [`core/conversation/`](../core/conversation/) | 主/子 Agent 消息隔离 |
-| [`core/super_video_master/intent.py`](../core/super_video_master/intent.py) | 对话入口 LLM 意图门卫（`fixed/intent.md`） |
 
 ## 8. 变更记录
 
 | 日期 | 变更 |
 |------|------|
-| 2026-06-27 | 主编排收敛至 `core/llm/master/`；会话存储迁至 `core/conversation/` |
+| 2026-06-27 | LLM 调用改为 system + 多轮 user/assistant；ReAct / 行动 / 摘要均注入 `ConversationStore` 历史 |
 | 2026-06-27 | 收敛 `core/llm`：统一 JSON ReAct（`react_decide.py`），删除 XML 遗留；主编排会话迁至 `super_video_master/session.py` |
-| 2026-06-28 | 对话入口意图判断改为 LLM 分类（`intent.md`），移除关键词硬编码拦截 |
+| 2026-06-28 | 移除对话入口 LLM 意图门卫，用户消息直接进入主编排 ReAct |
+| 2026-06-28 | 多轮对话：`Conversation` 实体 + `conversation_id` 隔离消息；持久化至 `dev_store.json`；工作台历史列表与唤醒 |
 | 2026-06-24 | 引入 fixed/dynamic 分层、`PromptBuilder`、`AgentContextManager`；7 个 Agent 提示词重写为 Claude Code 分段格式 |
 | 2026-06-25 | 修复 TextAsset content 验证错误：修改 script_agent actions.md 与 role.default.md 及全局 action_json.md，明确要求 content 必须为对象（dict），禁止字符串；LLM 现按规范返回对象，normalization 保留兜底 |

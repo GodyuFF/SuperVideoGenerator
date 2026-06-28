@@ -17,10 +17,9 @@ import type {
 } from "../types/chat";
 import { normalizeActionInput } from "../types/chat";
 import type { LLMConfig, PlanStep, StepOutput } from "../types";
+import type { ConversationMessageRecord, ConversationSummary } from "../types/conversation";
 
 const API = "/api";
-
-type GenerationMode = "auto" | "cost_confirm";
 
 interface ScriptMeta {
   style_mode?: string;
@@ -57,10 +56,11 @@ export function Workbench({
     scriptId
   );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [conversationList, setConversationList] = useState<ConversationSummary[]>([]);
   const [input, setInput] = useState("");
   const [planSteps, setPlanSteps] = useState<PlanStep[]>([]);
   const [scriptStatus, setScriptStatus] = useState("draft");
-  const [generationMode, setGenerationMode] = useState<GenerationMode>("cost_confirm");
   const [styleMode, setStyleMode] = useState<StyleMode>("dynamic_image");
   const [styleLocked, setStyleLocked] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
@@ -132,6 +132,58 @@ export function Workbench({
     []
   );
 
+  const loadConversations = useCallback(async () => {
+    if (!projectId) return;
+    const q = scriptId ? `?script_id=${encodeURIComponent(scriptId)}` : "";
+    const r = await fetch(`${API}/projects/${projectId}/conversations${q}`);
+    if (!r.ok) return;
+    const items = (await r.json()) as ConversationSummary[];
+    setConversationList(items);
+  }, [projectId, scriptId]);
+
+  const messagesFromRecords = useCallback(
+    (records: ConversationMessageRecord[]): ChatMessage[] =>
+      records.map((m, i) =>
+        m.role === "user"
+          ? { kind: "user" as const, id: `hist-user-${i}`, text: m.content }
+          : { kind: "assistant" as const, id: `hist-master-${i}`, text: m.content }
+      ),
+    []
+  );
+
+  const loadConversationMessages = useCallback(
+    async (conversationId: string) => {
+      if (!projectId) return;
+      const r = await fetch(
+        `${API}/projects/${projectId}/conversations/${conversationId}/messages`
+      );
+      if (!r.ok) return;
+      const records = (await r.json()) as ConversationMessageRecord[];
+      setMessages(messagesFromRecords(records));
+      setActiveConversationId(conversationId);
+      lastEventIndex.current = events.length;
+      streamMessageIds.current.clear();
+    },
+    [projectId, messagesFromRecords, events]
+  );
+
+  const startNewConversation = useCallback(async () => {
+    if (!projectId || !scriptId) return;
+    const r = await fetch(
+      `${API}/projects/${projectId}/scripts/${scriptId}/conversations`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "新对话" }),
+      }
+    );
+    if (!r.ok) return;
+    const data = (await r.json()) as { conversation_id: string };
+    setActiveConversationId(data.conversation_id);
+    setMessages([]);
+    await loadConversations();
+  }, [projectId, scriptId, loadConversations]);
+
   const loadScriptMeta = useCallback(async () => {
     if (!projectId || !scriptId) return;
     const r = await fetch(`${API}/projects/${projectId}/scripts/${scriptId}`);
@@ -162,14 +214,23 @@ export function Workbench({
   useEffect(() => {
     if (projectId && scriptId) {
       refreshWorkspace();
+      loadConversations();
     }
-  }, [projectId, scriptId, refreshWorkspace]);
+  }, [projectId, scriptId, refreshWorkspace, loadConversations]);
 
   useEffect(() => {
     const newEvents = events.slice(lastEventIndex.current);
     lastEventIndex.current = events.length;
 
     newEvents.forEach((e) => {
+      const eventConvId = e.conversation_id ? String(e.conversation_id) : null;
+      if (
+        eventConvId &&
+        activeConversationId &&
+        eventConvId !== activeConversationId
+      ) {
+        return;
+      }
       const streamKind = e.kind ? String(e.kind) : "";
 
       if (e.type === "llm_stream_start" && e.stream_id) {
@@ -342,6 +403,7 @@ export function Workbench({
     });
   }, [
     events,
+    activeConversationId,
     refreshWorkspace,
     appendMessage,
     updateMessage,
@@ -382,19 +444,36 @@ export function Workbench({
     lastEventIndex.current = events.length;
     streamMessageIds.current.clear();
 
-    const postChat = async (p: string, s: string) =>
+    const postChat = async (p: string, s: string, convId: string | null) =>
       fetch(`${API}/projects/${p}/scripts/${s}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text,
-          generation_mode: generationMode,
+          ...(convId ? { conversation_id: convId } : {}),
           ...(styleLocked ? {} : { style_mode: styleMode }),
         }),
       });
 
     try {
-      const r = await postChat(pid, sid);
+      let convId = activeConversationId;
+      if (!convId) {
+        const cr = await fetch(
+          `${API}/projects/${pid}/scripts/${sid}/conversations`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: text.slice(0, 48) }),
+          }
+        );
+        if (cr.ok) {
+          const created = (await cr.json()) as { conversation_id: string };
+          convId = created.conversation_id;
+          setActiveConversationId(convId);
+        }
+      }
+
+      const r = await postChat(pid, sid, convId);
 
       if (r.status === 404) {
         appendSystemMessage(
@@ -411,6 +490,9 @@ export function Workbench({
         return;
       }
       const data = await r.json();
+      if (data.conversation_id) {
+        setActiveConversationId(String(data.conversation_id));
+      }
       if (data.script?.status) setScriptStatus(data.script.status);
       if (data.script?.style_locked) setStyleLocked(true);
       if (
@@ -442,6 +524,7 @@ export function Workbench({
         });
       }
       await refreshWorkspace();
+      await loadConversations();
       setIsRunning(false);
     } catch {
       appendSystemMessage("网络错误，请确认后端已启动（端口 8000）。");
@@ -534,23 +617,48 @@ export function Workbench({
       <div className="main-split">
         <aside className="chat-panel">
           <h2>对话</h2>
+          <div className="conversation-toolbar">
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={isRunning || !projectId || !scriptId}
+              onClick={() => void startNewConversation()}
+            >
+              新对话
+            </button>
+          </div>
+          {conversationList.length > 0 && (
+            <ul className="conversation-list">
+              {conversationList.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    className={
+                      c.id === activeConversationId
+                        ? "conversation-item active"
+                        : "conversation-item"
+                    }
+                    disabled={isRunning}
+                    onClick={() => void loadConversationMessages(c.id)}
+                  >
+                    <span className="conversation-title">{c.title || "新对话"}</span>
+                    {c.last_summary && (
+                      <span className="conversation-summary muted">{c.last_summary}</span>
+                    )}
+                    {c.last_round_token_usage?.total_tokens ? (
+                      <span className="conversation-summary muted">
+                        本轮约 {c.last_round_token_usage.total_tokens} tokens
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <p className="muted chat-hint">
             首次发送将绑定视频风格并生成剧本；风格锁定后不可更改。
           </p>
           <div className="config-bar">
-            <label>
-              生成模式
-              <select
-                value={generationMode}
-                disabled={isRunning}
-                onChange={(e) =>
-                  setGenerationMode(e.target.value as GenerationMode)
-                }
-              >
-                <option value="cost_confirm">费用确认模式</option>
-                <option value="auto">自动生成模式</option>
-              </select>
-            </label>
             <label>
               视频风格
               {styleLocked ? (

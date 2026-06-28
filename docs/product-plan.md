@@ -755,7 +755,10 @@ SuperVideoGenerator/
 | POST | `/api/projects/{id}/scripts/{script_id}/execute` | 开始 Execute |
 | POST | `/api/projects/{id}/scripts/{script_id}/approve-plan` | 确认计划 |
 | GET | `/api/projects/{id}/scripts/{script_id}/graph` | 子图 JSON |
-| POST | `/api/projects/{id}/chat` | 对话消息 |
+| POST | `/api/projects/{id}/scripts/{script_id}/chat` | 对话消息（body 可选 `conversation_id`） |
+| POST | `/api/projects/{id}/scripts/{script_id}/conversations` | 创建对话线程 |
+| GET | `/api/projects/{id}/conversations` | 历史对话列表（`?script_id=` 过滤） |
+| GET | `/api/projects/{id}/conversations/{conversation_id}/messages` | 唤醒：加载主会话 user/master 消息 |
 | WS | `/ws/projects/{id}/scripts/{script_id}` | 实时事件 |
 
 ### 13.2 WebSocket 事件

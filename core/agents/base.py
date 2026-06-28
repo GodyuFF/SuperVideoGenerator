@@ -89,6 +89,7 @@ class ReActAgent:
         return await run_llm_action(
             self._store,
             self._llm_client,
+            conversations=self._conversations,
             agent_name=self.name,
             display_name=self.display_name,
             role_prompt=self.resolve_role_prompt(ctx),
@@ -107,6 +108,7 @@ class ReActAgent:
             self._llm_client,
             self._llm_config,
             ctx,
+            conversations=self._conversations,
             display_name=self.display_name,
             role_prompt=role_prompt,
             action_pipeline=self.get_action_pipeline(),

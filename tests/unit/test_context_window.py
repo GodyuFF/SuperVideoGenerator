@@ -1,6 +1,6 @@
 """上下文滑窗与压缩测试。"""
 
-from core.conversation import ConversationRole, ConversationStore
+from core.conversation import ConversationIndex, ConversationRole, ConversationStore
 from core.agents.react_core import AgentRunContext
 from core.prompt.context_window import (
     prepare_master_context,
@@ -27,18 +27,22 @@ def test_prepare_master_context_compresses_long_history():
 
 def test_prepare_sub_agent_context_splits_history_and_observations():
     store = ConversationStore()
+    conversation_id = "conv1"
+    project_id = "p1"
     script_id = "s1"
     agent = "script_agent"
-    store.add(script_id, "agent", ConversationRole.TASK, "写剧本", agent)
-    store.add(script_id, "agent", ConversationRole.THOUGHT, "先解析", agent)
-    store.add(script_id, "agent", ConversationRole.ACTION, "parse_brief: {}", agent)
+    store.add(conversation_id, project_id, script_id, "agent", ConversationRole.TASK, "写剧本", agent)
+    store.add(conversation_id, project_id, script_id, "agent", ConversationRole.THOUGHT, "先解析", agent)
+    store.add(conversation_id, project_id, script_id, "agent", ConversationRole.ACTION, "parse_brief: {}", agent)
 
     ctx = AgentRunContext(
         task_brief="写剧本",
-        work_context={"script_id": script_id},
+        work_context={"script_id": script_id, "conversation_id": conversation_id, "project_id": project_id},
         script_id=script_id,
         step_id="step1",
         agent_name=agent,
+        conversation_id=conversation_id,
+        project_id=project_id,
         observations=["已完成 parse_brief"],
     )
     prepared = prepare_sub_agent_context(ctx, store)

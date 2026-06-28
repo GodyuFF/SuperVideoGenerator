@@ -42,13 +42,17 @@ async def test_script_agent_react_isolated(llm_config_with_key):
 
     outputs = await agent.run(
         task_brief="生成都市题材剧本与文字资产。",
-        work_context={"project_id": project.id, "script_id": script.id},
+        work_context={
+            "project_id": project.id,
+            "script_id": script.id,
+            "conversation_id": "conv-test",
+        },
         script_id=script.id,
         step_id="step_test",
     )
 
     assert len(outputs) >= 3
-    msgs = conversations.list_messages(script.id, "agent", "script_agent")
+    msgs = conversations.list_messages("conv-test", "agent", "script_agent")
     assert any(m.role.value == "task" for m in msgs)
     assert any(m.role.value == "thought" for m in msgs)
     assert any(e.get("type") == "agent_react_finished" for e in events)
@@ -74,6 +78,7 @@ async def test_decider_requires_llm():
             LLMClient(config),
             config,
             ctx,
+            conversations=ConversationStore(),
             display_name="剧本 Agent",
             role_prompt="角色",
             action_pipeline=["parse_brief"],

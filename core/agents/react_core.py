@@ -5,7 +5,7 @@ from typing import Any, Awaitable, Callable
 
 from core.conversation import ConversationRole, ConversationStore
 from core.agents.script_assets import SCRIPT_MUTATION_ACTIONS
-from core.constants import MAX_REACT_ITERATIONS, VIDEO_GEN_COST_PER_SHOT_USD
+from core.constants import MAX_REACT_ITERATIONS
 from core.events.emitter import EventEmitter
 from core.logging.setup import get_logger, log_stage
 from core.models.entities import StepOutput
@@ -31,6 +31,8 @@ class AgentRunContext:
     script_id: str
     step_id: str
     agent_name: str
+    conversation_id: str = ""
+    project_id: str = ""
     completed_actions: set[str] = field(default_factory=set)
     observations: list[str] = field(default_factory=list)
     llm_observations: list[str] = field(default_factory=list)
@@ -81,9 +83,20 @@ class ReActRunner:
         act: ActFn,
     ) -> list[StepOutput]:
         """运行子 Agent ReAct：任务简报进入隔离会话，不接触用户对话。"""
-        self._conversations.clear_agent_session(script_id, agent_name)
+        conversation_id = str(work_context.get("conversation_id", ""))
+        project_id = str(work_context.get("project_id", ""))
+        if not conversation_id:
+            raise ValueError("子 Agent 需要 conversation_id")
+
+        self._conversations.clear_agent_session(conversation_id, agent_name)
         self._conversations.add(
-            script_id, "agent", ConversationRole.TASK, task_brief, agent_name
+            conversation_id,
+            project_id,
+            script_id,
+            "agent",
+            ConversationRole.TASK,
+            task_brief,
+            agent_name,
         )
 
         ctx = AgentRunContext(
@@ -92,6 +105,8 @@ class ReActRunner:
             script_id=script_id,
             step_id=step_id,
             agent_name=agent_name,
+            conversation_id=conversation_id,
+            project_id=project_id,
         )
 
         log_stage(logger, "react.agent", "子 Agent ReAct 开始", agent=agent_name, step_id=step_id)
@@ -106,7 +121,13 @@ class ReActRunner:
             decision = await decide(ctx)
 
             self._conversations.add(
-                script_id, "agent", ConversationRole.THOUGHT, decision.thought, agent_name
+                ctx.conversation_id,
+                ctx.project_id,
+                script_id,
+                "agent",
+                ConversationRole.THOUGHT,
+                decision.thought,
+                agent_name,
             )
             await self._emit_agent_react(
                 script_id, agent_name, display_name, step_id, "agent_react_thought",
@@ -121,6 +142,8 @@ class ReActRunner:
                 break
 
             self._conversations.add(
+                ctx.conversation_id,
+                ctx.project_id,
                 script_id,
                 "agent",
                 ConversationRole.ACTION,
@@ -145,7 +168,13 @@ class ReActRunner:
             ctx.completed_actions.add(decision.action)
 
             self._conversations.add(
-                script_id, "agent", ConversationRole.OBSERVATION, observation, agent_name
+                ctx.conversation_id,
+                ctx.project_id,
+                script_id,
+                "agent",
+                ConversationRole.OBSERVATION,
+                observation,
+                agent_name,
             )
             await self._emit_agent_react(
                 script_id,

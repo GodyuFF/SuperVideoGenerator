@@ -1,6 +1,5 @@
 """超级视频大师可调用的 ReAct Tools。"""
 
-from core.constants import VIDEO_GEN_COST_PER_SHOT_USD
 from core.llm.models import ReActToolInfo
 from core.store.memory import MemoryStore
 
@@ -17,8 +16,6 @@ class MasterToolExecutor:
             return self._get_plan_summary(script_id)
         if name == "list_assets":
             return self._list_assets(script_id)
-        if name == "estimate_video_cost":
-            return self._estimate_video_cost(script_id)
         raise ValueError(f"未知工具行动: {tool_action}")
 
     def _get_plan_summary(self, script_id: str) -> str:
@@ -43,15 +40,6 @@ class MasterToolExecutor:
         parts = [f"{t}: {n} 个" for t, n in sorted(by_type.items())]
         return f"共 {len(assets)} 项资产。类型分布：{', '.join(parts)}。"
 
-    def _estimate_video_cost(self, script_id: str) -> str:
-        vp = self._store.get_video_plan_for_script(script_id)
-        shot_count = len(vp.shots) if vp else 3
-        cost = VIDEO_GEN_COST_PER_SHOT_USD * shot_count
-        return (
-            f"按 {shot_count} 个镜头估算，"
-            f"视频生成费用约 ${cost:.2f} USD（单价 ${VIDEO_GEN_COST_PER_SHOT_USD}/镜头）。"
-        )
-
 
 def build_master_tools() -> list[ReActToolInfo]:
     """主编排可调用的工具列表（与 MasterToolExecutor 行动名一致）。"""
@@ -65,10 +53,5 @@ def build_master_tools() -> list[ReActToolInfo]:
             action_name="tool_list_assets",
             name="list_assets",
             description="统计剧本已产出的资产数量与类型。",
-        ),
-        ReActToolInfo(
-            action_name="tool_estimate_video_cost",
-            name="estimate_video_cost",
-            description="按当前分镜估算 AI 视频生成费用（美元）。",
         ),
     ]

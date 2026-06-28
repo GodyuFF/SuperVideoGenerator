@@ -53,16 +53,18 @@ def build_react_json_user(
     task_brief: str,
     available_actions: list[str],
     completed: list[str],
-    observations: list[str],
+    observations: list[str] | None = None,
     extra: dict[str, Any] | None = None,
+    include_observations: bool = True,
 ) -> str:
     """子 Agent / 主编排 ReAct 动态 user 上下文（JSON）。"""
-    ctx = {
+    ctx: dict[str, Any] = {
         "task_brief": task_brief,
         "available_actions": available_actions,
         "completed_actions": completed or ["无"],
-        "observations": observations or ["无"],
     }
+    if include_observations:
+        ctx["observations"] = observations or ["无"]
     if extra:
         ctx.update(extra)
     return json.dumps(ctx, ensure_ascii=False, indent=2)
@@ -90,8 +92,3 @@ def get_summary_system_prompt() -> str:
         "你是视频制作助手。根据执行结果为用户写一段简短中文回复（2-4 句）。"
         "直接输出正文，不要使用 JSON、Markdown 或代码块。"
     )
-
-
-def get_intent_system_prompt() -> str:
-    """主编排入口意图门卫固定 system prompt。"""
-    return load_required("agents/super_video_master/fixed/intent.md")

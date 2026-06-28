@@ -1,16 +1,14 @@
 """超级视频大师主 Agent：ReAct 编排，与用户及子 Agent 对话隔离。"""
 
 from core.a2ui.manager import ConfirmationManager, ConfirmationRejectedError
-from core.conversation import ConversationRole, ConversationStore
+from core.conversation import ConversationIndex, ConversationRole, ConversationStore
 from core.super_video_master import MASTER_AGENT_NAME
 from core.llm.master import MasterReActEngine
 from core.events.emitter import EventEmitter
 from core.interaction_log.recorder import InteractionRecorder
 from core.logging.setup import get_logger, log_stage
 from core.guards.script_style import bind_script_style
-from core.super_video_master.intent import classify_user_intent
 from core.llm.client import LLMClient
-from core.llm.models import new_conversation_id
 from core.llm.settings import LLMConfigManager
 from core.models.entities import ScriptStatus, VideoStyleMode
 from core.agents.config_manager import AgentConfigManager
@@ -32,11 +30,13 @@ class SuperVideoMaster:
             llm_config: LLMConfigManager | None = None,
             interaction_recorder: InteractionRecorder | None = None,
             agent_config: AgentConfigManager | None = None,
+            conversation_index: ConversationIndex | None = None,
     ) -> None:
         self._store = store
         self._emitter = emitter
         self._confirmation = confirmation_manager
         self._conversations = conversations or ConversationStore()
+        self._conversation_index = conversation_index or ConversationIndex()
         self._llm_config = llm_config or LLMConfigManager()
         self._recorder = interaction_recorder
         self._llm_client = LLMClient(self._llm_config, self._recorder)
@@ -60,14 +60,48 @@ class SuperVideoMaster:
             self._llm_client,
         )
 
-    async def _emit_llm_summary(self, script_id: str, content: str) -> None:
+    def _active_llm_client(self) -> LLMClient:
+        """主编排与子 Agent 共用的 LLM 客户端（token 轮次绑定此实例）。"""
+        return self._react._llm_client
+
+    async def _finalize_token_round(
+        self,
+        conversation_id: str,
+        project_id: str,
+        script_id: str,
+    ) -> None:
+        token_usage = self._active_llm_client().end_token_round()
+        if not token_usage:
+            return
+        self._conversation_index.record_token_round(conversation_id, token_usage)
+        if self._recorder:
+            await self._recorder.record_conversation_token_round(
+                project_id=project_id,
+                script_id=script_id,
+                conversation_id=conversation_id,
+                usage=token_usage,
+            )
+
+    async def _emit_llm_summary(
+        self,
+        project_id: str,
+        script_id: str,
+        conversation_id: str,
+        content: str,
+    ) -> None:
         self._conversations.add(
-            script_id, "master", ConversationRole.MASTER, content
+            conversation_id,
+            project_id,
+            script_id,
+            "master",
+            ConversationRole.MASTER,
+            content,
         )
         await self._emitter.emit(
             {
                 "type": "master_message",
                 "script_id": script_id,
+                "conversation_id": conversation_id,
                 "role": "super_video_master",
                 "agent_name": MASTER_AGENT_NAME,
                 "content": content,
@@ -75,13 +109,36 @@ class SuperVideoMaster:
             }
         )
 
+    def _ensure_conversation(
+        self,
+        project_id: str,
+        script_id: str,
+        conversation_id: str | None,
+        *,
+        title: str = "",
+    ) -> str:
+        if conversation_id:
+            self._conversation_index.require(
+                conversation_id,
+                project_id=project_id,
+                script_id=script_id,
+            )
+            return conversation_id
+        conv = self._conversation_index.create(
+            project_id,
+            script_id,
+            title=title,
+        )
+        return conv.id
+
     async def run_from_message(
             self,
             project_id: str,
             script_id: str,
             message: str,
             requested_style: VideoStyleMode | None = None,
-    ) -> str:
+            conversation_id: str | None = None,
+    ) -> tuple[str, str]:
         """
         对话入口：用户消息仅进入主会话；子 Agent 通过任务简报隔离调用。
         返回本次对话的 conversation_id 与用户可见结束摘要。
@@ -94,20 +151,17 @@ class SuperVideoMaster:
             raise ValueError("剧本正在执行中，请稍候")
 
         user_text = message.strip()
-
-        # 1. LLM 意图门卫：判断是否属于视频制作范围
-        intent = await classify_user_intent(
-            self._llm_client,
-            user_text,
-            project_id=project_id,
-            script_id=script_id,
+        preview = user_text.replace("\n", " ")
+        if len(preview) > 48:
+            preview = preview[:48] + "…"
+        conversation_id = self._ensure_conversation(
+            project_id,
+            script_id,
+            conversation_id,
+            title=preview,
         )
-        if not intent.in_scope:
-            decline = intent.reply or "抱歉，我只能处理视频生成相关的请求。请描述您的视频创意。"
-            self._conversations.add(script_id, "master", ConversationRole.MASTER, decline)
-            return "intent-skip", decline
 
-        # 2. A2UI 需求补全（项目/剧本已有风格与时长时可跳过）
+        # 1. A2UI 需求补全（项目/剧本已有风格与时长时可跳过）
         style_known = (
                 requested_style is not None
                 or script.style_locked
@@ -147,12 +201,21 @@ class SuperVideoMaster:
                         script_id=script_id,
                     )
             except ConfirmationRejectedError:
+                cancel_msg = "已取消剧本生成。"
                 self._conversations.add(
-                    script_id, "master", ConversationRole.MASTER, "已取消剧本生成。"
+                    conversation_id,
+                    project_id,
+                    script_id,
+                    "master",
+                    ConversationRole.MASTER,
+                    cancel_msg,
                 )
-                return "cancelled", "已取消。"
+                self._conversation_index.touch_after_message(
+                    conversation_id, last_summary="已取消。"
+                )
+                return conversation_id, "已取消。"
 
-        # 3. 绑定视频风格到剧本
+        # 2. 绑定视频风格到剧本
         style_mode = bind_script_style(script, project, requested_style)
         await self._emitter.emit(
             {
@@ -169,30 +232,47 @@ class SuperVideoMaster:
             style_mode=style_mode.value,
         )
 
-        # 4. 主会话记录用户消息（ConversationStore master 通道）
+        # 3. 主会话记录用户消息（ConversationStore master 通道）
         self._conversations.add(
-            script_id, "master", ConversationRole.USER, user_text
+            conversation_id,
+            project_id,
+            script_id,
+            "master",
+            ConversationRole.USER,
+            user_text,
+        )
+        self._conversation_index.touch_after_message(
+            conversation_id, title=preview
         )
 
-        preview = user_text.replace("\n", " ")
-        if len(preview) > 48:
-            preview = preview[:48] + "…"
         script.title = preview or script.title
 
-        log_stage(logger, "super_video_master", "ReAct 对话驱动开始", script_id=script_id)
-        conversation_id = new_conversation_id()
-
-        # 5. MasterReActEngine：ReAct 委派子 Agent 完成流水线
-        observations = await self._react.run(
-            project_id=project_id,
+        log_stage(
+            logger,
+            "super_video_master",
+            "ReAct 对话驱动开始",
             script_id=script_id,
-            user_message=user_text,
-            style_mode=style_mode,
-            generation_mode=project.config.generation.mode,
             conversation_id=conversation_id,
         )
+        self._active_llm_client().begin_token_round(
+            conversation_id=conversation_id,
+            project_id=project_id,
+            script_id=script_id,
+        )
+        try:
+            observations = await self._react.run(
+                project_id=project_id,
+                script_id=script_id,
+                user_message=user_text,
+                style_mode=style_mode,
+                generation_mode=project.config.generation.mode,
+                conversation_id=conversation_id,
+            )
+        except Exception:
+            await self._finalize_token_round(conversation_id, project_id, script_id)
+            raise
 
-        # 6. LLM 生成用户可见结束摘要
+        # 4. LLM 生成用户可见结束摘要
         from core.super_video_master.summary import generate_user_summary
 
         stream_id = f"summary-{conversation_id}"
@@ -226,13 +306,15 @@ class SuperVideoMaster:
 
         plan = self._store.get_plan(script_id)
         summary = await generate_user_summary(
-            self._llm_client,
+            self._active_llm_client(),
             user_message=user_text,
             script=script,
             plan=plan,
             observations=observations,
             project_id=project_id,
             script_id=script_id,
+            conversation_id=conversation_id,
+            conversations=self._conversations,
             on_delta=on_summary_delta,
         )
 
@@ -248,7 +330,11 @@ class SuperVideoMaster:
                 "agent_name": MASTER_AGENT_NAME,
             }
         )
-        await self._emit_llm_summary(script_id, summary)
+        await self._emit_llm_summary(project_id, script_id, conversation_id, summary)
+        self._conversation_index.touch_after_message(
+            conversation_id, last_summary=summary
+        )
+        await self._finalize_token_round(conversation_id, project_id, script_id)
         log_stage(
             logger,
             "super_video_master",

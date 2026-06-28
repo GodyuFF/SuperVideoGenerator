@@ -1,6 +1,6 @@
 # SuperVideoGenerator
 
-AI 视频生成 Agent：ReAct 主编排、A2UI 用户确认、自动生成/费用确认模式。
+AI 视频生成 Agent：ReAct 主编排、A2UI 用户确认、多轮对话与 Token 预估日志。
 
 ## 快速开始
 
@@ -25,7 +25,6 @@ cd apps/web && npm install && npm run dev
 ## 生成模式
 
 - `auto`：视频生成步骤不等待用户确认
-- `cost_confirm`：视频生成前通过 A2UI 展示预估费用，用户确认后执行
 
 用户通过 **左侧对话** 描述创意，**超级视频大师** 自动完成 Plan 并调度子 Agent 执行，无需手动点击按钮。
 

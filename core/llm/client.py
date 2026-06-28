@@ -11,6 +11,8 @@ from core.interaction_log.recorder import InteractionRecorder
 from core.llm.errors import format_llm_http_error
 from core.llm.settings import LLMConfigManager
 from core.llm.streaming import OnDelta, parse_sse_data_line
+from core.llm.token_round import TokenRoundAccumulator
+from core.llm.tokens import estimate_chat_tokens
 from core.logging.setup import get_logger, log_stage
 
 logger = get_logger("core.llm.client")
@@ -26,6 +28,27 @@ class LLMClient:
     ) -> None:
         self._config = config
         self._recorder = recorder
+        self._token_round: TokenRoundAccumulator | None = None
+
+    def begin_token_round(
+        self,
+        *,
+        conversation_id: str,
+        project_id: str,
+        script_id: str,
+    ) -> None:
+        self._token_round = TokenRoundAccumulator(
+            conversation_id=conversation_id,
+            project_id=project_id,
+            script_id=script_id,
+        )
+
+    def end_token_round(self) -> dict[str, Any] | None:
+        if not self._token_round:
+            return None
+        snapshot = self._token_round.snapshot()
+        self._token_round = None
+        return snapshot
 
     def _client_kwargs(self) -> dict[str, Any]:
         settings = self._config.get_settings()
@@ -50,6 +73,17 @@ class LLMClient:
     ) -> str:
         """流式调用 Chat Completions，返回完整文本。"""
         ctx = log_context
+        estimate = estimate_chat_tokens(messages, settings.max_tokens)
+        token_meta = {**estimate.to_dict(), "estimated": True}
+        if self._token_round:
+            self._token_round.add(
+                settings.provider,
+                model,
+                estimate,
+                kind=response_kind,
+                agent_name=str(ctx.get("agent_name", "")),
+            )
+
         payload: dict[str, Any] = {
             "model": model,
             "temperature": settings.temperature,
@@ -87,6 +121,8 @@ class LLMClient:
                         "iteration": ctx.get("iteration"),
                         "action": ctx.get("action", ""),
                         "stream": True,
+                        "conversation_id": ctx.get("conversation_id", ""),
+                        "token_usage": token_meta,
                     },
                 )
             )
@@ -171,7 +207,12 @@ class LLMClient:
                                         ),
                                     }
                                 ),
-                                meta={"stream": True, "response_kind": response_kind},
+                                meta={
+                                    "stream": True,
+                                    "response_kind": response_kind,
+                                    "conversation_id": ctx.get("conversation_id", ""),
+                                    "token_usage": token_meta,
+                                },
                             )
                         )
                     return content
@@ -200,14 +241,32 @@ class LLMClient:
                 format_llm_http_error(e, url=url, provider=settings.provider)
             ) from e
 
+    def _build_messages(
+        self,
+        system_prompt: str,
+        user_content: str | None,
+        chat_messages: list[dict[str, str]] | None,
+    ) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": system_prompt},
+        ]
+        if chat_messages:
+            messages.extend(chat_messages)
+        if user_content is not None:
+            messages.append({"role": "user", "content": user_content})
+        elif not chat_messages:
+            raise ValueError("需要 user_content 或 chat_messages")
+        return messages
+
     async def complete_text(
         self,
         system_prompt: str,
-        user_content: str,
+        user_content: str | None = None,
         log_context: dict[str, Any] | None = None,
         summary_prefix: str = "LLM 文本",
         on_delta: OnDelta | None = None,
         response_format: dict[str, Any] | None = None,
+        chat_messages: list[dict[str, str]] | None = None,
     ) -> str:
         """流式文本补全，返回完整字符串。"""
         ctx = log_context or {}
@@ -218,10 +277,7 @@ class LLMClient:
         settings = self._config.get_settings()
         url = f"{self._config.resolved_base_url()}/chat/completions"
         model = self._config.resolved_model()
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
-        ]
+        messages = self._build_messages(system_prompt, user_content, chat_messages)
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -246,11 +302,12 @@ class LLMClient:
     async def complete_json(
         self,
         system_prompt: str,
-        user_content: str,
+        user_content: str | None = None,
         log_context: dict[str, Any] | None = None,
         summary_prefix: str = "LLM JSON",
         on_delta: OnDelta | None = None,
         response_format: dict[str, Any] | None = None,
+        chat_messages: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """通用 JSON 补全：流式接收后解析 JSON。"""
         ctx = log_context or {}
@@ -261,6 +318,7 @@ class LLMClient:
             summary_prefix=summary_prefix,
             on_delta=on_delta,
             response_format=response_format,
+            chat_messages=chat_messages,
         )
         parsed = self._parse_json_content(content)
         log_stage(

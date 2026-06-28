@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 from core.a2ui.manager import ConfirmationManager
-from core.conversation import ConversationStore
+from core.conversation import ConversationIndex, ConversationStore
 from core.interaction_log.file_store import InteractionFileStore
 from core.interaction_log.recorder import InteractionRecorder
 from core.interaction_log.store import InteractionLogStore
@@ -25,8 +25,13 @@ class AppState:
     def __init__(self) -> None:
         setup_logging()
         self.store = MemoryStore()
-        load_store(self.store)
+        self.conversation_index = ConversationIndex()
         self.conversations = ConversationStore()
+        load_store(
+            self.store,
+            conversation_index=self.conversation_index,
+            conversation_store=self.conversations,
+        )
         self.llm_config = LLMConfigManager()
         self.agent_config = AgentConfigManager()
         self.interaction_log_store = InteractionLogStore()
@@ -47,11 +52,16 @@ class AppState:
             self.llm_config,
             self.interaction_recorder,
             self.agent_config,
+            self.conversation_index,
         )
         self.ws_clients: dict[str, list] = {}
 
     def persist_store(self) -> None:
-        schedule_save(self.store)
+        schedule_save(
+            self.store,
+            conversation_index=self.conversation_index,
+            conversation_store=self.conversations,
+        )
 
     def channel_key(self, project_id: str, script_id: str) -> str:
         return f"{project_id}:{script_id}"
@@ -92,17 +102,28 @@ state.emitter.subscribe(_ws_emit_handler)
 
 def reset_history() -> None:
     """清理历史数据文件与日志（新建项目时调用）。"""
-    # 清空 dev_store.json
+    # 清空 dev_store.json（含对话与 conversation_messages）
     store_path = Path("data/dev_store.json")
     if store_path.exists():
         store_path.unlink()
-    # 清空 interaction logs
+    # 清空 SQLite 交互日志
+    db_path = Path("data/interaction_logs.db")
+    if db_path.exists():
+        db_path.unlink()
+    state.interaction_log_store = InteractionLogStore()
+    # 清空 JSONL 交互日志
     log_dir = Path("data/logs/interactions")
     if log_dir.exists():
         shutil.rmtree(log_dir)
-        log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    # 清空应用运行日志
+    app_log = Path("data/logs/app.log")
+    if app_log.exists():
+        app_log.write_text("", encoding="utf-8")
     # 重置内存 store（就地清空，保持 super_video_master 等组件引用一致）
     state.store.clear()
+    state.conversation_index.clear()
+    state.conversations.clear()
     load_store(state.store)
 
 

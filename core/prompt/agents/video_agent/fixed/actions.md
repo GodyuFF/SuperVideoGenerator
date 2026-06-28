@@ -1,3 +1,3 @@
-- load_shots: shot_count, estimated_cost_usd
+- load_shots: shot_count
 - generate_clips: clips（[{label, asset_id, url}]，无真实 API 时可省略 clips）
 - list_videos: observation 描述视频列表

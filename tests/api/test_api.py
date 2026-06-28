@@ -76,6 +76,52 @@ async def test_chat_rejects_style_change_when_locked():
 
 
 @pytest.mark.asyncio
+async def test_conversation_api_flow():
+    """创建对话 → 带 id chat → 列表 → 拉消息。"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post("/api/projects", json={"title": "会话测试"})
+        pid = r.json()["id"]
+        r = await client.post(f"/api/projects/{pid}/scripts", json={"title": "S1"})
+        sid = r.json()["id"]
+
+        r = await client.post(
+            f"/api/projects/{pid}/scripts/{sid}/conversations",
+            json={"title": "测试对话"},
+        )
+        assert r.status_code == 200
+        conv_id = r.json()["conversation_id"]
+
+        r = await client.post(
+            f"/api/projects/{pid}/scripts/{sid}/chat",
+            json={
+                "message": "制作一段60秒短片",
+                "conversation_id": conv_id,
+                "generation_mode": GenerationMode.AUTO.value,
+                "style_mode": VideoStyleMode.DYNAMIC_IMAGE.value,
+            },
+        )
+        assert r.status_code == 200
+        assert r.json()["conversation_id"] == conv_id
+
+        r = await client.get(f"/api/projects/{pid}/conversations?script_id={sid}")
+        assert r.status_code == 200
+        items = r.json()
+        assert any(c["id"] == conv_id for c in items)
+
+        r = await client.get(f"/api/projects/{pid}/conversations/{conv_id}/messages")
+        assert r.status_code == 200
+        msgs = r.json()
+        assert any(m["role"] == "user" for m in msgs)
+
+        # 跨 project 拒绝
+        r = await client.post("/api/projects", json={"title": "其他项目"})
+        other_pid = r.json()["id"]
+        r = await client.get(f"/api/projects/{other_pid}/conversations/{conv_id}/messages")
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_chat_drives_full_pipeline():
   """对话 API：超级视频大师自动 Plan + Execute 应完成，并绑定风格。"""
   transport = ASGITransport(app=app)

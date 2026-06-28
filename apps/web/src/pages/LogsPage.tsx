@@ -12,6 +12,7 @@ const KIND_OPTIONS = [
   { value: "llm_response", label: "LLM 响应" },
   { value: "llm_error", label: "LLM 错误" },
   { value: "agent_action", label: "Agent 动作" },
+  { value: "conversation_token_round", label: "对话 Token 汇总" },
   { value: "api_request", label: "HTTP 请求" },
 ];
 

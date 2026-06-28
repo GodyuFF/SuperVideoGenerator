@@ -35,8 +35,15 @@ class ChatRequest(BaseModel):
     """用户对话请求：超级视频大师自动 Plan 并调度子 Agent 执行。"""
 
     message: str
+    conversation_id: str | None = None
     generation_mode: GenerationMode | None = None
     style_mode: VideoStyleMode | None = None
+
+
+class CreateConversationRequest(BaseModel):
+    """显式创建对话线程。"""
+
+    title: str = ""
 
 
 @router.get("/projects")
@@ -154,6 +161,69 @@ def list_media(project_id: str, script_id: str):
     return [a.model_dump() for a in assets]
 
 
+@router.post("/projects/{project_id}/scripts/{script_id}/conversations")
+def post_conversation(
+    project_id: str, script_id: str, body: CreateConversationRequest | None = None
+):
+    """创建新对话线程并返回 conversation_id。"""
+    project = state.store.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "项目不存在")
+    script = state.store.get_script(script_id)
+    if not script or script.project_id != project_id:
+        raise HTTPException(404, "剧本不存在")
+    title = (body.title if body else "") or "新对话"
+    conv = state.conversation_index.create(project_id, script_id, title=title)
+    state.persist_store()
+    return {
+        "conversation_id": conv.id,
+        "project_id": conv.project_id,
+        "script_id": conv.script_id,
+        "created_at": conv.created_at,
+    }
+
+
+@router.get("/projects/{project_id}/conversations")
+def list_conversations(project_id: str, script_id: str | None = None):
+    """列出项目下历史对话（可按剧本过滤）。"""
+    if not state.store.get_project(project_id):
+        raise HTTPException(404, "项目不存在")
+    items = state.conversation_index.list_for_project(
+        project_id, script_id=script_id
+    )
+    return [
+        {
+            "id": c.id,
+            "script_id": c.script_id,
+            "title": c.title,
+            "last_summary": c.last_summary,
+            "created_at": c.created_at,
+            "updated_at": c.updated_at,
+            "status": c.status.value,
+            "last_round_token_usage": c.last_round_token_usage,
+            "total_token_usage": c.total_token_usage,
+        }
+        for c in items
+    ]
+
+
+@router.get("/projects/{project_id}/conversations/{conversation_id}/messages")
+def get_conversation_messages(project_id: str, conversation_id: str):
+    """加载单对话的用户可见消息（唤醒 UI）。"""
+    conv = state.conversation_index.get(conversation_id)
+    if not conv or conv.project_id != project_id:
+        raise HTTPException(404, "对话不存在")
+    msgs = state.conversations.list_master_messages_for_ui(conversation_id)
+    return [
+        {
+            "role": m.role.value,
+            "content": m.content,
+            "created_at": m.created_at,
+        }
+        for m in msgs
+    ]
+
+
 @router.post("/projects/{project_id}/scripts/{script_id}/chat")
 async def post_chat(project_id: str, script_id: str, body: ChatRequest):
     """
@@ -182,16 +252,38 @@ async def post_chat(project_id: str, script_id: str, body: ChatRequest):
             )
 
     try:
+        if body.conversation_id:
+            state.conversation_index.require(
+                body.conversation_id,
+                project_id=project_id,
+                script_id=script_id,
+            )
+            conversation_id = body.conversation_id
+        else:
+            preview = body.message.strip().replace("\n", " ")
+            if len(preview) > 48:
+                preview = preview[:48] + "…"
+            conv = state.conversation_index.create(
+                project_id,
+                script_id,
+                title=preview or "新对话",
+            )
+            conversation_id = conv.id
+
         conversation_id, summary = await state.super_video_master.run_from_message(
             project_id,
             script_id,
             body.message,
             requested_style=body.style_mode,
+            conversation_id=conversation_id,
         )
     except ScriptStyleLockedError as e:
         raise HTTPException(400, str(e))
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        msg = str(e)
+        if "对话" in msg:
+            raise HTTPException(404, msg)
+        raise HTTPException(400, msg)
     except RuntimeError as e:
         raise HTTPException(502, str(e))
 
@@ -199,9 +291,11 @@ async def post_chat(project_id: str, script_id: str, body: ChatRequest):
 
     script = state.store.get_script(script_id)
     plan = state.store.get_plan(script_id)
+    conv = state.conversation_index.get(conversation_id)
     return {
         "conversation_id": conversation_id,
         "summary": summary,
+        "token_usage": conv.last_round_token_usage if conv else {},
         "script": script.model_dump() if script else None,
         "plan": plan.model_dump() if plan else None,
     }

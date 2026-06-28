@@ -4,10 +4,11 @@ import json
 import re
 from typing import Any
 
-from core.constants import VIDEO_GEN_COST_PER_SHOT_USD
 from core.llm.streaming import ReactJsonThoughtParser
 from core.models.entities import VideoStyleMode
 from core.llm.master import ACTION_TO_STEP, STEP_META, pipeline_for_style
+from core.llm.token_round import TokenRoundAccumulator
+from core.llm.tokens import TokenEstimate
 
 
 class ScriptedLLMClient:
@@ -15,47 +16,76 @@ class ScriptedLLMClient:
 
     def __init__(self, style_mode: VideoStyleMode = VideoStyleMode.DYNAMIC_IMAGE) -> None:
         self._style_mode = style_mode
+        self._token_round: TokenRoundAccumulator | None = None
+
+    def begin_token_round(
+        self,
+        *,
+        conversation_id: str,
+        project_id: str,
+        script_id: str,
+    ) -> None:
+        self._token_round = TokenRoundAccumulator(
+            conversation_id=conversation_id,
+            project_id=project_id,
+            script_id=script_id,
+        )
+
+    def end_token_round(self) -> dict[str, Any] | None:
+        if not self._token_round:
+            return None
+        snapshot = self._token_round.snapshot()
+        self._token_round = None
+        return snapshot
+
+    def _record_scripted_tokens(self) -> None:
+        if not self._token_round:
+            return
+        self._token_round.add(
+            "scripted",
+            "scripted-model",
+            TokenEstimate(prompt_tokens=120, completion_tokens=80, total_tokens=200),
+        )
 
     async def complete_json(
         self,
         system_prompt: str,
-        user_content: str,
+        user_content: str | None = None,
         log_context: dict[str, Any] | None = None,
         summary_prefix: str = "LLM JSON",
         on_delta: Any = None,
         response_format: Any = None,
+        chat_messages: list[dict[str, str]] | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        action_match = re.search(r"当前行动：(\S+)", user_content)
+        turn_content = user_content or ""
+        action_match = re.search(r"当前行动：(\S+)", turn_content)
         if action_match:
             result = _scripted_action_json(action_match.group(1))
         else:
             ctx = log_context or {}
             role = ctx.get("role", "")
-            if role == "intent_gate":
-                result = _scripted_intent_json(user_content)
+            completed = _parse_completed_json(turn_content)
+            if role == "master":
+                result = self._master_react_json(completed)
+            elif role == "sub_agent":
+                result = self._sub_agent_react_json(
+                    str(ctx.get("agent_name", "")), completed
+                )
             else:
-                completed = _parse_completed_json(user_content)
-                if role == "master":
-                    result = self._master_react_json(completed)
-                elif role == "sub_agent":
-                    result = self._sub_agent_react_json(
-                        str(ctx.get("agent_name", "")), completed
-                    )
+                try:
+                    data = json.loads(turn_content)
+                except json.JSONDecodeError:
+                    result = _format_react_json("默认结束", "finish")
                 else:
-                    try:
-                        data = json.loads(user_content)
-                    except json.JSONDecodeError:
-                        result = _format_react_json("默认结束", "finish")
-                    else:
-                        found = False
-                        for action in data.get("available_actions", []):
-                            if action not in completed and action != "finish":
-                                result = _format_react_json(f"执行 {action}", action)
-                                found = True
-                                break
-                        if not found:
-                            result = _format_react_json("完成", "finish")
+                    found = False
+                    for action in data.get("available_actions", []):
+                        if action not in completed and action != "finish":
+                            result = _format_react_json(f"执行 {action}", action)
+                            found = True
+                            break
+                    if not found:
+                        result = _format_react_json("完成", "finish")
 
         if on_delta and result.get("thought"):
             parser = ReactJsonThoughtParser()
@@ -64,6 +94,7 @@ class ScriptedLLMClient:
                 thought_delta = parser.feed(char)
                 if thought_delta:
                     await on_delta(thought_delta)
+        self._record_scripted_tokens()
         return result
 
     def _master_react_json(self, completed: set[str]) -> dict[str, Any]:
@@ -93,31 +124,19 @@ class ScriptedLLMClient:
     async def complete_text(
         self,
         system_prompt: str,
-        user_content: str,
+        user_content: str | None = None,
         log_context: dict[str, Any] | None = None,
         summary_prefix: str = "LLM 文本",
         on_delta: Any = None,
         response_format: Any = None,
+        chat_messages: list[dict[str, str]] | None = None,
     ) -> str:
         text = "已完成视频制作流程，剧本与资产已生成，可在右侧查看具体内容。"
         if on_delta:
             for char in text:
                 await on_delta(char)
+        self._record_scripted_tokens()
         return text
-
-
-def _scripted_intent_json(user_content: str) -> dict[str, Any]:
-    """测试用意图门卫：默认放行，仅明显离题消息拒绝。"""
-    match = re.search(r"用户消息：(.+)", user_content, re.S)
-    message = (match.group(1).strip() if match else user_content).strip()
-    off_topic_markers = ("今天天气", "股票价格", "写一段python", "编程作业")
-    if any(marker in message.lower() for marker in off_topic_markers):
-        return {
-            "in_scope": False,
-            "reason": "与视频制作无关",
-            "reply": "抱歉，我只能处理视频生成相关的请求。请描述您的视频创意。",
-        }
-    return {"in_scope": True, "reason": "属于视频制作或创意描述", "reply": ""}
 
 
 def _parse_completed_json(user_content: str) -> set[str]:
@@ -189,7 +208,6 @@ def _scripted_action_json(action: str) -> dict[str, Any]:
         "load_shots": {
             "observation": "镜头已加载。",
             "shot_count": 3,
-            "estimated_cost_usd": VIDEO_GEN_COST_PER_SHOT_USD * 3,
         },
         "generate_clips": {"observation": "视频片段已生成。"},
         "extract_narration": {"observation": "旁白已提取。", "line_count": 3},

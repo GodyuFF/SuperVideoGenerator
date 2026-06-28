@@ -1,7 +1,6 @@
 """子 Agent 工具执行器：只读查询与列表类工具。"""
 
 from core.agents.react_core import AgentRunContext
-from core.constants import VIDEO_GEN_COST_PER_SHOT_USD
 from core.models.entities import MediaAssetType, TextAssetType
 from core.store.memory import MemoryStore
 
@@ -86,8 +85,6 @@ class AgentToolExecutor:
         return f"扫描到 {len(visual)} 个待生成图片的文字资产（人物/场景）。"
 
     @staticmethod
-    def load_shots_summary(store: MemoryStore, script_id: str) -> tuple[int, float]:
+    def load_shots_summary(store: MemoryStore, script_id: str) -> int:
         vp = store.get_video_plan_for_script(script_id)
-        shot_count = len(vp.shots) if vp else 0
-        cost = VIDEO_GEN_COST_PER_SHOT_USD * max(shot_count, 1)
-        return shot_count, cost
+        return len(vp.shots) if vp else 0

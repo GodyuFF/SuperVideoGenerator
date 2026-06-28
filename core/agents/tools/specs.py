@@ -95,7 +95,7 @@ AGENT_TOOLS: dict[str, list[AgentToolSpec]] = {
         ),
     ],
     "video_agent": [
-        AgentToolSpec("video.load_shots", "加载分镜并估算费用", "load_shots"),
+        AgentToolSpec("video.load_shots", "加载分镜镜头列表", "load_shots"),
         AgentToolSpec("video.generate_clips", "为镜头生成 AI 视频片段", "generate_clips"),
         AgentToolSpec(
             "video.list_videos",

@@ -3,10 +3,10 @@
 import asyncio
 from typing import Any
 
-from core.a2ui.manager import ConfirmationManager, ConfirmationRejectedError
+from core.a2ui.manager import ConfirmationManager
 from core.agents.react_core import MasterRunContext, ReActDecision
 from core.agents.registry import AgentRegistry
-from core.constants import MAX_REACT_ITERATIONS, VIDEO_GEN_COST_PER_SHOT_USD
+from core.constants import MAX_REACT_ITERATIONS
 from core.conversation import ConversationRole, ConversationStore
 from core.events.emitter import EventEmitter
 from core.llm.client import LLMClient
@@ -171,54 +171,13 @@ class MasterReActEngine:
 
     def _make_step(self, step_type: str, depends_on: list[str]) -> PlanStep:
         meta = STEP_META[step_type]
-        estimated_cost: float | None = None
-        if step_type == "video_gen":
-            estimated_cost = VIDEO_GEN_COST_PER_SHOT_USD * 3
         return PlanStep(
             type=step_type,
             title=meta["title"],
             description=meta["description"],
             agent=meta["agent"],
             depends_on=depends_on,
-            estimated_cost_usd=estimated_cost,
         )
-
-    async def _video_cost_gate(
-        self,
-        script_id: str,
-        step: PlanStep,
-        generation_mode: GenerationMode,
-    ) -> bool:
-        vp = self._store.get_video_plan_for_script(script_id)
-        shot_count = len(vp.shots) if vp else 3
-        cost = step.estimated_cost_usd or (VIDEO_GEN_COST_PER_SHOT_USD * shot_count)
-        step.status = StepStatus.AWAITING_CONFIRMATION
-        await self._emit(
-            script_id,
-            "step_awaiting_confirmation",
-            {
-                "step_id": step.id,
-                "step_type": step.type,
-                "estimated_cost_usd": cost,
-            },
-        )
-        try:
-            await self._confirmation.wait_for_video_gen(
-                step_id=step.id,
-                shot_count=shot_count,
-                estimated_cost_usd=cost,
-                mode=generation_mode.value,
-            )
-            return True
-        except ConfirmationRejectedError:
-            step.status = StepStatus.FAILED
-            step.error = "用户拒绝视频生成费用"
-            await self._emit(
-                script_id,
-                "step_failed",
-                {"step_id": step.id, "error": step.error},
-            )
-            return False
 
     async def run(
         self,
@@ -308,12 +267,21 @@ class MasterReActEngine:
                         self._llm_client,
                         self._llm_config,
                         session,
+                        self._conversations,
                         on_delta=on_delta,
                     )
                 except (RuntimeError, ValueError) as e:
                     observation = f"主编排决策失败：{e}"
                     ctx.observations.append(observation)
                     session.observations = list(ctx.observations)
+                    self._conversations.add(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        "master",
+                        ConversationRole.OBSERVATION,
+                        observation,
+                    )
                     await self._emit(
                         script_id,
                         "react_observation",
@@ -343,16 +311,50 @@ class MasterReActEngine:
                     visibility="user",
                 )
 
+                self._conversations.add(
+                    conversation_id,
+                    project_id,
+                    script_id,
+                    "master",
+                    ConversationRole.THOUGHT,
+                    decision.thought,
+                )
+
                 if session.is_delegate_action(decision.action):
                     step_type = session.step_type_for_delegate(decision.action)
                     if step_type and step_type in ctx.completed_step_types:
-                        ctx.observations.append(
+                        observation = (
                             f"步骤 {step_type} 已完成，请勿重复委派 {decision.action}。"
                         )
+                        ctx.observations.append(observation)
                         session.observations = list(ctx.observations)
+                        self._conversations.add(
+                            conversation_id,
+                            project_id,
+                            script_id,
+                            "master",
+                            ConversationRole.ACTION,
+                            f"{decision.action}: {decision.action_input}",
+                        )
+                        self._conversations.add(
+                            conversation_id,
+                            project_id,
+                            script_id,
+                            "master",
+                            ConversationRole.OBSERVATION,
+                            observation,
+                        )
                         continue
 
                 if decision.action == "finish":
+                    self._conversations.add(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        "master",
+                        ConversationRole.ACTION,
+                        f"{decision.action}: {decision.action_input}",
+                    )
                     await self._emit(
                         script_id,
                         "react_action",
@@ -363,6 +365,14 @@ class MasterReActEngine:
                     break
 
                 if session.is_tool_action(decision.action):
+                    self._conversations.add(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        "master",
+                        ConversationRole.ACTION,
+                        f"{decision.action}: {decision.action_input}",
+                    )
                     await self._emit(
                         script_id,
                         "react_action",
@@ -379,7 +389,12 @@ class MasterReActEngine:
                     session.completed_tools.add(decision.action.removeprefix("tool_"))
                     ctx.observations.append(observation)
                     self._conversations.add(
-                        script_id, "master", ConversationRole.OBSERVATION, observation, "super_video_master"
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        "master",
+                        ConversationRole.OBSERVATION,
+                        observation,
                     )
                     await self._emit(
                         script_id,
@@ -396,6 +411,22 @@ class MasterReActEngine:
                 if not session.is_delegate_action(decision.action):
                     observation = f"未知行动「{decision.action}」，已跳过。"
                     ctx.observations.append(observation)
+                    self._conversations.add(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        "master",
+                        ConversationRole.ACTION,
+                        f"{decision.action}: {decision.action_input}",
+                    )
+                    self._conversations.add(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        "master",
+                        ConversationRole.OBSERVATION,
+                        observation,
+                    )
                     await self._emit(
                         script_id,
                         "react_observation",
@@ -414,6 +445,15 @@ class MasterReActEngine:
                 self._store.set_plan(script_id, plan)
                 last_step_id = step.id
 
+                self._conversations.add(
+                    conversation_id,
+                    project_id,
+                    script_id,
+                    "master",
+                    ConversationRole.ACTION,
+                    f"{decision.action}: {decision.action_input}",
+                )
+
                 await self._emit(
                     script_id,
                     "react_action",
@@ -430,23 +470,6 @@ class MasterReActEngine:
                 if not execution_started:
                     await self._emit(script_id, "execution_started", {})
                     execution_started = True
-
-                if step_type == "video_gen":
-                    ok = await self._video_cost_gate(script_id, step, generation_mode)
-                    if not ok:
-                        observation = f"步骤「{step.title}」因费用确认被拒绝。"
-                        ctx.observations.append(observation)
-                        await self._emit(
-                            script_id,
-                            "react_observation",
-                            {
-                                "iteration": ctx.iteration,
-                                "observation": observation,
-                                "step_id": step.id,
-                                "step_status": step.status.value,
-                            },
-                        )
-                        break
 
                 step.status = StepStatus.RUNNING
                 await self._emit(
@@ -508,6 +531,14 @@ class MasterReActEngine:
                     )
 
                 ctx.observations.append(observation)
+                self._conversations.add(
+                    conversation_id,
+                    project_id,
+                    script_id,
+                    "master",
+                    ConversationRole.OBSERVATION,
+                    observation,
+                )
                 await self._emit(
                     script_id,
                     "react_observation",

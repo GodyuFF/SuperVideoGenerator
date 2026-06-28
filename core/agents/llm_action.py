@@ -2,9 +2,9 @@
 
 from typing import Any
 
+from core.conversation import ConversationStore
 from core.agents.asset_content import extract_llm_content_field, normalize_asset_content
 from core.agents.react_core import AgentRunContext
-from core.constants import VIDEO_GEN_COST_PER_SHOT_USD
 from core.llm.client import LLMClient
 from core.logging.setup import get_logger, log_stage
 from core.agents.tools.executor import AgentToolExecutor
@@ -15,6 +15,7 @@ from core.agents.script_assets import (
 )
 from core.prompt.config import ASSET_SUMMARY_MAX, SCRIPT_MD_CONTEXT_MAX
 from core.prompt.builder import build_action_system, build_action_user
+from core.prompt.chat_messages import build_agent_react_chat_history
 from core.prompt.context_manager import AgentContextManager
 from core.prompt.registry import PromptProfile
 from core.models.entities import (
@@ -396,12 +397,11 @@ def apply_action_result(
             observation = f"视频计划稿已保存，镜头数 {len(shots)}。"
 
     elif action == "load_shots":
-        shot_count, cost = AgentToolExecutor.load_shots_summary(store, script_id)
+        shot_count = AgentToolExecutor.load_shots_summary(store, script_id)
         shot_count = int(data.get("shot_count", shot_count or 3))
         ctx.work_context["_shot_count"] = shot_count
-        cost = float(data.get("estimated_cost_usd", VIDEO_GEN_COST_PER_SHOT_USD * shot_count))
         if not observation:
-            observation = f"已加载 {shot_count} 个镜头，预估费用 ${cost:.2f}。"
+            observation = f"已加载 {shot_count} 个镜头。"
 
     elif action == "generate_clips":
         clips = data.get("clips")
@@ -515,6 +515,7 @@ async def run_llm_action(
     store: MemoryStore,
     llm_client: LLMClient,
     *,
+    conversations: ConversationStore,
     agent_name: str,
     display_name: str,
     role_prompt: str,
@@ -523,20 +524,24 @@ async def run_llm_action(
     system_prompt: str | None = None,
 ) -> str:
     """调用 LLM 执行单个行动并应用结果。"""
+    chat_messages = build_agent_react_chat_history(
+        conversations, ctx.conversation_id, agent_name
+    )
     user_content = build_action_user_content(
         store=store,
         role_prompt=role_prompt,
         display_name=display_name,
         action=action,
         task_brief=ctx.task_brief,
-        observations=ctx.llm_observations or ctx.observations,
+        observations=[] if chat_messages else (ctx.llm_observations or ctx.observations),
         completed_actions=ctx.completed_actions,
         work_context=ctx.work_context,
-        history_summary=ctx.history_summary,
+        history_summary="" if chat_messages else ctx.history_summary,
     )
     log_ctx = {
         "project_id": ctx.work_context.get("project_id", ""),
         "script_id": ctx.script_id,
+        "conversation_id": ctx.conversation_id,
         "agent_name": agent_name,
         "step_id": ctx.step_id,
         "role": "agent_action",
@@ -547,6 +552,7 @@ async def run_llm_action(
         user_content,
         log_context=log_ctx,
         summary_prefix=f"动作 {action}",
+        chat_messages=chat_messages or None,
     )
     observation = apply_action_result(store, agent_name, action, ctx, data)
     schedule_save(store)

@@ -90,7 +90,6 @@ ACTION_LABELS: dict[str, str] = {
 TOOL_LABELS: dict[str, str] = {
     "tool_get_plan_summary": "调用工具 · 查询计划摘要",
     "tool_list_assets": "调用工具 · 统计资产",
-    "tool_estimate_video_cost": "调用工具 · 估算视频费用",
 }
 
 

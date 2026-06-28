@@ -7,7 +7,7 @@
 
 # Actions
 - delegate_script_design / delegate_image_gen / delegate_storyboard / delegate_video_gen / delegate_tts_gen / delegate_edit_compose：委派对应子 Agent。
-- tool_get_plan_summary / tool_list_assets / tool_estimate_video_cost：查询计划与资产状态。
+- tool_get_plan_summary / tool_list_assets：查询计划与资产状态。
 - finish：全部必要步骤完成后结束。
 
 # Constraints

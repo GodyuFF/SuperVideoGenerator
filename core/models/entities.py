@@ -13,10 +13,15 @@ def new_id(prefix: str) -> str:
 
 
 class GenerationMode(str, Enum):
-    """视频生成确认模式。"""
+    """视频生成模式（保留枚举以兼容持久化数据）。"""
 
-    AUTO = "auto"  # 自动生成：跳过视频生成费用确认
-    COST_CONFIRM = "cost_confirm"  # 费用确认：视频生成前需用户 A2UI 确认
+    AUTO = "auto"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "GenerationMode | None":
+        if value == "cost_confirm":
+            return cls.AUTO
+        return None
 
 
 class ScriptStatus(str, Enum):
@@ -27,6 +32,28 @@ class ScriptStatus(str, Enum):
     EXECUTING = "executing"  # 执行中，资产只读
     COMPLETED = "completed"  # 执行完成
     FAILED = "failed"  # 执行失败
+
+
+class ConversationStatus(str, Enum):
+    """用户对话线程状态。"""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class Conversation(BaseModel):
+    """用户与超级视频大师的一次对话线程（可跨多轮消息）。"""
+
+    id: str = Field(default_factory=lambda: new_id("conv"))
+    project_id: str
+    script_id: str
+    title: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    status: ConversationStatus = ConversationStatus.ACTIVE
+    last_summary: str = ""
+    last_round_token_usage: dict[str, Any] = Field(default_factory=dict)
+    total_token_usage: dict[str, Any] = Field(default_factory=dict)
 
 
 class AssetStatus(str, Enum):
@@ -87,7 +114,7 @@ class VideoStyleMode(str, Enum):
 class GenerationConfig(BaseModel):
     """生成行为配置（项目级）。"""
 
-    mode: GenerationMode = GenerationMode.COST_CONFIRM
+    mode: GenerationMode = GenerationMode.AUTO
     require_plan_approval: bool = False  # 是否强制 Plan 后人工确认再执行
     require_script_structure_approval: bool = True  # 是否确认剧本粒度结构
 
@@ -242,7 +269,6 @@ class PlanStep(BaseModel):
     progress: int = 0
     outputs: list[StepOutput] = Field(default_factory=list)
     error: str | None = None
-    estimated_cost_usd: float | None = None  # 预估费用（视频生成等）
 
 
 class PlanDocument(BaseModel):

@@ -114,7 +114,9 @@ def prepare_sub_agent_context(
     conversations: ConversationStore,
 ) -> PreparedContext:
     """子 Agent 执行前：聚合会话历史 + observation，滑窗并压缩。"""
-    messages = conversations.list_messages(ctx.script_id, "agent", ctx.agent_name)
+    messages = conversations.list_messages(
+        ctx.conversation_id, "agent", ctx.agent_name
+    )
     all_lines = conversation_to_history_lines(messages)
     # 思考/行动/任务简报进入 history_summary；观察走 observations 块，避免重复
     history_lines = [line for line in all_lines if not line.startswith("[观察]")]

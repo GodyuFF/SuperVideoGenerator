@@ -30,11 +30,11 @@ def test_new_id_prefix():
 
 
 def test_project_config_defaults():
-  """默认配置应为费用确认模式 + 动态图片风格。"""
+  """默认配置应为自动模式 + 动态图片风格。"""
   from core.models.entities import ProjectConfig
 
   cfg = ProjectConfig()
-  assert cfg.generation.mode == GenerationMode.COST_CONFIRM
+  assert cfg.generation.mode == GenerationMode.AUTO
   assert cfg.style.mode == VideoStyleMode.DYNAMIC_IMAGE
 
 
@@ -135,78 +135,3 @@ async def test_confirmation_rejected():
   await task
   assert not response.approved
 
-
-@pytest.mark.asyncio
-async def test_wait_for_video_gen_auto_skips():
-  """自动生成模式应跳过视频生成 A2UI 确认。"""
-  emitter = EventEmitter()
-  mgr = ConfirmationManager(emitter)
-  result = await mgr.wait_for_video_gen("step_1", 3, 0.45, mode="auto")
-  assert result is True
-  assert len(mgr._pending) == 0
-
-
-@pytest.mark.asyncio
-async def test_wait_for_video_gen_cost_confirm():
-  """费用确认模式应等待用户 A2UI 同意。"""
-  emitter = EventEmitter()
-  events = []
-
-  async def capture(e):
-    events.append(e)
-
-  emitter.subscribe(capture)
-  mgr = ConfirmationManager(emitter, default_timeout=5.0)
-
-  async def approve():
-    import asyncio
-
-    await asyncio.sleep(0.05)
-    for e in events:
-      if e.get("type") == "a2ui_confirmation_required":
-        mgr.resolve(
-          A2UIConfirmationResponse(
-            confirmation_id=e["confirmation_id"], approved=True
-          )
-        )
-        break
-
-  import asyncio
-
-  task = asyncio.create_task(approve())
-  result = await mgr.wait_for_video_gen("step_1", 3, 0.45, mode="cost_confirm")
-  await task
-  assert result is True
-
-
-@pytest.mark.asyncio
-async def test_wait_for_video_gen_rejected():
-  """费用确认模式下用户拒绝应抛出 ConfirmationRejectedError。"""
-  emitter = EventEmitter()
-  events = []
-
-  async def capture(e):
-    events.append(e)
-
-  emitter.subscribe(capture)
-  mgr = ConfirmationManager(emitter, default_timeout=5.0)
-
-  async def reject():
-    import asyncio
-
-    await asyncio.sleep(0.05)
-    for e in events:
-      if e.get("type") == "a2ui_confirmation_required":
-        mgr.resolve(
-          A2UIConfirmationResponse(
-            confirmation_id=e["confirmation_id"], approved=False
-          )
-        )
-        break
-
-  import asyncio
-
-  task = asyncio.create_task(reject())
-  with pytest.raises(ConfirmationRejectedError):
-    await mgr.wait_for_video_gen("step_1", 3, 0.45, mode="cost_confirm")
-  await task

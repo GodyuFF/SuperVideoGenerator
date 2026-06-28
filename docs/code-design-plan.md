@@ -9,7 +9,7 @@
 - ReAct 主编排（超级视频大师 + 子 Agent）
 - 分阶段结构化日志
 - **A2UI** 不确定信息前端确认（WebSocket 推送表单 → 用户响应）
-- **生成模式**：`auto`（自动，跳过视频生成确认）/ `cost_confirm`（费用确认，视频生成前需用户点击）
+- **Token 预估**：LLM 调用前按 prompt + `max_tokens` 预估，写入交互日志与对话元数据
 - `tests/` 目录可独立验证核心逻辑与 API
 
 ## 2. 仓库结构
@@ -23,7 +23,7 @@ SuperVideoGenerator/
 │   ├── a2ui/                   # A2UI 确认协议与 ConfirmationManager
 │   ├── events/                 # 事件类型与 EventEmitter
 │   ├── store/                  # 内存/SQLite 仓储
-│   ├── super_video_master/     # 薄入口：run_from_message、intent、summary
+│   ├── super_video_master/     # 薄入口：run_from_message、summary
 │   ├── conversation/           # 主/子 Agent 会话隔离
 │   ├── llm/                    # HTTP 客户端 + JSON ReAct
 │   │   └── master/             # 主编排：session、actions、tools、master_react
@@ -40,22 +40,15 @@ SuperVideoGenerator/
 └── requirements.txt
 ```
 
-## 3. 生成模式设计
+## 3. Token 预估与对话轮次日志
 
-```python
-class GenerationMode(str, Enum):
-    AUTO = "auto"           # 自动：video_gen 不弹确认，直接调用
-    COST_CONFIRM = "cost_confirm"  # 费用确认：video_gen 前 A2UI 展示预估费用
-```
+- 模块：`core/llm/tokens.py`（调用前启发式预估）、`core/llm/token_round.py`（单轮汇总）
+- `LLMClient` 在 **发起 HTTP 请求前** 估算 `prompt_tokens` + `max_tokens`（completion 上限），写入 `llm_request` / `llm_response` 的 `meta.token_usage`（`estimated: true`）
+- `run_from_message` 每轮开始 `begin_token_round`，结束写入：
+  - `Conversation.last_round_token_usage` / `total_token_usage`（按 model 累计）
+  - 交互日志 `kind=conversation_token_round`
 
-| 场景 | AUTO | COST_CONFIRM |
-|------|------|--------------|
-| 剧本粒度提案 | A2UI（可选，默认仍确认结构） | A2UI |
-| Plan 完成后执行 | 可配置 `require_plan_approval` | 通常需确认 |
-| **video_gen 步骤** | **跳过确认，直接执行** | **A2UI 费用卡片，用户点击后执行** |
-| image_gen / tts | 直接执行 | 直接执行（P1 可扩展费用确认） |
-
-配置路径：`ProjectConfig.generation.mode`
+配置路径：`LLMConfigManager.max_tokens` 参与 completion 预估。
 
 ## 4. A2UI 协议
 
@@ -99,7 +92,7 @@ interface A2UIConfirmationResponse {
 - `request_confirmation(...)` → 注册 Future，通过 EventEmitter 推送 A2UI
 - WebSocket 收到 response 后 resolve Future
 - 超时 → `approved=false` 或抛 `ConfirmationTimeout`
-- Executor 在 `video_gen` 前调用 `await confirmation_manager.wait_for_video_gen(...)`
+- 剧本需求补全：`request_script_requirements`
 
 ## 5. 日志设计
 
@@ -108,7 +101,8 @@ interface A2UIConfirmationResponse {
 ```
 [STAGE:super_video_master] project=xxx script=xxx message=...
 [STAGE:master.react] script=xxx iteration=1 action=delegate_script_design
-[STAGE:a2ui] confirmation_id=xxx kind=video_generation_cost waiting=true
+[STAGE:a2ui] confirmation_id=xxx kind=script_requirements waiting=true
+[STAGE:interaction] kind=conversation_token_round total_tokens=...
 ```
 
 环境变量 `LOG_LEVEL=DEBUG` 可打开详细日志。
@@ -126,17 +120,19 @@ context_window  ◄── ConversationStore ────────┤
 rules/*.md ──► PromptBuilder.build_react_system / build_action_system
 ```
 
-### 5.1 对话主流程（`run_from_message`）
+### 5.2 对话主流程（`run_from_message`）
 
 1. 校验剧本状态  
-2. LLM 意图门卫（`intent.py`）  
+2. 确保 `conversation_id`（API 层创建或校验 `ConversationIndex`）  
 3. A2UI 需求补全（可选）  
 4. 绑定视频风格  
-5. `new_conversation_id()` + `ConversationStore` 记录用户消息  
+5. `ConversationStore` 记录用户消息（键：`{conversation_id}:master`）  
 6. `MasterReActEngine.run`（`decide_master_session` 循环）  
-7. LLM 生成用户可见摘要  
+7. LLM 生成用户可见摘要；更新 `Conversation.last_summary`  
 
-### 5.2 core/llm 模块
+持久化：`dev_store.json` 字段 `conversations`（元数据）+ `conversation_messages`（消息）。
+
+### 5.3 core/llm 模块
 
 | 文件 | 职责 |
 |------|------|
@@ -148,7 +144,8 @@ rules/*.md ──► PromptBuilder.build_react_system / build_action_system
 | `master/tools.py` | 主编排 `tool_*` 执行器 |
 | `protocol.py` | `parse_react_json` |
 | `streaming.py` | SSE + `ReactJsonThoughtParser` |
-| `models.py` | `ReActAgentInfo`、`new_conversation_id` |
+| `tokens.py` | 调用前 token 启发式预估 |
+| `token_round.py` | 单轮对话按 model 汇总 |
 
 | 组件 | 路径 | 职责 |
 |------|------|------|
@@ -166,7 +163,7 @@ rules/*.md ──► PromptBuilder.build_react_system / build_action_system
 | **C2** | ReAct 主编排 + mock agents | `tests/unit/test_super_video_master.py` |
 | **C3** | FastAPI + WebSocket | `tests/api/test_api.py` |
 | **C4** | React 工作台 + A2UIModal | 手动 + `npm run build` |
-| **C5** | 端到端：cost_confirm 阻塞 video_gen | `tests/unit/test_generation_modes.py` |
+| **C5** | 端到端：对话轮次 token 预估日志 | `tests/unit/test_llm_tokens.py` |
 
 ## 7. API 端点（MVP）
 
@@ -178,8 +175,10 @@ rules/*.md ──► PromptBuilder.build_react_system / build_action_system
 | POST | `/api/projects/{id}/scripts` | 创建剧本 |
 | GET | `/api/projects/{id}/scripts/{sid}` | 剧本详情 |
 | GET | `/api/projects/{id}/scripts/{sid}/assets` | 资产列表 |
-| POST | `/api/projects/{id}/scripts/{sid}/plan` | 触发 Plan |
-| POST | `/api/projects/{id}/scripts/{sid}/execute` | 触发 Execute |
+| POST | `/api/projects/{id}/scripts/{sid}/chat` | 对话消息（body 可选 `conversation_id`） |
+| POST | `/api/projects/{id}/scripts/{sid}/conversations` | 显式创建对话线程 |
+| GET | `/api/projects/{id}/conversations` | 项目历史对话列表（query `script_id` 过滤） |
+| GET | `/api/projects/{id}/conversations/{conv_id}/messages` | 唤醒：加载用户可见消息 |
 | WS | `/ws/projects/{id}/scripts/{sid}` | 事件 + A2UI |
 
 ## 8. 依赖

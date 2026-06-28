@@ -3,12 +3,17 @@
 from typing import Any
 
 from core.agents.react_core import AgentRunContext, ReActDecision
+from core.conversation import ConversationStore
 from core.llm.client import LLMClient
 from core.llm.protocol import parse_react_json
 from core.llm.settings import LLMConfigManager
 from core.llm.streaming import OnDelta
 from core.logging.setup import get_logger, log_stage
 from core.prompt.builder import build_react_json_user, build_react_system
+from core.prompt.chat_messages import (
+    build_agent_react_chat_history,
+    build_master_react_chat_history,
+)
 from core.prompt.context_manager import AgentContextManager
 from core.prompt.context_window import prepare_master_context
 
@@ -41,6 +46,7 @@ async def decide_react(
     log_context: dict[str, Any],
     on_delta: OnDelta | None = None,
     summary_prefix: str = "ReAct JSON",
+    chat_messages: list[dict[str, str]] | None = None,
 ) -> ReActDecision:
     """单轮 ReAct LLM 决策（JSON 协议）。"""
     try:
@@ -51,6 +57,7 @@ async def decide_react(
             summary_prefix=summary_prefix,
             response_format={"type": "json_object"},
             on_delta=on_delta,
+            chat_messages=chat_messages,
         )
         decision = parse_react_json(raw)
         try:
@@ -69,18 +76,27 @@ async def decide_react(
         raise
 
 
-def build_master_context_json(session: Any) -> str:
+def build_master_context_json(session: Any, *, use_chat_history: bool = False) -> str:
     """主编排 ReAct 动态 user 上下文（JSON）。"""
-    prepared = prepare_master_context(session.observations)
     extra = dict(session.extra or {})
-    if prepared.history_summary:
-        extra["history_summary"] = prepared.history_summary
+    if use_chat_history:
+        extra.pop("history_summary", None)
+        prepared = prepare_master_context([])
+        observations = None
+        include_observations = False
+    else:
+        prepared = prepare_master_context(session.observations)
+        if prepared.history_summary:
+            extra["history_summary"] = prepared.history_summary
+        observations = prepared.observations
+        include_observations = True
     return build_react_json_user(
         task_brief=session.task_brief,
         available_actions=session.available_actions(),
         completed=session.completed_labels(),
-        observations=prepared.observations,
+        observations=observations,
         extra=extra,
+        include_observations=include_observations,
     )
 
 
@@ -88,11 +104,15 @@ async def decide_master_session(
     client: LLMClient,
     config: LLMConfigManager,
     session: Any,
+    conversations: ConversationStore,
     on_delta: OnDelta | None = None,
 ) -> ReActDecision:
     """主编排 ReActSession 单轮决策。"""
     require_llm(config)
-    context_json = build_master_context_json(session)
+    chat_messages = build_master_react_chat_history(
+        conversations, session.conversation_id
+    )
+    context_json = build_master_context_json(session, use_chat_history=bool(chat_messages))
     log_ctx = {
         "project_id": session.project_id,
         "script_id": session.script_id,
@@ -108,6 +128,7 @@ async def decide_master_session(
         allowed_actions=session.available_actions(),
         log_context=log_ctx,
         on_delta=on_delta,
+        chat_messages=chat_messages or None,
     )
 
 
@@ -116,6 +137,7 @@ async def decide_sub_agent(
     config: LLMConfigManager,
     ctx: AgentRunContext,
     *,
+    conversations: ConversationStore,
     display_name: str,
     role_prompt: str,
     action_pipeline: list[str],
@@ -130,16 +152,30 @@ async def decide_sub_agent(
         + list(read_actions or [])
         + ["finish"]
     )
+    chat_messages = build_agent_react_chat_history(
+        conversations, ctx.conversation_id, ctx.agent_name
+    )
     react_inputs = AgentContextManager.sub_agent.build_react_inputs(
         ctx,
         role_prompt=role_prompt,
         display_name=display_name,
         available_actions=available,
     )
-    context_json = build_react_json_user(**react_inputs)
+    extra = dict(react_inputs.get("extra") or {})
+    if chat_messages:
+        extra.pop("history_summary", None)
+    context_json = build_react_json_user(
+        task_brief=react_inputs["task_brief"],
+        available_actions=react_inputs["available_actions"],
+        completed=react_inputs["completed"],
+        observations=react_inputs["observations"] if not chat_messages else None,
+        extra=extra,
+        include_observations=not bool(chat_messages),
+    )
     log_ctx = {
         "project_id": ctx.work_context.get("project_id", ""),
         "script_id": ctx.script_id,
+        "conversation_id": ctx.conversation_id,
         "agent_name": ctx.agent_name,
         "step_id": ctx.step_id,
         "role": "sub_agent",
@@ -151,4 +187,5 @@ async def decide_sub_agent(
         context_json=context_json,
         allowed_actions=available,
         log_context=log_ctx,
+        chat_messages=chat_messages or None,
     )

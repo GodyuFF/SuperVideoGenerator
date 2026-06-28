@@ -77,6 +77,36 @@ class InteractionRecorder:
             )
         )
 
+    async def record_conversation_token_round(
+        self,
+        *,
+        project_id: str,
+        script_id: str,
+        conversation_id: str,
+        usage: dict[str, Any],
+    ) -> InteractionRecord:
+        total = int(usage.get("total_tokens", 0))
+        model_parts = [
+            f"{m.get('model')}:{m.get('total_tokens')}"
+            for m in usage.get("models", [])
+        ]
+        summary = f"对话轮次 token 预估 {total}"
+        if model_parts:
+            summary += f" ({', '.join(model_parts)})"
+        return await self.record(
+            InteractionRecord(
+                kind="conversation_token_round",
+                source="llm",
+                project_id=project_id,
+                script_id=script_id,
+                summary=summary,
+                meta={
+                    "conversation_id": conversation_id,
+                    "token_usage": usage,
+                },
+            )
+        )
+
     async def record_api_request(
         self,
         *,
