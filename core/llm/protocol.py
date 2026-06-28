@@ -1,31 +1,10 @@
-"""OpenAI 风格 JSON ReAct 协议：构建上下文与解析响应。"""
+"""OpenAI 风格 JSON ReAct 协议：解析 LLM 响应。"""
 
 import json
 import re
 from typing import Any
 
 from core.agents.react_core import ReActDecision
-
-
-def build_react_json_context(
-    role_description: str,
-    task_brief: str,
-    available_actions: list[str],
-    completed: list[str],
-    observations: list[str],
-    extra: dict[str, Any] | None = None,
-) -> str:
-    """构建发给 LLM 的 JSON 格式 ReAct 上下文。"""
-    ctx = {
-        "role": role_description,
-        "task_brief": task_brief,
-        "available_actions": available_actions,
-        "completed_actions": completed or ["无"],
-        "observations": observations or ["无"],
-    }
-    if extra:
-        ctx.update(extra)
-    return json.dumps(ctx, ensure_ascii=False, indent=2)
 
 
 def parse_react_json(text: str | dict[str, Any]) -> ReActDecision:
@@ -38,7 +17,6 @@ def parse_react_json(text: str | dict[str, Any]) -> ReActDecision:
             action_input=data.get("action_input") or {},
         )
 
-    # 尝试直接解析
     try:
         data = json.loads(text.strip())
         if isinstance(data, dict):
@@ -50,7 +28,6 @@ def parse_react_json(text: str | dict[str, Any]) -> ReActDecision:
     except json.JSONDecodeError:
         pass
 
-    # 宽松提取：找第一个 { ... }
     match = re.search(r"\{[\s\S]*\}", text)
     if match:
         try:
@@ -63,7 +40,6 @@ def parse_react_json(text: str | dict[str, Any]) -> ReActDecision:
         except Exception:
             pass
 
-    # 最后兜底：正则提取字段
     thought_m = re.search(r'"thought"\s*:\s*"([^"]*)"', text)
     action_m = re.search(r'"action"\s*:\s*"([^"]*)"', text)
     if action_m:

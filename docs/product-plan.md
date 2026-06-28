@@ -686,7 +686,9 @@ SuperVideoGenerator/
 │       ├── routes/
 │       └── websocket/
 ├── core/
-│   ├── super_video_master/           # ReAct 主编排 (MasterReActEngine)
+│   ├── super_video_master/           # 主编排入口
+│   ├── llm/                          # LLM 客户端 + master/ 主编排 ReAct
+│   ├── conversation/                 # 主/子 Agent 会话隔离
 │   ├── prompt/                       # 提示词：fixed 角色 + dynamic 模板 + 滑窗压缩
 │   ├── agents/
 │   │   ├── script_agent/
@@ -809,7 +811,7 @@ type WsEvent =
 
 | 任务 | 交付物 |
 |------|--------|
-| ReAct 主编排 | MasterReActEngine + LLMReActDecider |
+| ReAct 主编排 | MasterReActEngine + `decide_master_session` |
 | 剧本 Agent | 对话解析 + 剧本 CRUD |
 | RAG 服务 | Indexer / Retriever / ReuseJudge（可先 Mock 向量） |
 | 粒度确认流程 | script_structure_proposal UI |

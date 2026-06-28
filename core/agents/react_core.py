@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
-from core.agents.conversation import ConversationRole, ConversationStore
+from core.conversation import ConversationRole, ConversationStore
 from core.agents.script_assets import SCRIPT_MUTATION_ACTIONS
 from core.constants import MAX_REACT_ITERATIONS, VIDEO_GEN_COST_PER_SHOT_USD
 from core.events.emitter import EventEmitter

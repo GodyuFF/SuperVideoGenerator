@@ -1,6 +1,6 @@
 """上下文滑窗与压缩测试。"""
 
-from core.agents.conversation import ConversationRole, ConversationStore
+from core.conversation import ConversationRole, ConversationStore
 from core.agents.react_core import AgentRunContext
 from core.prompt.context_window import (
     prepare_master_context,

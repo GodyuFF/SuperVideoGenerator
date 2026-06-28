@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from core.agents.conversation import ConversationStore
+from core.conversation import ConversationStore
 from core.agents.llm_action import build_action_system_prompt, run_llm_action
 from core.agents.prompt_resolver import resolve_agent_prompts
 from core.agents.react_core import AgentRunContext, ReActDecision, ReActRunner
@@ -11,7 +11,7 @@ from core.agents.tools.specs import ad_hoc_actions, is_read_only_action, pipelin
 from core.events.emitter import EventEmitter
 from core.interaction_log.recorder import InteractionRecorder
 from core.llm.client import LLMClient
-from core.llm.react_decider import LLMReActDecider
+from core.llm.react_decide import decide_sub_agent
 from core.llm.settings import LLMConfigManager
 from core.models.entities import StepOutput
 from core.store.memory import MemoryStore
@@ -29,10 +29,9 @@ class ReActAgent:
         store: MemoryStore,
         emitter: EventEmitter,
         conversations: ConversationStore,
-        llm_decider: LLMReActDecider,
+        llm_config: LLMConfigManager,
+        llm_client: LLMClient,
         recorder: InteractionRecorder | None = None,
-        llm_config: LLMConfigManager | None = None,
-        llm_client: LLMClient | None = None,
         agent_config: Any | None = None,
     ) -> None:
         from core.agents.config_manager import AgentConfigManager
@@ -40,10 +39,9 @@ class ReActAgent:
         self._store = store
         self._emitter = emitter
         self._conversations = conversations
-        self._llm_decider = llm_decider
+        self._llm_config = llm_config
+        self._llm_client = llm_client
         self._recorder = recorder
-        self._llm_config = llm_config or llm_decider._config
-        self._llm_client = llm_client or llm_decider._client
         self._agent_config = agent_config or AgentConfigManager()
         self._runner = ReActRunner(emitter, conversations)
         self._tool_executor = AgentToolExecutor(store)
@@ -105,7 +103,9 @@ class ReActAgent:
 
     async def decide(self, ctx: AgentRunContext) -> ReActDecision:
         role_prompt = self.resolve_role_prompt(ctx)
-        return await self._llm_decider.decide_agent(
+        return await decide_sub_agent(
+            self._llm_client,
+            self._llm_config,
             ctx,
             display_name=self.display_name,
             role_prompt=role_prompt,

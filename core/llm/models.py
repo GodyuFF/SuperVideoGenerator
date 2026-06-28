@@ -1,4 +1,4 @@
-"""ReAct 数据模型（无业务逻辑，避免循环导入）。"""
+"""ReAct 数据模型（无业务逻辑）。"""
 
 from dataclasses import dataclass, field
 from typing import Any

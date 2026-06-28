@@ -23,7 +23,10 @@ SuperVideoGenerator/
 │   ├── a2ui/                   # A2UI 确认协议与 ConfirmationManager
 │   ├── events/                 # 事件类型与 EventEmitter
 │   ├── store/                  # 内存/SQLite 仓储
-│   ├── super_video_master/     # ReAct 主编排
+│   ├── super_video_master/     # 薄入口：run_from_message、intent、summary
+│   ├── conversation/           # 主/子 Agent 会话隔离
+│   ├── llm/                    # HTTP 客户端 + JSON ReAct
+│   │   └── master/             # 主编排：session、actions、tools、master_react
 │   ├── prompt/                 # Agent 提示词（fixed/dynamic 分层）
 │   └── agents/                 # 子 Agent（Mock → 真实 API）
 ├── apps/
@@ -119,9 +122,33 @@ fixed/role.*.md ──► prompt_resolver ──► role_prompt
                                               │
 context_window  ◄── ConversationStore ────────┤
        │                                      │
-       └────► AgentContextManager ──► PromptBuilder.build_react_user / build_action_user
+       └────► AgentContextManager ──► PromptBuilder.build_react_json_user / build_action_user
 rules/*.md ──► PromptBuilder.build_react_system / build_action_system
 ```
+
+### 5.1 对话主流程（`run_from_message`）
+
+1. 校验剧本状态  
+2. LLM 意图门卫（`intent.py`）  
+3. A2UI 需求补全（可选）  
+4. 绑定视频风格  
+5. `new_conversation_id()` + `ConversationStore` 记录用户消息  
+6. `MasterReActEngine.run`（`decide_master_session` 循环）  
+7. LLM 生成用户可见摘要  
+
+### 5.2 core/llm 模块
+
+| 文件 | 职责 |
+|------|------|
+| `client.py` | HTTP 流式：`complete_text` / `complete_json` |
+| `react_decide.py` | `decide_react` / `decide_master_session` / `decide_sub_agent` |
+| `master/master_react.py` | `MasterReActEngine` 主编排 ReAct 循环 |
+| `master/session.py` | `ReActSession` / `create_master_react_session` |
+| `master/actions.py` | 委派 action 与流水线元数据 |
+| `master/tools.py` | 主编排 `tool_*` 执行器 |
+| `protocol.py` | `parse_react_json` |
+| `streaming.py` | SSE + `ReactJsonThoughtParser` |
+| `models.py` | `ReActAgentInfo`、`new_conversation_id` |
 
 | 组件 | 路径 | 职责 |
 |------|------|------|

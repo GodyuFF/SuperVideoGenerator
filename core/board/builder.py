@@ -3,7 +3,7 @@
 from core.board.models import BoardEdge, BoardNode, BoardView, PipelineStepView
 from core.models.entities import AssetScope, MediaAssetType, TextAssetType, VideoStyleMode
 from core.store.memory import MemoryStore
-from core.super_video_master.actions import STEP_META, pipeline_for_style
+from core.llm.master import STEP_META, pipeline_for_style
 
 BOARD_KINDS = [
     "overview",
@@ -508,7 +508,7 @@ class BoardBuilder:
         for i, action in enumerate(delegate_actions):
             step_type = action.replace("delegate_", "").replace("_", "_")
             # map delegate action to step type key in STEP_META
-            from core.super_video_master.actions import ACTION_TO_STEP
+            from core.llm.master import ACTION_TO_STEP
 
             st = ACTION_TO_STEP.get(action, "")
             meta = STEP_META.get(st, {})

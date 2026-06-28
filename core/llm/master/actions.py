@@ -1,4 +1,4 @@
-"""主编排行动定义与任务简报（供 master_react 共用）。"""
+"""主编排行动定义与任务简报（供 core.llm.master 共用）。"""
 
 from typing import Literal
 

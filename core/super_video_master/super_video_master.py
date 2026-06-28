@@ -1,17 +1,16 @@
 """超级视频大师主 Agent：ReAct 编排，与用户及子 Agent 对话隔离。"""
 
 from core.a2ui.manager import ConfirmationManager, ConfirmationRejectedError
-from core.agents.conversation import ConversationRole, ConversationStore
+from core.conversation import ConversationRole, ConversationStore
 from core.super_video_master import MASTER_AGENT_NAME
-from core.super_video_master.master_react import MasterReActEngine
+from core.llm.master import MasterReActEngine
 from core.events.emitter import EventEmitter
 from core.interaction_log.recorder import InteractionRecorder
 from core.logging.setup import get_logger, log_stage
-from core.dialogue.session_store import DialogueSessionStore
 from core.guards.script_style import bind_script_style
 from core.super_video_master.intent import classify_user_intent
 from core.llm.client import LLMClient
-from core.llm.react_decider import LLMReActDecider
+from core.llm.models import new_conversation_id
 from core.llm.settings import LLMConfigManager
 from core.models.entities import ScriptStatus, VideoStyleMode
 from core.agents.config_manager import AgentConfigManager
@@ -25,33 +24,29 @@ class SuperVideoMaster:
     """主编排器（超级视频大师）：主会话 ReAct + 向子 Agent 下发隔离任务简报。"""
 
     def __init__(
-        self,
-        store: MemoryStore,
-        emitter: EventEmitter,
-        confirmation_manager: ConfirmationManager,
-        conversations: ConversationStore | None = None,
-        llm_config: LLMConfigManager | None = None,
-        interaction_recorder: InteractionRecorder | None = None,
-        agent_config: AgentConfigManager | None = None,
+            self,
+            store: MemoryStore,
+            emitter: EventEmitter,
+            confirmation_manager: ConfirmationManager,
+            conversations: ConversationStore | None = None,
+            llm_config: LLMConfigManager | None = None,
+            interaction_recorder: InteractionRecorder | None = None,
+            agent_config: AgentConfigManager | None = None,
     ) -> None:
         self._store = store
         self._emitter = emitter
         self._confirmation = confirmation_manager
         self._conversations = conversations or ConversationStore()
-        self._dialogue_sessions = DialogueSessionStore()
         self._llm_config = llm_config or LLMConfigManager()
         self._recorder = interaction_recorder
-        llm_client = LLMClient(self._llm_config, self._recorder)
-        self._llm_client = llm_client
-        self._llm_decider = LLMReActDecider(
-            self._llm_config, llm_client, self._recorder
-        )
+        self._llm_client = LLMClient(self._llm_config, self._recorder)
         self._agent_config = agent_config or AgentConfigManager()
         self._registry = AgentRegistry(
             store,
             emitter,
             self._conversations,
-            self._llm_decider,
+            self._llm_config,
+            self._llm_client,
             self._recorder,
             self._agent_config,
         )
@@ -61,7 +56,8 @@ class SuperVideoMaster:
             self._registry,
             self._conversations,
             confirmation_manager,
-            self._llm_decider,
+            self._llm_config,
+            self._llm_client,
         )
 
     async def _emit_llm_summary(self, script_id: str, content: str) -> None:
@@ -80,11 +76,11 @@ class SuperVideoMaster:
         )
 
     async def run_from_message(
-        self,
-        project_id: str,
-        script_id: str,
-        message: str,
-        requested_style: VideoStyleMode | None = None,
+            self,
+            project_id: str,
+            script_id: str,
+            message: str,
+            requested_style: VideoStyleMode | None = None,
     ) -> str:
         """
         对话入口：用户消息仅进入主会话；子 Agent 通过任务简报隔离调用。
@@ -99,6 +95,7 @@ class SuperVideoMaster:
 
         user_text = message.strip()
 
+        # 1. LLM 意图门卫：判断是否属于视频制作范围
         intent = await classify_user_intent(
             self._llm_client,
             user_text,
@@ -110,11 +107,11 @@ class SuperVideoMaster:
             self._conversations.add(script_id, "master", ConversationRole.MASTER, decline)
             return "intent-skip", decline
 
-        # 信息完整性检查：项目/剧本已具备风格与时长上下文时跳过 A2UI 追问
+        # 2. A2UI 需求补全（项目/剧本已有风格与时长时可跳过）
         style_known = (
-            requested_style is not None
-            or script.style_locked
-            or project.config.style.mode is not None
+                requested_style is not None
+                or script.style_locked
+                or project.config.style.mode is not None
         )
         has_duration_context = bool(script.duration_sec) or any(
             kw in user_text.lower() for kw in ["秒", "时长", "分钟"]
@@ -155,6 +152,7 @@ class SuperVideoMaster:
                 )
                 return "cancelled", "已取消。"
 
+        # 3. 绑定视频风格到剧本
         style_mode = bind_script_style(script, project, requested_style)
         await self._emitter.emit(
             {
@@ -171,6 +169,7 @@ class SuperVideoMaster:
             style_mode=style_mode.value,
         )
 
+        # 4. 主会话记录用户消息（ConversationStore master 通道）
         self._conversations.add(
             script_id, "master", ConversationRole.USER, user_text
         )
@@ -181,10 +180,9 @@ class SuperVideoMaster:
         script.title = preview or script.title
 
         log_stage(logger, "super_video_master", "ReAct 对话驱动开始", script_id=script_id)
-        conversation_id = self._dialogue_sessions.create(
-            project_id, script_id, user_text
-        )
+        conversation_id = new_conversation_id()
 
+        # 5. MasterReActEngine：ReAct 委派子 Agent 完成流水线
         observations = await self._react.run(
             project_id=project_id,
             script_id=script_id,
@@ -194,6 +192,7 @@ class SuperVideoMaster:
             conversation_id=conversation_id,
         )
 
+        # 6. LLM 生成用户可见结束摘要
         from core.super_video_master.summary import generate_user_summary
 
         stream_id = f"summary-{conversation_id}"

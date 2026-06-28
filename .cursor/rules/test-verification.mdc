@@ -22,7 +22,7 @@ if test_mode:
 ```
 
 **GOOD 示例**：
-- 修改 `core/super_video_master/master_react.py` 后立即执行：
+- 修改 `core/llm/master_react.py` 后立即执行：
   ```bash
   pytest tests/unit/ -q && pytest tests/ -q
   ```

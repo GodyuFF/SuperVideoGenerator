@@ -1,6 +1,6 @@
 # 提示词架构（core/prompt）
 
-> 更新日期：2026-06-28
+> 更新日期：2026-06-27
 
 本文档描述 SuperVideoGenerator 中 Agent 提示词的 **固定区 / 动态区** 分层设计，参考 Claude Code 的 system prompt 组装模式。
 
@@ -13,7 +13,7 @@
 | 项目规则 | CLAUDE.md 注入对话 | 项目 `role_prompt` override（`prompt_resolver`） |
 | 按需加载 | Skills / MCP | `PromptProfile`（default / dynamic_image / ai_video） |
 
-**边界约定**：LLM 调用时 `system` 仅含固定区；`user` 含全部动态上下文（ReAct XML 或行动文本）。
+**边界约定**：LLM 调用时 `system` 仅含固定区；`user` 含全部动态上下文（ReAct JSON 或行动文本）。
 
 ## 2. 目录结构
 
@@ -26,11 +26,10 @@ core/prompt/
 ├── loader.py
 ├── config.py
 ├── rules/
-│   ├── react_xml.md        # 全局 ReAct XML 输出协议
+│   ├── react_json.md       # 全局 ReAct JSON 输出协议
 │   └── action_json.md      # 全局 JSON 输出协议（通用规则）
 ├── templates/
-│   ├── react_context.xml   # 子 Agent ReAct 动态 user 模板
-│   ├── react_session.xml   # 主编排 ReAct 动态 user 模板
+│   ├── react_context.xml   # 子 Agent ReAct 动态 user 模板（历史命名，内容为 JSON 槽位）
 │   └── action_context.txt  # 行动执行动态 user 模板
 └── agents/{agent_name}/
     └── fixed/
@@ -57,13 +56,14 @@ core/prompt/
 
 ### 3.1 ReAct 决策（选 action）
 
-```
-system: build_react_system()           ← rules/react_xml.md
-user:   build_react_user(slots)        ← templates/react_context.xml
-        slots 由 AgentContextManager.sub_agent 填充
-```
+统一 JSON 协议（`rules/react_json.md`），主编排与子 Agent 共用 `decide_react`：
 
-主编排使用 `templates/react_session.xml`（含 sub_agents、tools）。
+```
+system: build_react_system(role_prompt)  ← rules/react_json.md + 角色 fixed/role.*
+user:   build_react_json_user(slots)     ← JSON 动态槽位
+        子 Agent：slots 由 AgentContextManager.sub_agent 填充
+        主编排：build_master_context_json(session)（含 sub_agents、tools）
+```
 
 ### 3.2 行动执行（JSON observation）
 
@@ -115,15 +115,18 @@ user:   build_action_user(slots)
 | [`core/prompt/builder.py`](../core/prompt/builder.py) | 固定/动态组装 |
 | [`core/prompt/context_manager.py`](../core/prompt/context_manager.py) | 动态槽位 |
 | [`core/agents/base.py`](../core/agents/base.py) | 子 Agent ReAct / action 入口 |
-| [`core/llm/react_decider.py`](../core/llm/react_decider.py) | 子 Agent ReAct LLM 调用 |
-| [`core/llm/react.py`](../core/llm/react.py) | 主编排 ReAct LLM 调用 |
-| [`core/super_video_master/actions.py`](../core/super_video_master/actions.py) | STEP_META 描述从 role 摘要加载 |
+| [`core/llm/react_decide.py`](../core/llm/react_decide.py) | 统一 JSON ReAct 决策（主编排 + 子 Agent） |
+| [`core/llm/protocol.py`](../core/llm/protocol.py) | `parse_react_json` |
+| [`core/llm/master/`](../core/llm/master/) | 主编排 ReActSession、actions、tools、`MasterReActEngine` |
+| [`core/conversation/`](../core/conversation/) | 主/子 Agent 消息隔离 |
 | [`core/super_video_master/intent.py`](../core/super_video_master/intent.py) | 对话入口 LLM 意图门卫（`fixed/intent.md`） |
 
 ## 8. 变更记录
 
 | 日期 | 变更 |
 |------|------|
+| 2026-06-27 | 主编排收敛至 `core/llm/master/`；会话存储迁至 `core/conversation/` |
+| 2026-06-27 | 收敛 `core/llm`：统一 JSON ReAct（`react_decide.py`），删除 XML 遗留；主编排会话迁至 `super_video_master/session.py` |
 | 2026-06-28 | 对话入口意图判断改为 LLM 分类（`intent.md`），移除关键词硬编码拦截 |
 | 2026-06-24 | 引入 fixed/dynamic 分层、`PromptBuilder`、`AgentContextManager`；7 个 Agent 提示词重写为 Claude Code 分段格式 |
 | 2026-06-25 | 修复 TextAsset content 验证错误：修改 script_agent actions.md 与 role.default.md 及全局 action_json.md，明确要求 content 必须为对象（dict），禁止字符串；LLM 现按规范返回对象，normalization 保留兜底 |

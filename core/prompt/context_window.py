@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from core.agents.conversation import ConversationMessage, ConversationRole, ConversationStore
+from core.conversation import ConversationMessage, ConversationRole, ConversationStore
 from core.agents.react_core import AgentRunContext
 from core.prompt.config import (
     COMPRESSION_SNIPPET_CHARS,

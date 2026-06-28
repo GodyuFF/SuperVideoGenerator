@@ -59,8 +59,7 @@ def _load_with_fallback(paths: list[str]) -> str:
 
 
 def get_react_system_prompt() -> str:
-    # 优先使用 JSON 协议（OpenAI 风格），回退 XML
-    return load_text("rules/react_json.md") or load_required("rules/react_xml.md")
+    return load_required("rules/react_json.md")
 
 
 def get_action_json_system_base() -> str:

@@ -6,7 +6,7 @@ import pytest
 
 from core.a2ui.manager import ConfirmationManager
 from core.a2ui.schemas import A2UIConfirmationResponse
-from core.agents.conversation import ConversationStore
+from core.conversation import ConversationStore
 from core.super_video_master.super_video_master import SuperVideoMaster
 from core.events.emitter import EventEmitter
 from core.logging.setup import setup_logging

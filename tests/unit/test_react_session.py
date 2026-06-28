@@ -1,14 +1,13 @@
 """单元测试：ReActSession 与主编排工具。"""
 
+import json
+
 import pytest
 
-from core.llm.react_session import (
-    create_master_react_session,
-    new_conversation_id,
-)
-from core.llm.xml_protocol import build_react_session_xml
+from core.llm.models import new_conversation_id
+from core.llm.react_decide import build_master_context_json
 from core.models.entities import GenerationMode, VideoStyleMode
-from core.tools.master_tools import MasterToolExecutor
+from core.llm.master import MasterToolExecutor, create_master_react_session
 from core.store.memory import MemoryStore
 
 
@@ -33,20 +32,19 @@ def test_react_session_available_actions_include_tools_and_delegates():
     assert "delegate_video_gen" not in actions
 
 
-def test_build_react_session_xml_contains_session_fields():
+def test_build_master_context_json_contains_session_fields():
     session = create_master_react_session(
-        conversation_id="conv_xml",
+        conversation_id="conv_json",
         project_id="p1",
         script_id="s1",
-        user_message="XML 测试",
+        user_message="JSON 测试",
         style_mode=VideoStyleMode.AI_VIDEO,
         generation_mode=GenerationMode.AUTO,
     )
-    xml = build_react_session_xml(session)
-    assert "<conversation_id>conv_xml</conversation_id>" in xml
-    assert "<agent_name>super_video_master</agent_name>" in xml
-    assert "<action>tool_get_plan_summary</action>" in xml
-    assert "<delegate_action>delegate_script_design</delegate_action>" in xml
+    payload = json.loads(build_master_context_json(session))
+    assert "delegate_script_design" in payload["available_actions"]
+    assert "tool_get_plan_summary" in payload["available_actions"]
+    assert payload["task_brief"]
 
 
 @pytest.mark.asyncio

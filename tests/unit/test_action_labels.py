@@ -1,6 +1,6 @@
 """action_label 单元测试。"""
 
-from core.super_video_master.actions import action_kind, action_label
+from core.llm.master import action_kind, action_label
 
 
 def test_action_label_delegate():

@@ -1,6 +1,6 @@
-"""向后兼容：请使用 core.conversation。"""
+"""主/子 Agent 会话隔离存储。"""
 
-from core.conversation import (
+from core.conversation.store import (
     ConversationMessage,
     ConversationRole,
     ConversationStore,

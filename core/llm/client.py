@@ -17,7 +17,7 @@ logger = get_logger("core.llm.client")
 
 
 class LLMClient:
-    """通过 HTTP 调用大模型，请求与响应均围绕 XML ReAct 协议。"""
+    """OpenAI 兼容 Chat Completions 客户端（流式文本 / JSON）。"""
 
     def __init__(
         self,
@@ -199,74 +199,6 @@ class LLMClient:
             raise RuntimeError(
                 format_llm_http_error(e, url=url, provider=settings.provider)
             ) from e
-
-    async def complete_xml_react(
-        self,
-        role_description: str | list[dict[str, Any]],
-        context_xml: str,
-        log_context: dict[str, Any] | None = None,
-        on_delta: OnDelta | None = None,
-    ) -> str:
-        """发送系统提示 + XML 上下文，流式返回模型原始文本（应含 <react>）。
-
-        role_description 支持 str（旧版）或 list[dict]（Claude Code 风格多块 system）。
-        list 情况下会提取 text 字段拼接为单字符串（兼容 OpenAI 格式），cache_control 保留为元数据供未来 Anthropic 客户端使用。
-        """
-        ctx = log_context or {}
-        api_key = self._config.resolved_api_key()
-        if not api_key:
-            raise RuntimeError("未配置 LLM API Key")
-
-        settings = self._config.get_settings()
-        url = f"{self._config.resolved_base_url()}/chat/completions"
-        model = self._config.resolved_model()
-
-        if isinstance(role_description, list):
-            system_text = "\n\n".join(
-                b.get("text", "") for b in role_description if isinstance(b, dict) and b.get("text")
-            )
-        else:
-            system_text = role_description
-
-        # 构建 Claude Code 风格的结构化 payload（用于日志展示）
-        claude_payload = {
-            "model": model,
-            "tools": [],  # ReAct 暂无 tools，未来可扩展
-            "messages": [
-                {
-                    "role": "system",
-                    "content": [
-                        {"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}
-                    ]
-                },
-                {"role": "user", "content": context_xml}
-            ]
-        }
-
-        messages = [
-            {
-                "role": "system",
-                "content": system_text,
-            },
-            {"role": "user", "content": context_xml},
-        ]
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
-        return await self._stream_chat_completions(
-            messages,
-            {},
-            log_context=ctx,
-            summary_prefix="ReAct XML",
-            url=url,
-            model=model,
-            settings=settings,
-            headers=headers,
-            on_delta=on_delta,
-            response_kind="react_xml",
-        )
 
     async def complete_text(
         self,

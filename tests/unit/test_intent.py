@@ -3,7 +3,7 @@
 import pytest
 
 from core.a2ui.manager import ConfirmationManager
-from core.agents.conversation import ConversationStore
+from core.conversation import ConversationStore
 from core.events.emitter import EventEmitter
 from core.models.entities import GenerationMode, Project, Script, VideoStyleMode
 from core.store.memory import MemoryStore

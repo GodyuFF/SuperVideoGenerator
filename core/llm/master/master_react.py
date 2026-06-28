@@ -4,21 +4,24 @@ import asyncio
 from typing import Any
 
 from core.a2ui.manager import ConfirmationManager, ConfirmationRejectedError
-from core.agents.conversation import ConversationRole, ConversationStore
+from core.agents.react_core import MasterRunContext, ReActDecision
 from core.agents.registry import AgentRegistry
-from core.super_video_master import MASTER_AGENT_NAME
-from core.super_video_master.actions import (
+from core.constants import MAX_REACT_ITERATIONS, VIDEO_GEN_COST_PER_SHOT_USD
+from core.conversation import ConversationRole, ConversationStore
+from core.events.emitter import EventEmitter
+from core.llm.client import LLMClient
+from core.llm.master.actions import (
     ACTION_TO_STEP,
     STEP_META,
     TASK_BRIEFS,
     action_kind,
     action_label,
 )
-from core.agents.react_core import MasterRunContext, ReActDecision
-from core.constants import MAX_REACT_ITERATIONS, VIDEO_GEN_COST_PER_SHOT_USD
-from core.events.emitter import EventEmitter
-from core.llm.react_decider import LLMReActDecider
-from core.llm.react_session import create_master_react_session, ReActSession
+from core.llm.master.session import create_master_react_session
+from core.llm.master.tools import MasterToolExecutor
+from core.llm.react_decide import decide_master_session
+from core.llm.settings import LLMConfigManager
+from core.llm.streaming import OnDelta, ReactJsonThoughtParser
 from core.logging.setup import get_logger, log_stage
 from core.models.entities import (
     GenerationMode,
@@ -29,23 +32,9 @@ from core.models.entities import (
     VideoStyleMode,
 )
 from core.store.memory import MemoryStore
-from core.tools.master_tools import MasterToolExecutor
-from core.llm.streaming import OnDelta, ReactXmlThoughtParser
-logger = get_logger("core.super_video_master.react")
+from core.super_video_master import MASTER_AGENT_NAME
 
-
-class MasterReActPolicy:
-    """主 Agent ReAct 策略：基于 ReActSession（tools + sub_agents）做 LLM XML 决策。"""
-
-    def __init__(self, llm_decider: LLMReActDecider) -> None:
-        self._llm_decider = llm_decider
-
-    async def decide(
-        self,
-        session: ReActSession,
-        on_delta: OnDelta | None = None,
-    ) -> ReActDecision:
-        return await self._llm_decider.decide_session(session, on_delta=on_delta)
+logger = get_logger("core.llm.master.react")
 
 
 class MasterReActEngine:
@@ -58,14 +47,16 @@ class MasterReActEngine:
         registry: AgentRegistry,
         conversations: ConversationStore,
         confirmation: ConfirmationManager,
-        llm_decider: LLMReActDecider,
+        llm_config: LLMConfigManager,
+        llm_client: LLMClient,
     ) -> None:
         self._store = store
         self._emitter = emitter
         self._registry = registry
         self._conversations = conversations
         self._confirmation = confirmation
-        self._policy = MasterReActPolicy(llm_decider)
+        self._llm_config = llm_config
+        self._llm_client = llm_client
         self._tool_executor = MasterToolExecutor(store)
 
     async def _emit(self, script_id: str, event_type: str, payload: dict[str, Any]) -> None:
@@ -104,7 +95,7 @@ class MasterReActEngine:
         stream_id: str,
         iteration: int,
     ) -> OnDelta:
-        parser = ReactXmlThoughtParser()
+        parser = ReactJsonThoughtParser()
 
         async def on_delta(raw_delta: str) -> None:
             thought_delta = parser.feed(raw_delta)
@@ -313,7 +304,12 @@ class MasterReActEngine:
                 )
 
                 try:
-                    decision = await self._policy.decide(session, on_delta=on_delta)
+                    decision = await decide_master_session(
+                        self._llm_client,
+                        self._llm_config,
+                        session,
+                        on_delta=on_delta,
+                    )
                 except (RuntimeError, ValueError) as e:
                     observation = f"主编排决策失败：{e}"
                     ctx.observations.append(observation)

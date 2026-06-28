@@ -1,14 +1,12 @@
-"""Agent 交互流程验证测试：验证 role_prompt 从 definitions 正确传递到 XML。"""
-
-from unittest.mock import AsyncMock, MagicMock
+"""Agent 交互流程验证测试。"""
 
 import pytest
 
 from core.agents.definitions import AGENT_DEFINITIONS
+from core.conversation import ConversationStore
 from core.agents.registry import AgentRegistry
 from core.events.emitter import EventEmitter
 from core.interaction_log.recorder import InteractionRecorder
-from core.llm.react_decider import LLMReActDecider
 from core.llm.settings import LLMConfigManager
 from core.store.memory import MemoryStore
 from tests.support.scripted_llm import ScriptedLLMClient
@@ -23,9 +21,10 @@ async def test_agent_role_prompt_flow_to_xml():
     config = LLMConfigManager()
     config.update(api_key="test-key", use_llm_react=True)
     recorder = InteractionRecorder(None, emitter)
-    decider = LLMReActDecider(config, ScriptedLLMClient(), recorder)
-
-    registry = AgentRegistry(store, emitter, conversations, decider, recorder)
+    scripted = ScriptedLLMClient()
+    registry = AgentRegistry(
+        store, emitter, conversations, config, scripted, recorder
+    )
 
     for agent_name, definition in AGENT_DEFINITIONS.items():
         agent = registry.get(agent_name)
@@ -35,43 +34,37 @@ async def test_agent_role_prompt_flow_to_xml():
 
 @pytest.mark.asyncio
 async def test_role_prompt_in_decide_method():
-    """验证 ReActAgent.decide 方法正确传递 role_prompt 给 decider。"""
-    from unittest.mock import MagicMock
+    """验证 ReActAgent.decide 将 resolve_role_prompt 结果传给 decide_sub_agent。"""
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     from core.agents.react_core import AgentRunContext
 
-    # 创建一个 mock 的 llm_decider
-    mock_decider = MagicMock()
-    mock_decider.decide_agent = AsyncMock(return_value=MagicMock(action="finish", thought="test"))
+    mock_decision = MagicMock(action="finish", thought="test")
 
-    # 创建一个简单的 agent 子类用于测试
-    class TestAgent:
-        name = "test_agent"
-        display_name = "测试 Agent"
-        role_prompt = "我是专门的测试 Agent 角色提示。"
+    with patch(
+        "core.agents.base.decide_sub_agent", new_callable=AsyncMock
+    ) as mock_decide:
+        mock_decide.return_value = mock_decision
 
-        def get_action_pipeline(self):
-            return ["test"]
+        store = MemoryStore()
+        emitter = EventEmitter()
+        config = LLMConfigManager()
+        config.update(api_key="test-key", use_llm_react=True)
+        scripted = ScriptedLLMClient()
+        registry = AgentRegistry(
+            store, emitter, ConversationStore(), config, scripted
+        )
+        agent = registry.get("script_agent")
+        ctx = AgentRunContext(
+            task_brief="test",
+            work_context={},
+            script_id="s1",
+            step_id="step1",
+            agent_name="script_agent",
+        )
+        await agent.decide(ctx)
 
-        async def decide(self, ctx):
-            return await mock_decider.decide_agent(
-                ctx,
-                display_name=self.display_name,
-                role_prompt=self.role_prompt,
-                action_pipeline=self.get_action_pipeline(),
-            )
-
-    agent = TestAgent()
-    ctx = AgentRunContext(
-        task_brief="test",
-        work_context={},
-        script_id="s1",
-        step_id="step1",
-        agent_name="test_agent",
-    )
-
-    await agent.decide(ctx)
-
-    # 验证 decide_agent 被调用时传入了正确的 role_prompt
-    call_kwargs = mock_decider.decide_agent.call_args[1]
-    assert call_kwargs.get("role_prompt") == "我是专门的测试 Agent 角色提示。"
+        mock_decide.assert_awaited_once()
+        kwargs = mock_decide.call_args.kwargs
+        assert kwargs["role_prompt"] == agent.resolve_role_prompt(ctx)
+        assert kwargs["display_name"] == agent.display_name

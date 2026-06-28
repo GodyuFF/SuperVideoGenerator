@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 from core.a2ui.manager import ConfirmationManager
-from core.agents.conversation import ConversationStore
+from core.conversation import ConversationStore
 from core.interaction_log.file_store import InteractionFileStore
 from core.interaction_log.recorder import InteractionRecorder
 from core.interaction_log.store import InteractionLogStore

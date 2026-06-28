@@ -1,7 +1,7 @@
 """超级视频大师可调用的 ReAct Tools。"""
 
 from core.constants import VIDEO_GEN_COST_PER_SHOT_USD
-from core.llm.react_models import ReActToolInfo
+from core.llm.models import ReActToolInfo
 from core.store.memory import MemoryStore
 
 

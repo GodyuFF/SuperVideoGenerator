@@ -18,8 +18,8 @@ def inject_scripted_llm(master, style_mode: VideoStyleMode = VideoStyleMode.DYNA
     """将 SuperVideoMaster 及其子 Agent 的 LLM 客户端替换为脚本化实现。"""
     scripted = ScriptedLLMClient(style_mode)
     master._llm_config.update(api_key="test-scripted-key", use_llm_react=True)
-    master._llm_decider._client = scripted
     master._llm_client = scripted
+    master._react._llm_client = scripted
     for agent in master._registry._agents.values():
         agent._llm_client = scripted
     return scripted

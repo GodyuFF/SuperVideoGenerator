@@ -2,21 +2,17 @@
 
 import pytest
 
-from core.agents.conversation import ConversationStore
+from core.conversation import ConversationStore
+from core.agents.react_core import AgentRunContext
 from core.agents.registry import AgentRegistry
 from core.events.emitter import EventEmitter
 from core.llm.client import LLMClient
-from core.llm.react_decider import LLMReActDecider
+from core.llm.react_decide import decide_sub_agent, require_llm
 from core.llm.settings import LLMConfigManager
 from core.logging.setup import setup_logging
 from core.models.entities import Project, Script
 from core.store.memory import MemoryStore
-from tests.conftest import inject_scripted_llm
 from tests.support.scripted_llm import ScriptedLLMClient
-
-
-def _make_decider(scripted: ScriptedLLMClient, config: LLMConfigManager) -> LLMReActDecider:
-    return LLMReActDecider(config, scripted)
 
 
 @pytest.mark.asyncio
@@ -27,8 +23,9 @@ async def test_script_agent_react_isolated(llm_config_with_key):
     emitter = EventEmitter()
     conversations = ConversationStore()
     scripted = ScriptedLLMClient()
-    decider = _make_decider(scripted, llm_config_with_key)
-    registry = AgentRegistry(store, emitter, conversations, decider)
+    registry = AgentRegistry(
+        store, emitter, conversations, llm_config_with_key, scripted
+    )
     agent = registry.get("script_agent")
 
     project = Project(title="测试")
@@ -62,8 +59,8 @@ async def test_decider_requires_llm():
     """未配置 API Key 时应拒绝决策。"""
     config = LLMConfigManager()
     config.update(use_llm_react=False)
-    decider = LLMReActDecider(config, LLMClient(config))
-    from core.agents.react_core import AgentRunContext
+    with pytest.raises(RuntimeError, match="LLM"):
+        require_llm(config)
 
     ctx = AgentRunContext(
         task_brief="t",
@@ -73,4 +70,11 @@ async def test_decider_requires_llm():
         agent_name="script_agent",
     )
     with pytest.raises(RuntimeError, match="LLM"):
-        await decider.decide_agent(ctx, "剧本 Agent", ["parse_brief"])
+        await decide_sub_agent(
+            LLMClient(config),
+            config,
+            ctx,
+            display_name="剧本 Agent",
+            role_prompt="角色",
+            action_pipeline=["parse_brief"],
+        )
