@@ -101,8 +101,11 @@ class ScriptedLLMClient:
             return _scripted_action_json(action_match.group(1))
 
         ctx = log_context or {}
-        completed = _parse_completed_json(user_content)
         role = ctx.get("role", "")
+        if role == "intent_gate":
+            return _scripted_intent_json(user_content)
+
+        completed = _parse_completed_json(user_content)
         if role == "master":
             return self._master_react_json(completed)
         if role == "sub_agent":
@@ -149,6 +152,20 @@ class ScriptedLLMClient:
             for char in text:
                 await on_delta(char)
         return text
+
+
+def _scripted_intent_json(user_content: str) -> dict[str, Any]:
+    """测试用意图门卫：默认放行，仅明显离题消息拒绝。"""
+    match = re.search(r"用户消息：(.+)", user_content, re.S)
+    message = (match.group(1).strip() if match else user_content).strip()
+    off_topic_markers = ("今天天气", "股票价格", "写一段python", "编程作业")
+    if any(marker in message.lower() for marker in off_topic_markers):
+        return {
+            "in_scope": False,
+            "reason": "与视频制作无关",
+            "reply": "抱歉，我只能处理视频生成相关的请求。请描述您的视频创意。",
+        }
+    return {"in_scope": True, "reason": "属于视频制作或创意描述", "reply": ""}
 
 
 def _parse_completed_json(user_content: str) -> set[str]:

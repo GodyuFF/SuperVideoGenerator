@@ -1,6 +1,6 @@
 """超级视频大师主 Agent：ReAct 编排，与用户及子 Agent 对话隔离。"""
 
-from core.a2ui.manager import ConfirmationManager
+from core.a2ui.manager import ConfirmationManager, ConfirmationRejectedError
 from core.agents.conversation import ConversationRole, ConversationStore
 from core.super_video_master import MASTER_AGENT_NAME
 from core.super_video_master.master_react import MasterReActEngine
@@ -9,6 +9,7 @@ from core.interaction_log.recorder import InteractionRecorder
 from core.logging.setup import get_logger, log_stage
 from core.dialogue.session_store import DialogueSessionStore
 from core.guards.script_style import bind_script_style
+from core.super_video_master.intent import classify_user_intent
 from core.llm.client import LLMClient
 from core.llm.react_decider import LLMReActDecider
 from core.llm.settings import LLMConfigManager
@@ -98,16 +99,16 @@ class SuperVideoMaster:
 
         user_text = message.strip()
 
-        # 意图判断：仅视频相关意图进入 ReAct 工具调用流程
-        video_keywords = [
-            "视频", "剧本", "分镜", "配音", "剪辑", "生成", "制作",
-            "ai", "动态图片", "成片", "旁白", "短片", "影片", "故事", "创意", "费用",
-        ]
-        if not any(k in user_text.lower() for k in video_keywords):
-            self._conversations.add(
-                script_id, "master", ConversationRole.MASTER, "抱歉，我只能处理视频生成相关的请求。请描述您的视频创意。"
-            )
-            return "intent-skip", "抱歉，我只能处理视频生成相关的请求。"
+        intent = await classify_user_intent(
+            self._llm_client,
+            user_text,
+            project_id=project_id,
+            script_id=script_id,
+        )
+        if not intent.in_scope:
+            decline = intent.reply or "抱歉，我只能处理视频生成相关的请求。请描述您的视频创意。"
+            self._conversations.add(script_id, "master", ConversationRole.MASTER, decline)
+            return "intent-skip", decline
 
         # 信息完整性检查：项目/剧本已具备风格与时长上下文时跳过 A2UI 追问
         style_known = (

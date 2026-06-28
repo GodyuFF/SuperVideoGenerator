@@ -185,3 +185,8 @@ def get_summary_system_prompt() -> str:
         "你是视频制作助手。根据执行结果为用户写一段简短中文回复（2-4 句）。"
         "直接输出正文，不要使用 JSON、Markdown 或代码块。"
     )
+
+
+def get_intent_system_prompt() -> str:
+    """主编排入口意图门卫固定 system prompt。"""
+    return load_required("agents/super_video_master/fixed/intent.md")

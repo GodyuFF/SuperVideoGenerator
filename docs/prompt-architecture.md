@@ -1,6 +1,6 @@
 # 提示词架构（core/prompt）
 
-> 更新日期：2026-06-24
+> 更新日期：2026-06-28
 
 本文档描述 SuperVideoGenerator 中 Agent 提示词的 **固定区 / 动态区** 分层设计，参考 Claude Code 的 system prompt 组装模式。
 
@@ -39,6 +39,7 @@ core/prompt/
         ├── role.ai_video.md        # 可选
         ├── actions.md              # 该 Agent JSON 字段说明
         ├── hint.{profile}.md       # 模式补充（拼入 action system）
+        ├── intent.md               # 对话入口意图门卫（LLM JSON）
         └── summary.md              # 仅 super_video_master
 ```
 
@@ -117,10 +118,12 @@ user:   build_action_user(slots)
 | [`core/llm/react_decider.py`](../core/llm/react_decider.py) | 子 Agent ReAct LLM 调用 |
 | [`core/llm/react.py`](../core/llm/react.py) | 主编排 ReAct LLM 调用 |
 | [`core/super_video_master/actions.py`](../core/super_video_master/actions.py) | STEP_META 描述从 role 摘要加载 |
+| [`core/super_video_master/intent.py`](../core/super_video_master/intent.py) | 对话入口 LLM 意图门卫（`fixed/intent.md`） |
 
 ## 8. 变更记录
 
 | 日期 | 变更 |
 |------|------|
+| 2026-06-28 | 对话入口意图判断改为 LLM 分类（`intent.md`），移除关键词硬编码拦截 |
 | 2026-06-24 | 引入 fixed/dynamic 分层、`PromptBuilder`、`AgentContextManager`；7 个 Agent 提示词重写为 Claude Code 分段格式 |
 | 2026-06-25 | 修复 TextAsset content 验证错误：修改 script_agent actions.md 与 role.default.md 及全局 action_json.md，明确要求 content 必须为对象（dict），禁止字符串；LLM 现按规范返回对象，normalization 保留兜底 |
