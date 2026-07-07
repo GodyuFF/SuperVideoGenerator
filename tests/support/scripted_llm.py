@@ -4,15 +4,18 @@ import json
 import re
 from typing import Any
 
-from core.llm.streaming import ReactJsonThoughtParser
+from core.llm.client.tool_calls import ToolCallResult
 from core.models.entities import VideoStyleMode
+from core.llm.model.llm_request import LlmRequest
 from core.llm.master import ACTION_TO_STEP, STEP_META, pipeline_for_style
-from core.llm.token_round import TokenRoundAccumulator
-from core.llm.tokens import TokenEstimate
+from core.llm.client.token_round import TokenRoundAccumulator
+from core.llm.client.tokens import TokenEstimate
+from core.llm.model.chat_message import ChatMessage
+from core.llm.prompt.chat_messages import extract_react_state_json, last_user_content
 
 
 class ScriptedLLMClient:
-    """模拟 LLMClient.complete_json / complete_text，供单元测试使用。"""
+    """模拟 LLMClient.complete / complete_tool_calls，供单元测试使用。"""
 
     def __init__(self, style_mode: VideoStyleMode = VideoStyleMode.DYNAMIC_IMAGE) -> None:
         self._style_mode = style_mode
@@ -47,89 +50,143 @@ class ScriptedLLMClient:
             TokenEstimate(prompt_tokens=120, completion_tokens=80, total_tokens=200),
         )
 
-    async def complete_json(
+    async def complete_tool_calls(
         self,
-        system_prompt: str,
-        user_content: str | None = None,
+        request: LlmRequest,
+        *,
         log_context: dict[str, Any] | None = None,
-        summary_prefix: str = "LLM JSON",
+        summary_prefix: str = "LLM tool_calls",
         on_delta: Any = None,
-        response_format: Any = None,
-        chat_messages: list[dict[str, str]] | None = None,
         **kwargs: Any,
-    ) -> dict[str, Any]:
-        turn_content = user_content or ""
-        action_match = re.search(r"当前行动：(\S+)", turn_content)
-        if action_match:
-            result = _scripted_action_json(action_match.group(1))
+    ) -> ToolCallResult:
+        ctx = log_context or {}
+        role = str(ctx.get("role", ""))
+        forced_action = ""
+        if request.tool_choice:
+            if request.tool_choice.get("type") == "tool":
+                forced_action = str(request.tool_choice.get("name", "")).strip()
+            else:
+                forced_action = str(
+                    (request.tool_choice.get("function") or {}).get("name", "")
+                ).strip()
+        if not forced_action:
+            forced_action = str(ctx.get("action", "")).strip()
+
+        turn_content = last_user_content(request)
+        system_content = request.system or ""
+        action_match = re.search(r"当前行动：(\S+)", system_content) or re.search(
+            r"当前行动：(\S+)", turn_content
+        )
+
+        if role == "agent_action" or action_match or forced_action:
+            action = forced_action or (action_match.group(1) if action_match else "finish")
+            args = _scripted_action_json(action)
+            thought = f"执行 {action}"
+            tool_calls = [_make_tool_call(action, args)]
+        elif role == "master":
+            state = extract_react_state_json(request) or {}
+            completed = _parse_completed_from_state(state)
+            thought, action, args = self._master_react_tool(completed)
+            tool_calls = [_make_tool_call(action, args)]
+        elif role == "sub_agent":
+            state = extract_react_state_json(request) or {}
+            completed = _parse_completed_from_state(state)
+            thought, action, args = self._sub_agent_react_tool(
+                str(ctx.get("agent_name", "")), completed
+            )
+            tool_calls = [_make_tool_call(action, args)]
         else:
-            ctx = log_context or {}
-            role = ctx.get("role", "")
-            completed = _parse_completed_json(turn_content)
-            if role == "master":
-                result = self._master_react_json(completed)
-            elif role == "sub_agent":
-                result = self._sub_agent_react_json(
-                    str(ctx.get("agent_name", "")), completed
-                )
+            state = extract_react_state_json(request) or {}
+            completed = _parse_completed_from_state(state)
+            if state:
+                action = "finish"
+                thought = "完成"
+                args = {}
+                for name in state.get("available_actions", []):
+                    if name not in completed and name != "finish":
+                        action = name
+                        thought = f"执行 {action}"
+                        args = {}
+                        break
             else:
                 try:
                     data = json.loads(turn_content)
                 except json.JSONDecodeError:
-                    result = _format_react_json("默认结束", "finish")
+                    thought, action, args = "默认结束", "finish", {}
                 else:
-                    found = False
-                    for action in data.get("available_actions", []):
-                        if action not in completed and action != "finish":
-                            result = _format_react_json(f"执行 {action}", action)
-                            found = True
+                    action = "finish"
+                    thought = "完成"
+                    args = {}
+                    for name in data.get("available_actions", []):
+                        if name not in completed and name != "finish":
+                            action = name
+                            thought = f"执行 {action}"
+                            args = {}
                             break
-                    if not found:
-                        result = _format_react_json("完成", "finish")
+            tool_calls = [_make_tool_call(action, args)]
 
-        if on_delta and result.get("thought"):
-            parser = ReactJsonThoughtParser()
-            raw = json.dumps(result, ensure_ascii=False)
-            for char in raw:
-                thought_delta = parser.feed(char)
-                if thought_delta:
-                    await on_delta(thought_delta)
+        if on_delta and thought:
+            for char in thought:
+                await on_delta(char)
         self._record_scripted_tokens()
-        return result
+        return ToolCallResult(
+            content=thought,
+            tool_calls=tool_calls,
+            raw_message={
+                "role": "assistant",
+                "content": thought,
+                "tool_calls": tool_calls,
+            },
+        )
 
-    def _master_react_json(self, completed: set[str]) -> dict[str, Any]:
+    def _master_react_tool(self, completed: set[str]) -> tuple[str, str, dict[str, Any]]:
         pipeline = pipeline_for_style(self._style_mode)
         for action in pipeline:
-            step_type = ACTION_TO_STEP[action]
-            if step_type not in completed:
-                meta = STEP_META[step_type]
-                return _format_react_json(f"委派 {meta['title']}", action)
-        return _format_react_json("全部完成", "finish")
+            if action not in completed:
+                meta = STEP_META[ACTION_TO_STEP[action]]
+                return f"委派 {meta['title']}", action, {}
+        return "全部完成", "finish", {}
 
-    def _sub_agent_react_json(
+    def _sub_agent_react_tool(
         self, agent_name: str, completed: set[str]
-    ) -> dict[str, Any]:
+    ) -> tuple[str, str, dict[str, Any]]:
         pipeline = self._pipeline_for_agent(agent_name)
         for action in pipeline:
             if action not in completed:
-                return _format_react_json(f"[{agent_name}] 执行 {action}", action)
-        return _format_react_json("任务完成", "finish")
+                return f"[{agent_name}] 执行 {action}", action, {}
+        return "任务完成", "finish", {}
 
     def _pipeline_for_agent(self, agent_name: str) -> list[str]:
-        from core.agents.definitions import AGENT_DEFINITIONS
+        from core.llm.agent.definitions import AGENT_DEFINITIONS
 
         definition = AGENT_DEFINITIONS.get(agent_name)
         return list(definition.action_pipeline) if definition else []
 
-    async def complete_text(
+    async def complete_json(
         self,
-        system_prompt: str,
-        user_content: str | None = None,
+        request: LlmRequest,
         log_context: dict[str, Any] | None = None,
-        summary_prefix: str = "LLM 文本",
+        summary_prefix: str = "LLM JSON",
         on_delta: Any = None,
         response_format: Any = None,
-        chat_messages: list[dict[str, str]] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """摘要等非 ReAct 场景仍返回 JSON 对象。"""
+        text = "已完成视频制作流程，剧本与资产已生成，可在右侧查看具体内容。"
+        if on_delta:
+            for char in text:
+                await on_delta(char)
+        self._record_scripted_tokens()
+        return {"summary": text}
+
+    async def complete(
+        self,
+        request: LlmRequest,
+        log_context: dict[str, Any] | None = None,
+        summary_prefix: str = "LLM",
+        on_delta: Any = None,
+        response_format: Any = None,
+        response_kind: str = "text",
     ) -> str:
         text = "已完成视频制作流程，剧本与资产已生成，可在右侧查看具体内容。"
         if on_delta:
@@ -137,6 +194,31 @@ class ScriptedLLMClient:
                 await on_delta(char)
         self._record_scripted_tokens()
         return text
+
+
+def _make_tool_call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    args = dict(arguments)
+    if "plan_status" not in args:
+        args["plan_status"] = f"scripted: 已选择 {name}"
+    if "remaining_plan" not in args:
+        args["remaining_plan"] = [] if name == "finish" else [f"继续 {name} 后续步骤"]
+    return {
+        "id": f"call_scripted_{name}",
+        "type": "function",
+        "function": {
+            "name": name,
+            "arguments": json.dumps(args, ensure_ascii=False),
+        },
+    }
+
+
+def _parse_completed_from_state(state: dict[str, Any]) -> set[str]:
+    completed: set[str] = set()
+    for item in state.get("completed_actions", []):
+        text = str(item).strip()
+        if text and text != "无" and not text.startswith("tool:"):
+            completed.add(text)
+    return completed
 
 
 def _parse_completed_json(user_content: str) -> set[str]:
@@ -152,18 +234,19 @@ def _parse_completed_json(user_content: str) -> set[str]:
     return completed
 
 
-def _format_react_json(
-    thought: str, action: str, action_input: dict[str, Any] | None = None
-) -> dict[str, Any]:
-    return {"thought": thought, "action": action, "action_input": action_input or {}}
+from tests.support.image_text_fixtures import (
+    character_content,
+    prop_content,
+    scene_content,
+)
 
 
 def _scripted_action_json(action: str) -> dict[str, Any]:
-    """与原先 Mock 行为等价的 JSON 结果（由 apply_action_result 落盘）。"""
+    """与原先 Mock 行为等价的 tool arguments。"""
     mapping: dict[str, dict[str, Any]] = {
         "parse_brief": {
             "observation": "已解析任务简报。",
-            "script_md": "# 测试剧本\n\n基于任务简报生成的内容。",
+            "content_md": "# 测试剧本\n\n基于任务简报生成的内容。",
         },
         "create_plot": {
             "observation": "已创建剧情资产。",
@@ -173,12 +256,39 @@ def _scripted_action_json(action: str) -> dict[str, Any]:
         "create_character": {
             "observation": "已创建人物资产。",
             "asset_name": "主角",
-            "content": {"appearance": "年轻女性，短发"},
+            "content": character_content(
+                summary="短发女主角",
+                description=(
+                    "年轻女性，黑色短发，穿都市休闲装，站在霓虹灯下的街道，"
+                    "神情专注，整体气质干练而温和。"
+                ),
+                role="主角",
+            ),
         },
         "create_scene": {
             "observation": "已创建场景资产。",
             "asset_name": "城市街道",
-            "content": {"description": "现代都市黄昏"},
+            "content": scene_content(
+                summary="都市黄昏",
+                description=(
+                    "现代都市黄昏街道，霓虹初上，湿润路面反射灯光，"
+                    "行人稀疏，远处高楼轮廓清晰，氛围静谧。"
+                ),
+                location="城市街道",
+                time_of_day="黄昏",
+            ),
+        },
+        "create_prop": {
+            "observation": "已创建道具资产。",
+            "asset_name": "旧相机",
+            "content": prop_content(
+                summary="复古相机",
+                description=(
+                    "银色复古胶片相机，金属机身有轻微划痕，皮质肩带，"
+                    "镜头反光可见环境，适合作为叙事道具特写。"
+                ),
+                category="日用品",
+            ),
         },
         "update_script": {
             "observation": "已更新剧本正文。",

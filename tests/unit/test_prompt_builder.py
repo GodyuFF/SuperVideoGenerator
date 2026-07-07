@@ -2,13 +2,16 @@
 
 import json
 
-from core.prompt.builder import (
+from core.llm.prompt.builder import (
+    build_action_context_turn_content,
     build_action_system,
     build_action_user,
-    build_react_json_user,
+    build_react_state_json,
+    build_react_state_turn_content,
     render_template,
 )
-from core.prompt.registry import PromptProfile
+from core.llm.prompt.chat_messages import REACT_STATE_HEADER
+from core.llm.prompt.registry import PromptProfile
 
 
 def test_render_template_replaces_slots():
@@ -31,9 +34,9 @@ def test_render_template_replaces_slots():
     assert "{{" not in text
 
 
-def test_build_react_json_user_contains_dynamic_fields():
+def test_build_react_state_json_contains_dynamic_fields():
     payload = json.loads(
-        build_react_json_user(
+        build_react_state_json(
             task_brief="设计剧本",
             available_actions=["parse_brief", "finish"],
             completed=[],
@@ -47,11 +50,83 @@ def test_build_react_json_user_contains_dynamic_fields():
     assert payload["iteration"] == 1
 
 
-def test_build_action_system_includes_agent_actions():
+def test_build_react_state_json_excludes_completed_from_available():
+    payload = json.loads(
+        build_react_state_json(
+            task_brief="设计剧本",
+            available_actions=["parse_brief", "script_structure", "finish"],
+            completed=["parse_brief"],
+            observations=["观察1"],
+        )
+    )
+    assert payload["completed_actions"] == ["parse_brief"]
+    assert "parse_brief" not in payload["available_actions"]
+    assert "script_structure" in payload["available_actions"]
+    assert "finish" in payload["available_actions"]
+
+
+def test_build_react_state_json_keeps_repeatable_create_actions():
+    payload = json.loads(
+        build_react_state_json(
+            task_brief="设计剧本",
+            available_actions=["create_plot", "create_character", "finish"],
+            completed=["create_plot"],
+            observations=[],
+        )
+    )
+    assert "create_plot" in payload["completed_actions"]
+    assert "create_plot" in payload["available_actions"]
+
+
+def test_build_react_state_json_keeps_completed_master_tools_available():
+    payload = json.loads(
+        build_react_state_json(
+            task_brief="查计划",
+            available_actions=["tool_get_plan_summary", "finish"],
+            completed=["tool:get_plan_summary"],
+            observations=[],
+        )
+    )
+    assert "tool:get_plan_summary" in payload["completed_actions"]
+    assert "tool_get_plan_summary" in payload["available_actions"]
+
+
+def test_build_action_system_includes_protocol():
     system = build_action_system("script_agent", PromptProfile.DEFAULT)
     assert "observation" in system
-    assert "parse_brief" in system
-    assert "asset_id" in system
+    assert "function" in system
+    assert "本 Agent 行动字段" not in system
+
+
+def test_build_react_state_turn_content_includes_header_and_json():
+    state_json = build_react_state_json(
+        task_brief="设计剧本",
+        available_actions=["finish"],
+        completed=[],
+    )
+    turn = build_react_state_turn_content(state_json, hint="建议 finish")
+    assert REACT_STATE_HEADER in turn
+    assert state_json in turn
+    assert "建议 finish" in turn
+
+
+def test_build_action_context_turn_content():
+    inner = build_action_user(
+        {
+            "display_name": "图片 Agent",
+            "role_prompt": "# Identity",
+            "task_brief": "生图",
+            "work_context_line": "project_id=p1",
+            "store_context": "",
+            "current_action": "scan_text_assets",
+            "completed_actions": "无",
+            "history_summary_block": "",
+            "observations_block": "- 无",
+        }
+    )
+    turn = build_action_context_turn_content(inner)
+    assert "## 当前行动上下文" in turn
+    assert "scan_text_assets" in turn
 
 
 def test_build_action_user_from_slots():

@@ -15,6 +15,7 @@ from core.models.entities import (
     VideoPlanShot,
     VideoStyleMode,
 )
+from core.edit.timeline import compile_timeline_from_shots
 from core.store.memory import MemoryStore
 
 
@@ -91,6 +92,7 @@ def test_character_board_links_image(sample_store: MemoryStore):
     view = BoardBuilder(sample_store).build("character", project_id, script_id)
     assert len(view.items) == 1
     assert view.items[0]["images"]
+    assert view.items[0]["description"]
 
 
 def test_project_graph_has_edges(sample_store: MemoryStore):
@@ -107,3 +109,28 @@ def test_pipeline_order(sample_store: MemoryStore):
     view = BoardBuilder(sample_store).build("pipeline", project_id, script_id)
     assert view.pipeline
     assert view.pipeline[0].step_type == "script_design"
+
+
+def test_edit_board_shows_timeline_tracks(sample_store: MemoryStore):
+    project_id = list(sample_store.projects.keys())[0]
+    script_id = list(sample_store.scripts.keys())[0]
+    plan = sample_store.get_video_plan_for_script(script_id)
+    assert plan
+    timeline = compile_timeline_from_shots(sample_store, script_id=script_id, plan=plan)
+    sample_store.set_edit_timeline(timeline)
+    view = BoardBuilder(sample_store).build("edit", project_id, script_id)
+    assert view.kind == "edit"
+    assert view.stats
+    assert view.stats.get("video_clips", 0) >= 1
+    assert "tracks" in view.stats
+
+
+def test_script_details_board(sample_store: MemoryStore):
+    project_id = list(sample_store.projects.keys())[0]
+    script_id = list(sample_store.scripts.keys())[0]
+    view = BoardBuilder(sample_store).build("script_details", project_id, script_id)
+    assert view.kind == "script_details"
+    assert len(view.items) == 1
+    assert view.items[0]["title"] == "第一集"
+    assert view.stats
+    assert view.stats.get("content_md")

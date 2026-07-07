@@ -2,7 +2,12 @@
  * 交互日志查看页：查询持久化 LLM / HTTP / Agent 动作记录。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  LogRecordBody,
+  LogTokenBadge,
+  type LogRecordFields,
+} from "../components/LogPayloadView";
 
 const API = "/api";
 
@@ -16,19 +21,18 @@ const KIND_OPTIONS = [
   { value: "api_request", label: "HTTP 请求" },
 ];
 
-interface InteractionRecord {
+interface InteractionRecord extends LogRecordFields {
   id: string;
   created_at: string;
-  kind: string;
   source: string;
   agent_name: string;
   summary: string;
-  request_body?: Record<string, unknown> | null;
-  response_body?: Record<string, unknown> | string | null;
-  error?: string | null;
+  project_id?: string;
+  script_id?: string;
 }
 
 interface LogFileInfo {
+  project_id?: string;
   date: string;
   path: string;
   size_bytes: number;
@@ -40,6 +44,12 @@ interface LogsPageProps {
   onBack: () => void;
 }
 
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
   const [records, setRecords] = useState<InteractionRecord[]>([]);
   const [kindFilter, setKindFilter] = useState("");
@@ -49,22 +59,53 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
   const [logDir, setLogDir] = useState<string>("data/logs/interactions/");
   const [logFiles, setLogFiles] = useState<LogFileInfo[]>([]);
   const [llmCallCount, setLlmCallCount] = useState(0);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [deleteProjectId, setDeleteProjectId] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  const effectiveProjectId = projectId ?? deleteProjectId;
+
+  const projectOptions = useMemo(() => {
+    const ids = new Set<string>();
+    for (const f of logFiles) {
+      const pid = (f.project_id ?? "").trim();
+      if (pid && pid !== "_unknown") ids.add(pid);
+    }
+    if (projectId) ids.add(projectId);
+    return [...ids].sort();
+  }, [logFiles, projectId]);
+
+  const scopeLabel = useMemo(() => {
+    if (scriptId) return `剧本 ${scriptId}`;
+    if (projectId) return `项目 ${projectId}`;
+    return "全部项目";
+  }, [projectId, scriptId]);
+
+  const projectLogFiles = useMemo(() => {
+    if (!projectId) return logFiles;
+    return logFiles.filter(
+      (f) => !f.project_id || f.project_id === projectId || f.project_id === "_unknown"
+    );
+  }, [logFiles, projectId]);
 
   const loadFiles = useCallback(async () => {
-    const r = await fetch(`${API}/interactions/files`);
+    const params = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    const r = await fetch(`${API}/interactions/files${params}`);
     if (!r.ok) return;
     const data = await r.json();
     setLogDir(String(data.log_dir ?? "data/logs/interactions/"));
-    setLogFiles((data.files as LogFileInfo[]) ?? []);
-  }, []);
+    const files = (data.files as LogFileInfo[]) ?? [];
+    setLogFiles(files);
+    setSelectedDate((prev) => prev || (files[0]?.date ?? ""));
+  }, [projectId]);
 
   const loadRecords = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ limit: "100" });
+      const params = new URLSearchParams({ limit: "200" });
       if (scriptId) params.set("script_id", scriptId);
-      if (projectId) params.set("project_id", projectId);
+      else if (projectId) params.set("project_id", projectId);
       if (kindFilter) params.set("kind", kindFilter);
       const r = await fetch(`${API}/interactions?${params}`);
       if (!r.ok) {
@@ -73,7 +114,11 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
         return;
       }
       const data = await r.json();
-      setRecords((data.records as InteractionRecord[]) ?? []);
+      let rows = (data.records as InteractionRecord[]) ?? [];
+      if (selectedDate) {
+        rows = rows.filter((rec) => rec.created_at?.startsWith(selectedDate));
+      }
+      setRecords(rows);
       setLlmCallCount(Number(data.llm_call_count ?? 0));
     } catch {
       setError("网络错误，请确认后端已启动。");
@@ -81,15 +126,68 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [scriptId, kindFilter]);
+  }, [scriptId, projectId, kindFilter, selectedDate]);
 
   useEffect(() => {
-    loadFiles();
+    void loadFiles();
   }, [loadFiles]);
 
   useEffect(() => {
-    loadRecords();
+    void loadRecords();
   }, [loadRecords]);
+
+  useEffect(() => {
+    if (projectId) {
+      setDeleteProjectId(projectId);
+      return;
+    }
+    if (!deleteProjectId && projectOptions.length > 0) {
+      setDeleteProjectId(projectOptions[0]);
+    }
+  }, [projectId, projectOptions, deleteProjectId]);
+
+  async function handleDeleteLogs() {
+    if (!effectiveProjectId || !selectedDate) {
+      setError("请先选择项目和日期后再删除。");
+      return;
+    }
+    const scope = scriptId
+      ? `项目 ${effectiveProjectId} · 剧本 ${scriptId} · ${selectedDate}`
+      : `项目 ${effectiveProjectId} · ${selectedDate}`;
+    if (
+      !window.confirm(
+        `确定删除 ${scope} 的交互日志？\n将同时清理 SQLite 与 JSONL 文件，且不可恢复。`
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({
+        project_id: effectiveProjectId,
+        date: selectedDate,
+      });
+      if (scriptId) params.set("script_id", scriptId);
+      const r = await fetch(`${API}/interactions?${params}`, { method: "DELETE" });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        const detail =
+          typeof body.detail === "string"
+            ? body.detail
+            : `删除失败（${r.statusText}）`;
+        setError(detail);
+        return;
+      }
+      setExpandedId(null);
+      await loadFiles();
+      await loadRecords();
+    } catch {
+      setError("删除失败：网络错误，请确认后端已启动。");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   function formatTime(ts: string) {
     if (!ts) return "-";
@@ -100,116 +198,57 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
     }
   }
 
-  function formatBody(body: Record<string, unknown> | string | null | undefined) {
-    if (body == null) return null;
-
-    // 如果是对象，直接美化
-    if (typeof body === "object") {
-      return JSON.stringify(body, null, 2);
-    }
-
-    // 如果是字符串，尝试解析为 JSON
-    if (typeof body === "string") {
-      const trimmed = body.trim();
-      // 尝试解析 JSON
-      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || 
-          (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
-        try {
-          const parsed = JSON.parse(trimmed);
-          return JSON.stringify(parsed, null, 2);
-        } catch {
-          // 解析失败，返回原字符串（保持原样）
-          return trimmed;
-        }
-      }
-      return trimmed;
-    }
-
-    return String(body);
-  }
-
-  /** 检测是否为 Claude Code 风格的结构化 payload */
-  function isClaudePayload(body: any): boolean {
-    return body && typeof body === "object" && body.model && Array.isArray(body.messages);
-  }
-
-  /** 渲染 Claude 风格的结构化日志 */
-  function renderClaudePayload(payload: any) {
-    return (
-      <div className="claude-payload">
-        <div className="payload-header">
-          <span className="model-badge">{payload.model}</span>
-          {payload.tools?.length > 0 && (
-            <span className="tools-badge">{payload.tools.length} tools</span>
-          )}
-        </div>
-
-        {payload.tools?.length > 0 && (
-          <details className="tools-section">
-            <summary>Tools ({payload.tools.length})</summary>
-            <ul>
-              {payload.tools.map((t: any, i: number) => (
-                <li key={i}>
-                  <strong>{t.function?.name}</strong>: {t.function?.description}
-                  <pre>{JSON.stringify(t.function?.parameters, null, 2)}</pre>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-
-        <details className="messages-section" open>
-          <summary>Messages ({payload.messages?.length || 0})</summary>
-          {payload.messages?.map((msg: any, idx: number) => (
-            <div key={idx} className={`message-block role-${msg.role}`}>
-              <div className="message-role">{msg.role}</div>
-              {Array.isArray(msg.content) ? (
-                msg.content.map((c: any, cIdx: number) => (
-                  <div key={cIdx} className="content-block">
-                    <span className="content-type">{c.type}</span>
-                    <pre className="content-text">{c.text}</pre>
-                    {c.cache_control && (
-                      <span className="cache-badge">{c.cache_control.type}</span>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <pre className="content-text">{JSON.stringify(msg.content)}</pre>
-              )}
-            </div>
-          ))}
-        </details>
-      </div>
-    );
-  }
+  const backLabel = projectId
+    ? scriptId
+      ? "返回剧本"
+      : "返回项目"
+    : "返回首页";
 
   return (
     <div className="logs-page">
       <header className="top-bar">
         <h1>交互日志</h1>
-        <span className="status-badge">
-          LLM 调用：{llmCallCount}
-        </span>
-        {scriptId && (
-          <span className="status-badge muted-badge">剧本 {scriptId}</span>
-        )}
+        <span className="status-badge">LLM 调用：{llmCallCount}</span>
+        <span className="status-badge muted-badge">{scopeLabel}</span>
         <div className="top-bar-spacer" />
         <button type="button" className="btn-secondary" onClick={onBack}>
-          返回对话
+          {backLabel}
         </button>
       </header>
 
       <div className="logs-content">
         <section className="logs-hint">
           <p className="muted">
-            本地 JSONL 日志目录：<code>{logDir}</code>
+            JSONL 落盘目录：<code>{logDir}</code>
+            {projectId ? (
+              <>
+                {" "}
+                · 当前项目子目录 <code>{projectId}/</code>
+              </>
+            ) : null}
           </p>
-          {logFiles.length > 0 && (
+          <p className="muted logs-scope-note">
+            默认展示当前{scriptId ? "剧本" : projectId ? "项目" : ""}的交互记录；新建项目不会清空历史日志。
+          </p>
+          {projectLogFiles.length > 0 && (
             <ul className="log-files-list">
-              {logFiles.slice(0, 5).map((f) => (
-                <li key={f.date}>
-                  <code>{f.date}.jsonl</code>
-                  <span className="muted">（{f.size_bytes} 字节）</span>
+              {projectLogFiles.map((f) => (
+                <li key={`${f.project_id ?? ""}-${f.date}`}>
+                  <button
+                    type="button"
+                    className={
+                      selectedDate === f.date
+                        ? "log-file-btn active"
+                        : "log-file-btn"
+                    }
+                    onClick={() => setSelectedDate(f.date)}
+                  >
+                    <code>
+                      {f.project_id ? `${f.project_id}/` : ""}
+                      {f.date}.jsonl
+                    </code>
+                    <span className="muted">（{formatBytes(f.size_bytes)}）</span>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -217,6 +256,35 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
         </section>
 
         <div className="logs-toolbar">
+          {!projectId && projectOptions.length > 0 && (
+            <label>
+              项目
+              <select
+                value={deleteProjectId}
+                onChange={(e) => setDeleteProjectId(e.target.value)}
+              >
+                {projectOptions.map((pid) => (
+                  <option key={pid} value={pid}>
+                    {pid}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label>
+            日期
+            <select
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+            >
+              <option value="">全部日期</option>
+              {projectLogFiles.map((f) => (
+                <option key={`${f.project_id ?? ""}-${f.date}`} value={f.date}>
+                  {f.date}
+                </option>
+              ))}
+            </select>
+          </label>
           <label>
             类型筛选
             <select
@@ -224,26 +292,37 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
               onChange={(e) => setKindFilter(e.target.value)}
             >
               {KIND_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
               ))}
             </select>
           </label>
           <button type="button" onClick={loadRecords} disabled={loading}>
             {loading ? "加载中…" : "刷新"}
           </button>
+          <button
+            type="button"
+            className="btn-danger btn-sm"
+            disabled={deleting || !effectiveProjectId || !selectedDate}
+            onClick={() => void handleDeleteLogs()}
+          >
+            {deleting ? "删除中…" : "删除所选日志"}
+          </button>
+          <span className="muted logs-count">共 {records.length} 条</span>
         </div>
 
         {error && <p className="settings-alert error">{error}</p>}
 
         {records.length === 0 && !loading && !error && (
-          <p className="muted">暂无交互记录。发送对话后 LLM 请求/响应将写入此处。</p>
+          <p className="muted">
+            暂无交互记录。发送对话后 LLM 请求/响应将写入 SQLite 与项目 JSONL 文件。
+          </p>
         )}
 
         <ul className="logs-list">
           {records.map((rec) => {
             const expanded = expandedId === rec.id;
-            const reqText = formatBody(rec.request_body);
-            const resText = formatBody(rec.response_body);
             return (
               <li key={rec.id} className={`log-item kind-${rec.kind}`}>
                 <button
@@ -256,39 +335,14 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
                   {rec.agent_name && (
                     <span className="log-agent">{rec.agent_name}</span>
                   )}
+                  {rec.model && (
+                    <span className="log-model">{rec.model}</span>
+                  )}
+                  <LogTokenBadge meta={rec.meta} />
                   <span className="log-summary">{rec.summary || "-"}</span>
                   <span className="log-expand">{expanded ? "▲" : "▼"}</span>
                 </button>
-                {expanded && (
-                  <div className="log-item-body">
-                    {rec.error && (
-                      <pre className="log-pre log-error">{rec.error}</pre>
-                    )}
-                    {reqText && (
-                      <div>
-                        <strong>request_body</strong>
-                        {isClaudePayload(rec.request_body) ? (
-                          renderClaudePayload(rec.request_body)
-                        ) : (
-                          <pre className="log-pre">{reqText}</pre>
-                        )}
-                      </div>
-                    )}
-                    {resText && (
-                      <div>
-                        <strong>response_body</strong>
-                        {isClaudePayload(rec.response_body) ? (
-                          renderClaudePayload(rec.response_body)
-                        ) : (
-                          <pre className="log-pre">{resText}</pre>
-                        )}
-                      </div>
-                    )}
-                    {!reqText && !resText && !rec.error && (
-                      <p className="muted">无 request/response body</p>
-                    )}
-                  </div>
-                )}
+                {expanded && <LogRecordBody rec={rec} />}
               </li>
             );
           })}

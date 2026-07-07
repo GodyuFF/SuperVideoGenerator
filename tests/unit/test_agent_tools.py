@@ -1,19 +1,24 @@
 """Agent 工具规格与只读工具执行测试。"""
 
+import json
+
 import pytest
 
-from core.agents.definitions import AGENT_DEFINITIONS
-from core.agents.react_core import AgentRunContext
-from core.agents.tools.executor import AgentToolExecutor
-from core.agents.tools.specs import (
+from core.llm.agent.script_assets import link_script_asset
+from core.llm.agent.definitions import AGENT_DEFINITIONS
+from core.llm.agent.react_core import AgentRunContext
+from core.llm.tools.shared.executor import AgentToolExecutor
+from core.llm.tools.shared.agent_tools import (
     AGENT_TOOLS,
     ad_hoc_actions,
     available_actions,
     is_read_only_action,
     pipeline_actions,
     read_actions,
+    should_hide_when_completed,
 )
 from core.models.entities import (
+    AssetScope,
     MediaAsset,
     MediaAssetType,
     Project,
@@ -25,6 +30,7 @@ from core.models.entities import (
     VideoStyleMode,
 )
 from core.store.memory import MemoryStore
+from tests.support.image_text_fixtures import character_content
 
 
 def test_specs_pipeline_and_read_actions_partition():
@@ -48,6 +54,15 @@ def test_script_agent_has_crud_ad_hoc_actions():
     assert "update_script" in adhoc
     assert "update_plot" in adhoc
     assert "delete_character" in adhoc
+
+
+def test_should_hide_when_completed_one_time_vs_repeatable():
+    assert should_hide_when_completed("parse_brief")
+    assert should_hide_when_completed("delegate_script_design")
+    assert not should_hide_when_completed("create_plot")
+    assert not should_hide_when_completed("update_plot")
+    assert not should_hide_when_completed("list_text_assets")
+    assert not should_hide_when_completed("tool_get_plan_summary")
 
 
 def test_all_tools_have_action_and_unique_names():
@@ -81,15 +96,16 @@ def test_read_only_executor_list_text_assets():
     store.add_project(project)
     script = Script(project_id=project.id, title="s1")
     store.add_script(script)
-    store.add_text_asset(
-        TextAsset(
-            project_id=project.id,
-            script_id=script.id,
-            type=TextAssetType.CHARACTER,
-            name="主角",
-            content={"bio": "test"},
-        )
+    char = TextAsset(
+        project_id=project.id,
+        type=TextAssetType.CHARACTER,
+        name="主角",
+        content=character_content(),
+        scope=AssetScope.PROJECT_SHARED,
+        source_script_id=script.id,
     )
+    store.add_text_asset(char)
+    link_script_asset(store, script.id, char.id)
     executor = AgentToolExecutor(store)
     ctx = AgentRunContext(
         task_brief="",
@@ -99,7 +115,12 @@ def test_read_only_executor_list_text_assets():
         agent_name="script_agent",
     )
     result = executor.execute_by_action("script_agent", "list_text_assets", ctx)
-    assert "主角" in result
+    data = json.loads(result)
+    assert data["count"] == 1
+    assert data["assets"][0]["name"] == "主角"
+    assert "description" in data["assets"][0]["content"]
+    assert data["assets"][0]["linked"] is True
+    assert "counts_by_type" in data
     assert is_read_only_action("script_agent", "list_text_assets")
 
 
@@ -147,7 +168,7 @@ def test_read_only_executor_list_media():
             script_id=script.id,
             type=MediaAssetType.IMAGE,
             name="场景图",
-            url="",
+            url="https://cdn.test/scene.png",
         )
     )
     executor = AgentToolExecutor(store)
@@ -160,3 +181,4 @@ def test_read_only_executor_list_media():
     )
     result = executor.execute_by_action("image_agent", "list_images", ctx)
     assert "场景图" in result
+    assert "https://cdn.test/scene.png" in result

@@ -1,0 +1,385 @@
+"""editing_agent plan_edit_timeline 与 load_edit_context 测试。"""
+
+import pytest
+
+from core.llm.agent.react_core import AgentRunContext
+from core.llm.tools.editing.context import build_edit_context_payload
+from core.llm.tools.editing.timeline_handler import handle_load_edit_context, handle_plan_edit_timeline
+from core.llm.tools.output_schemas import generic_action_output_schema, load_edit_context_output_schema
+from core.llm.tools.register_helpers import output_schema_for
+from core.llm.tools.validators import validate_against_schema
+from core.models.entities import (
+    AssetScope,
+    MediaAsset,
+    MediaAssetType,
+    Project,
+    Script,
+    TextAsset,
+    TextAssetType,
+    VideoPlan,
+    VideoPlanShot,
+    VideoStyleMode,
+)
+from core.store.memory import MemoryStore
+from tests.support.image_text_fixtures import prop_content
+
+
+@pytest.fixture
+def editing_store() -> MemoryStore:
+    store = MemoryStore()
+    project = Project(title="剪辑测试")
+    store.add_project(project)
+    script = Script(project_id=project.id, title="s1", duration_sec=30)
+    store.add_script(script)
+    prop = TextAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=TextAssetType.PROP,
+        scope=AssetScope.SCRIPT_PRIVATE,
+        name="道具",
+        content=prop_content(summary="道具"),
+    )
+    store.add_text_asset(prop)
+    media = MediaAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=MediaAssetType.IMAGE,
+        name="道具图",
+        url="https://images.test/prop.png",
+        source_asset_id=prop.id,
+    )
+    store.add_media_asset(media)
+    prop.primary_media_id = media.id
+    store.update_text_asset(prop)
+    shot = VideoPlanShot(
+        order=0,
+        duration_ms=4000,
+        narration_text="展示道具",
+        camera_motion="ken_burns_in",
+        asset_refs={"prop": [prop.id]},
+    )
+    plan = VideoPlan(
+        script_id=script.id,
+        mode=VideoStyleMode.DYNAMIC_IMAGE,
+        shots=[shot],
+    )
+    store.set_video_plan(plan)
+    store._test_script_id = script.id  # type: ignore[attr-defined]
+    store._test_project_id = project.id  # type: ignore[attr-defined]
+    store._test_shot_id = shot.id  # type: ignore[attr-defined]
+    store._test_media_id = media.id  # type: ignore[attr-defined]
+    return store
+
+
+def test_load_edit_context_includes_plan_and_media(editing_store: MemoryStore):
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    payload = build_edit_context_payload(editing_store, script_id)
+    assert payload["video_plan"]["shot_count"] == 1
+    assert payload["media"]
+    assert payload["text_assets"]
+    assert "content_md" in payload["script"]
+    assert payload["assets_with_images"]
+    assert payload["linked_image_count"] >= 1
+    shot = payload["video_plan"]["shots"][0]
+    assert "variant_refs" in shot
+    assert shot["resolved"]["image_media_id"]
+    assert shot["resolved"]["image_accessible"] is True
+
+
+def test_output_schema_for_load_edit_context():
+    schema = output_schema_for("load_edit_context")
+    assert schema is not generic_action_output_schema()
+    assert "action" in schema.get("required", [])
+
+
+def test_load_edit_context_structured_passes_schema(editing_store: MemoryStore):
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    project_id = editing_store._test_project_id  # type: ignore[attr-defined]
+    shot_id = editing_store._test_shot_id  # type: ignore[attr-defined]
+    audio = MediaAsset(
+        project_id=project_id,
+        script_id=script_id,
+        type=MediaAssetType.AUDIO,
+        name="旁白",
+        url="https://audio.test/narration.mp3",
+        metadata={"shot_id": shot_id, "duration_ms": 4000},
+    )
+    editing_store.add_media_asset(audio)
+
+    ctx = AgentRunContext(
+        task_brief="加载剪辑上下文",
+        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        script_id=script_id,
+        step_id="edit_compose",
+        agent_name="editing_agent",
+        project_id=project_id,
+    )
+    result = handle_load_edit_context(
+        editing_store,
+        ctx,
+        {
+            "observation": "加载上下文",
+            "plan_status": "加载中",
+            "remaining_plan": ["plan_edit_timeline"],
+        },
+    )
+    assert result.ok is True
+    assert result.structured is not None
+    assert result.structured.get("action") == "load_edit_context"
+    validate_against_schema(
+        result.structured,
+        load_edit_context_output_schema(),
+        label="输出",
+    )
+    shot = result.structured["video_plan"]["shots"][0]
+    assert shot["resolved"]["audio_media_id"] == audio.id
+    assert shot["resolved"]["audio_accessible"] is True
+    assert ctx.work_context.get("edit_context") is not None
+
+
+def test_plan_edit_timeline_merges_llm_tracks_with_plan(editing_store: MemoryStore):
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    project_id = editing_store._test_project_id  # type: ignore[attr-defined]
+    shot_id = editing_store._test_shot_id  # type: ignore[attr-defined]
+    media_id = editing_store._test_media_id  # type: ignore[attr-defined]
+
+    ctx = AgentRunContext(
+        task_brief="生成剪辑计划稿",
+        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        script_id=script_id,
+        step_id="edit_compose",
+        agent_name="editing_agent",
+        project_id=project_id,
+    )
+    result = handle_plan_edit_timeline(
+        editing_store,
+        ctx,
+        {
+            "observation": "已规划三轨",
+            "tracks": {
+                "video": [
+                    {
+                        "track": "video",
+                        "start_ms": 0,
+                        "end_ms": 4000,
+                        "label": "道具特写",
+                        "asset_ref": media_id,
+                        "edit_description": "Ken Burns 推近道具",
+                        "motion_detail": {
+                            "type": "ken_burns_in",
+                            "from_focal": [0.2, 0.3],
+                            "to_focal": [0.5, 0.5],
+                        },
+                        "transition_in": {"type": "fade", "duration_ms": 200},
+                        "source_refs": {
+                            "shot_id": shot_id,
+                            "video_plan_shot_order": 0,
+                        },
+                    }
+                ],
+                "audio": [
+                    {
+                        "track": "audio",
+                        "start_ms": 0,
+                        "end_ms": 4000,
+                        "label": "旁白",
+                        "metadata": {"shot_id": shot_id},
+                    }
+                ],
+                "subtitle": [
+                    {
+                        "track": "subtitle",
+                        "start_ms": 0,
+                        "end_ms": 4000,
+                        "label": "展示道具",
+                    }
+                ],
+            },
+        },
+    )
+    assert result.ok is True
+    timeline = editing_store.get_edit_timeline_for_script(script_id)
+    assert timeline is not None
+    assert timeline.duration_ms == 4000
+    video_clip = timeline.tracks["video"][0]
+    assert video_clip.edit_description == "Ken Burns 推近道具"
+    assert video_clip.motion_detail is not None
+    assert video_clip.source_refs is not None
+    assert video_clip.source_refs.shot_id == shot_id
+
+
+def test_plan_edit_timeline_video_layers(editing_store: MemoryStore):
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    project_id = editing_store._test_project_id  # type: ignore[attr-defined]
+    shot_id = editing_store._test_shot_id  # type: ignore[attr-defined]
+    media_id = editing_store._test_media_id  # type: ignore[attr-defined]
+
+    ctx = AgentRunContext(
+        task_brief="生成多图层剪辑计划",
+        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        script_id=script_id,
+        step_id="edit_compose",
+        agent_name="editing_agent",
+        project_id=project_id,
+    )
+    result = handle_plan_edit_timeline(
+        editing_store,
+        ctx,
+        {
+            "observation": "主画面 + 画中画",
+            "video_layers": [
+                {
+                    "name": "主画面",
+                    "z_index": 0,
+                    "clips": [
+                        {
+                            "track": "video",
+                            "start_ms": 0,
+                            "end_ms": 4000,
+                            "label": "道具全景",
+                            "asset_ref": media_id,
+                            "transform": {"x": 0.5, "y": 0.5, "width": 1.0, "height": 1.0},
+                            "source_refs": {"shot_id": shot_id, "video_plan_shot_order": 0},
+                        }
+                    ],
+                },
+                {
+                    "name": "画中画",
+                    "z_index": 1,
+                    "clips": [
+                        {
+                            "track": "video",
+                            "start_ms": 500,
+                            "end_ms": 3500,
+                            "label": "道具特写",
+                            "asset_ref": media_id,
+                            "transform": {"x": 0.8, "y": 0.2, "width": 0.25, "height": 0.25},
+                        }
+                    ],
+                },
+            ],
+            "tracks": {
+                "audio": [
+                    {
+                        "track": "audio",
+                        "start_ms": 0,
+                        "end_ms": 4000,
+                        "label": "旁白",
+                        "metadata": {"shot_id": shot_id},
+                    }
+                ],
+                "subtitle": [
+                    {
+                        "track": "subtitle",
+                        "start_ms": 0,
+                        "end_ms": 4000,
+                        "label": "展示道具",
+                    }
+                ],
+            },
+        },
+    )
+    assert result.ok is True
+    timeline = editing_store.get_edit_timeline_for_script(script_id)
+    assert timeline is not None
+    assert len(timeline.video_layers) == 2
+    layers = sorted(timeline.video_layers, key=lambda item: item.z_index)
+    assert layers[0].z_index == 0
+    assert layers[1].z_index == 1
+    pip_clip = layers[1].clips[0]
+    assert pip_clip.transform is not None
+    assert pip_clip.transform.width == 0.25
+    assert result.structured.get("layer_summary")
+    assert result.structured["layer_summary"]["video_layers"]
+    assert len(result.structured["layer_summary"]["video_layers"]) == 2
+
+
+def test_load_edit_context_includes_layer_summary(editing_store: MemoryStore):
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    project_id = editing_store._test_project_id  # type: ignore[attr-defined]
+    shot_id = editing_store._test_shot_id  # type: ignore[attr-defined]
+    media_id = editing_store._test_media_id  # type: ignore[attr-defined]
+    ctx = AgentRunContext(
+        task_brief="规划",
+        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        script_id=script_id,
+        step_id="edit_compose",
+        agent_name="editing_agent",
+        project_id=project_id,
+    )
+    handle_plan_edit_timeline(
+        editing_store,
+        ctx,
+        {
+            "video_layers": [
+                {
+                    "name": "主画面",
+                    "z_index": 0,
+                    "clips": [
+                        {
+                            "track": "video",
+                            "start_ms": 0,
+                            "end_ms": 4000,
+                            "asset_ref": media_id,
+                            "transform": {"x": 0.5, "y": 0.5, "width": 1.0, "height": 1.0},
+                            "source_refs": {"shot_id": shot_id},
+                        }
+                    ],
+                }
+            ],
+            "tracks": {"audio": [], "subtitle": []},
+        },
+    )
+    payload = build_edit_context_payload(editing_store, script_id)
+    edit_tl = payload["edit_timeline"]
+    assert edit_tl is not None
+    assert edit_tl["layer_summary"]
+    assert edit_tl["layer_summary"]["video_layers"][0]["clips"][0]["transform"]
+
+
+def test_plan_edit_timeline_observation_lists_all_warnings(editing_store: MemoryStore):
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    project_id = editing_store._test_project_id  # type: ignore[attr-defined]
+    media_id = editing_store._test_media_id  # type: ignore[attr-defined]
+    ctx = AgentRunContext(
+        task_brief="重叠测试",
+        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        script_id=script_id,
+        step_id="edit_compose",
+        agent_name="editing_agent",
+        project_id=project_id,
+    )
+    result = handle_plan_edit_timeline(
+        editing_store,
+        ctx,
+        {
+            "video_layers": [
+                {
+                    "name": "PiP",
+                    "z_index": 0,
+                    "clips": [
+                        {
+                            "track": "video",
+                            "start_ms": 0,
+                            "end_ms": 4000,
+                            "asset_ref": media_id,
+                        },
+                        {
+                            "track": "video",
+                            "start_ms": 3000,
+                            "end_ms": 5000,
+                            "asset_ref": media_id,
+                        },
+                    ],
+                }
+            ],
+            "tracks": {"audio": [], "subtitle": []},
+        },
+    )
+    assert result.ok is True
+    video_warnings = [
+        w for w in result.structured["warnings"] if "与同层片段重叠" in w
+    ]
+    assert video_warnings
+    for warning in video_warnings:
+        assert warning in result.observation

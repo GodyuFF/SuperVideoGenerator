@@ -3,7 +3,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from apps.api.state import state
-from core.a2ui.schemas import A2UIConfirmationResponse
+from core.llm.a2ui.schemas import A2UIConfirmationResponse
 
 router = APIRouter()
 

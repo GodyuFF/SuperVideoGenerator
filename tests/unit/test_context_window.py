@@ -1,8 +1,9 @@
 """上下文滑窗与压缩测试。"""
 
-from core.conversation import ConversationIndex, ConversationRole, ConversationStore
-from core.agents.react_core import AgentRunContext
-from core.prompt.context_window import (
+from core.conversation import ConversationIndex, ConversationStore
+from core.conversation.store import MessageRole
+from core.llm.agent.react_core import AgentRunContext
+from core.llm.prompt.context_window import (
     prepare_master_context,
     prepare_observation_window,
     prepare_sub_agent_context,
@@ -31,9 +32,18 @@ def test_prepare_sub_agent_context_splits_history_and_observations():
     project_id = "p1"
     script_id = "s1"
     agent = "script_agent"
-    store.add(conversation_id, project_id, script_id, "agent", ConversationRole.TASK, "写剧本", agent)
-    store.add(conversation_id, project_id, script_id, "agent", ConversationRole.THOUGHT, "先解析", agent)
-    store.add(conversation_id, project_id, script_id, "agent", ConversationRole.ACTION, "parse_brief: {}", agent)
+    store.add_task_brief(conversation_id, project_id, script_id, "写剧本", agent)
+    store.add_react_turn(
+        conversation_id,
+        project_id,
+        script_id,
+        thought="先解析",
+        action="parse_brief",
+        action_input={},
+        observation="已完成 parse_brief",
+        channel="agent",
+        agent_name=agent,
+    )
 
     ctx = AgentRunContext(
         task_brief="写剧本",

@@ -55,6 +55,9 @@ class InteractionLogStore:
                 "CREATE INDEX IF NOT EXISTS idx_ilog_script ON interaction_logs(script_id, created_at)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ilog_project ON interaction_logs(project_id, created_at)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_ilog_kind ON interaction_logs(kind, created_at)"
             )
             conn.commit()
@@ -126,18 +129,54 @@ class InteractionLogStore:
             rows = conn.execute(sql, params).fetchall()
         return [self._row_to_record(r) for r in rows]
 
-    def count_llm_calls(self, script_id: str | None = None) -> int:
+    def count_llm_calls(
+        self,
+        script_id: str | None = None,
+        project_id: str | None = None,
+    ) -> int:
         clauses = ["kind = 'llm_response'"]
         params: list[Any] = []
         if script_id:
             clauses.append("script_id = ?")
             params.append(script_id)
+        if project_id:
+            clauses.append("project_id = ?")
+            params.append(project_id)
         where = "WHERE " + " AND ".join(clauses)
         with self._connect() as conn:
             row = conn.execute(
                 f"SELECT COUNT(*) AS c FROM interaction_logs {where}", params
             ).fetchone()
         return int(row["c"]) if row else 0
+
+    def delete_records(
+        self,
+        *,
+        project_id: str,
+        date: str,
+        script_id: str | None = None,
+    ) -> int:
+        """删除指定项目、日期（created_at 前缀 YYYY-MM-DD）的 SQLite 记录。"""
+        pid = project_id.strip()
+        day = date.strip()
+        if not pid or not day:
+            return 0
+        clauses = ["project_id = ?", "created_at LIKE ?"]
+        params: list[Any] = [pid, f"{day}%"]
+        if script_id:
+            clauses.append("script_id = ?")
+            params.append(script_id)
+        where = "WHERE " + " AND ".join(clauses)
+        with self._connect() as conn:
+            cur = conn.execute(f"DELETE FROM interaction_logs {where}", params)
+            conn.commit()
+            return int(cur.rowcount or 0)
+
+    def clear_all(self) -> None:
+        """清空全部交互日志（不删除 db 文件，避免 Windows 文件锁）。"""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM interaction_logs")
+            conn.commit()
 
     @staticmethod
     def _parse_json(val: str | None) -> Any:

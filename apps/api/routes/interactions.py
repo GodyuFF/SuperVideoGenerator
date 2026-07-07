@@ -1,10 +1,14 @@
 """接口交互记录 API。"""
 
-from fastapi import APIRouter, Query
+import re
+
+from fastapi import APIRouter, HTTPException, Query
 
 from apps.api.state import state
 
 router = APIRouter(prefix="/api/interactions")
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 @router.get("")
@@ -21,7 +25,10 @@ def list_interactions(
         kind=kind,
         limit=limit,
     )
-    llm_count = state.interaction_log_store.count_llm_calls(script_id=script_id)
+    llm_count = state.interaction_log_store.count_llm_calls(
+        script_id=script_id,
+        project_id=project_id,
+    )
     return {
         "total": len(records),
         "llm_call_count": llm_count,
@@ -30,11 +37,12 @@ def list_interactions(
 
 
 @router.get("/files")
-def list_interaction_log_files():
-    """列出本地 JSONL 交互日志文件（data/logs/interactions/）。"""
-    files = state.interaction_file_store.list_log_files()
+def list_interaction_log_files(project_id: str | None = None):
+    """列出本地 JSONL 交互日志文件（按项目 + 日期）。"""
+    files = state.interaction_file_store.list_log_files(project_id=project_id)
     return {
         "log_dir": str(state.interaction_file_store.log_dir),
+        "project_id": project_id or "",
         "files": files,
     }
 
@@ -56,3 +64,28 @@ def interaction_stats(script_id: str | None = None):
             stats[r.kind] += 1
     stats["llm_real_calls"] = stats["llm_response"]
     return stats
+
+
+@router.delete("")
+def delete_interaction_logs(
+    project_id: str = Query(..., min_length=1),
+    date: str = Query(..., min_length=10, max_length=10),
+    script_id: str | None = None,
+):
+    """按项目 + 日期删除交互日志（SQLite 与 JSONL 同步清理）。"""
+    if not _DATE_RE.match(date):
+        raise HTTPException(400, detail="date 须为 YYYY-MM-DD")
+    sqlite_deleted = state.interaction_log_store.delete_records(
+        project_id=project_id,
+        date=date,
+        script_id=script_id,
+    )
+    jsonl_deleted = state.interaction_file_store.delete_log_file(project_id, date)
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "date": date,
+        "script_id": script_id or "",
+        "sqlite_deleted": sqlite_deleted,
+        "jsonl_deleted": jsonl_deleted,
+    }

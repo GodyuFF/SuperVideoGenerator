@@ -15,6 +15,11 @@ dependencies = [
     "pydantic-settings>=2.2",
     "websockets>=12.0",
     "httpx>=0.27",
+    "jsonschema>=4.21",
+    "edge-tts>=7.2",
+    "pydub>=0.25",
+    "openai>=1.0",
+    "imageio-ffmpeg>=0.5.1",
 ]
 
 [project.optional-dependencies]
@@ -31,7 +36,8 @@ include = ["core*", "apps*"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-m 'not live'"
+addopts = "-m 'not live and not integration'"
 markers = [
     "live: 需要真实 LLM API Key 与网络（默认不跑）",
+    "integration: 需要 Node/Remotion 等完整环境（默认不跑）",
 ]

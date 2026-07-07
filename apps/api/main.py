@@ -10,8 +10,11 @@ from apps.api.middleware.interaction_log import interaction_logging_middleware
 from apps.api.routes.board import router as board_router
 from apps.api.routes.agents import router as agents_router
 from apps.api.routes.interactions import router as interactions_router
+from apps.api.routes.ai import router as ai_router
 from apps.api.routes.llm import router as llm_router
 from apps.api.routes.projects import router as projects_router
+from apps.api.routes.skills import router as skills_router
+from apps.api.routes.edit_timeline import router as edit_timeline_router
 from apps.api.websocket.handler import router as ws_router
 from apps.api.state import state
 
@@ -33,8 +36,11 @@ app.middleware("http")(interaction_logging_middleware)
 app.include_router(board_router)
 app.include_router(agents_router)
 app.include_router(interactions_router)
+app.include_router(ai_router)
 app.include_router(llm_router)
 app.include_router(projects_router)
+app.include_router(skills_router)
+app.include_router(edit_timeline_router)
 app.include_router(ws_router)
 
 

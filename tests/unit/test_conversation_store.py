@@ -2,7 +2,7 @@
 
 import pytest
 
-from core.conversation import ConversationIndex, ConversationRole, ConversationStore
+from core.conversation import ConversationIndex, ConversationStore
 from core.models.entities import Project, Script
 from core.store.memory import MemoryStore
 
@@ -20,8 +20,8 @@ def ids():
 def test_conversation_store_isolates_by_conversation_id(ids):
     project_id, script_id = ids
     store = ConversationStore()
-    store.add("conv_a", project_id, script_id, "master", ConversationRole.USER, "hello a")
-    store.add("conv_b", project_id, script_id, "master", ConversationRole.USER, "hello b")
+    store.add_user_message("conv_a", project_id, script_id, "hello a")
+    store.add_user_message("conv_b", project_id, script_id, "hello b")
 
     a_msgs = store.list_master_messages_for_ui("conv_a")
     b_msgs = store.list_master_messages_for_ui("conv_b")
@@ -55,8 +55,22 @@ def test_conversation_index_require_rejects_mismatch(ids):
 def test_clear_agent_session_per_conversation(ids):
     project_id, script_id = ids
     store = ConversationStore()
-    store.add("conv1", project_id, script_id, "agent", ConversationRole.TASK, "t1", "script_agent")
-    store.add("conv2", project_id, script_id, "agent", ConversationRole.TASK, "t2", "script_agent")
+    store.add_task_brief("conv1", project_id, script_id, "t1", "script_agent")
+    store.add_task_brief("conv2", project_id, script_id, "t2", "script_agent")
     store.clear_agent_session("conv1", "script_agent")
     assert store.list_messages("conv1", "agent", "script_agent") == []
     assert len(store.list_messages("conv2", "agent", "script_agent")) == 1
+
+
+def test_clear_agent_session_preserves_sqlite(ids, tmp_path):
+    project_id, script_id = ids
+    from core.conversation.sqlite_store import ConversationSqliteStore
+
+    sqlite = ConversationSqliteStore(db_path=tmp_path / "conv.db")
+    store = ConversationStore(sqlite_store=sqlite)
+    store.add_task_brief("conv1", project_id, script_id, "t1", "script_agent")
+    store.clear_agent_session("conv1", "script_agent")
+    assert store.list_messages("conv1", "agent", "script_agent") == []
+    archived = sqlite.list_messages("conv1")
+    assert len(archived) == 1
+    assert archived[0].message_kind.value == "task_brief"

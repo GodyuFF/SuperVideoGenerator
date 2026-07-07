@@ -6,6 +6,8 @@ import type { ActionKind, ReactTurnMessage } from "../types/chat";
 
 interface ReActTurnBlockProps {
   turn: ReactTurnMessage;
+  /** false 时仅展示工具名称 */
+  showDetails?: boolean;
 }
 
 function actionKindClass(kind?: ActionKind): string {
@@ -16,15 +18,27 @@ function actionKindClass(kind?: ActionKind): string {
       return "react-action-pill tool";
     case "finish":
       return "react-action-pill finish";
+    case "ask_user":
+      return "react-action-pill ask-user";
     default:
       return "react-action-pill";
   }
 }
 
-export function ReActTurnBlock({ turn }: ReActTurnBlockProps) {
+export function ReActTurnBlock({ turn, showDetails = true }: ReActTurnBlockProps) {
   const inputEntries = turn.actionInput
     ? Object.entries(turn.actionInput).filter(([, v]) => v.trim())
     : [];
+  const toolLabel = turn.actionLabel ?? turn.action;
+
+  if (!showDetails) {
+    if (!turn.action) return null;
+    return (
+      <div className="react-turn react-turn-compact">
+        <div className={actionKindClass(turn.actionKind)}>{toolLabel}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="react-turn">

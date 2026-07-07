@@ -2,18 +2,38 @@
  * 看板 Tab 容器与各类型看板渲染
  */
 
+import { useEffect, useMemo, useState } from "react";
 import { GraphBoard } from "./GraphBoard";
-import type { BoardTabId, BoardView } from "../../types/board";
-import { BOARD_TABS } from "../../types/board";
+import { ImageTextAssetCard, type ImageTextAssetItem } from "../ImageTextAssetCard";
+import { ImageTextAssetEditor } from "../ImageTextAssetEditor";
+import { EditTimelineBoard } from "./EditTimelineBoard";
+import { EditStudio } from "../../edit/EditStudio";
+import type { EditTimelineData } from "../../edit/types";
+import { MediaPreview } from "../MediaPreview";
+import { ScriptDetailsBoard } from "./ScriptDetailsBoard";
+import { BOARD_TABS, type BoardTabId, type BoardView, type ScriptBoardMeta, visibleScriptTabs } from "../../types/board";
+import type { WorkspaceMode } from "../../lib/localProjects";
+import { ManualEditBanner } from "../manual/ManualEditBanner";
+import { CreateTextAssetDialog } from "../manual/CreateTextAssetDialog";
+import { PlotAssetEditor } from "../manual/PlotAssetEditor";
+import { deleteTextAsset } from "../../lib/manualAssets";
 
 interface BoardPanelProps {
+  workspaceMode: WorkspaceMode;
   activeTab: BoardTabId;
   onTabChange: (tab: BoardTabId) => void;
   board: BoardView | null;
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
-  onSelectScript?: (scriptId: string) => void;
+  onEnterScript?: (scriptId: string) => void;
+  onCreateScript?: (title: string) => void | Promise<void>;
+  onDeleteScript?: (scriptId: string) => void | Promise<void>;
+  onBackToOverview?: () => void;
+  projectId?: string | null;
+  scriptId?: string | null;
+  scriptMeta?: ScriptBoardMeta | null;
+  manualEditEnabled?: boolean;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -22,80 +42,164 @@ function StatusBadge({ status }: { status: string }) {
 
 function OverviewBoard({
   board,
-  onSelectScript,
+  onEnterScript,
+  onCreateScript,
+  onDeleteScript,
 }: {
   board: BoardView;
-  onSelectScript?: (id: string) => void;
+  onEnterScript?: (id: string) => void;
+  onCreateScript?: (title: string) => void | Promise<void>;
+  onDeleteScript?: (id: string) => void | Promise<void>;
 }) {
+  const [newTitle, setNewTitle] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const items = board.items ?? [];
-  if (items.length === 0) {
-    return <p className="muted">暂无剧本，请新建项目或发送对话开始生成。</p>;
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    const title = newTitle.trim() || `剧本 ${Date.now().toString().slice(-4)}`;
+    if (!onCreateScript) return;
+    setCreating(true);
+    try {
+      await onCreateScript(title);
+      setNewTitle("");
+    } finally {
+      setCreating(false);
+    }
   }
+
   return (
-    <div className="board-cards">
-      {items.map((raw) => {
-        const item = raw as Record<string, unknown>;
-        const sid = String(item.script_id ?? "");
-        return (
-          <article
-            key={sid}
-            className={`board-card ${item.is_active ? "active" : ""}`}
-          >
-            <header>
-              <strong>{String(item.title)}</strong>
-              <StatusBadge status={String(item.status)} />
-            </header>
-            <p className="muted board-preview">{String(item.content_preview || "暂无正文")}</p>
-            <ul className="board-stats-row">
-              <li>资产 {String(item.asset_count)}</li>
-              <li>媒体 {String(item.media_count)}</li>
-              <li>分镜 {String(item.shot_count)}</li>
-              <li>
-                进度 {String(item.plan_steps_completed)}/{String(item.plan_steps_total)}
-              </li>
-            </ul>
-            {onSelectScript && sid && (
-              <button type="button" className="btn-secondary btn-sm" onClick={() => onSelectScript(sid)}>
-                切换到此剧本
-              </button>
-            )}
-          </article>
-        );
-      })}
-    </div>
+    <>
+      {onCreateScript && (
+        <form className="overview-create-script" onSubmit={(e) => void handleCreate(e)}>
+          <input
+            type="text"
+            value={newTitle}
+            placeholder="新剧本标题"
+            disabled={creating}
+            onChange={(e) => setNewTitle(e.target.value)}
+          />
+          <button type="submit" className="btn-secondary btn-sm" disabled={creating}>
+            {creating ? "创建中…" : "＋ 新建剧本"}
+          </button>
+        </form>
+      )}
+
+      {items.length === 0 ? (
+        <p className="muted">暂无剧本，请点击上方新建剧本。</p>
+      ) : (
+        <div className="board-cards">
+          {items.map((raw) => {
+            const item = raw as Record<string, unknown>;
+            const sid = String(item.script_id ?? "");
+            return (
+              <article
+                key={sid}
+                className={`board-card board-card-clickable ${item.is_active ? "active" : ""}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => sid && onEnterScript?.(sid)}
+                onKeyDown={(e) => {
+                  if ((e.key === "Enter" || e.key === " ") && sid) {
+                    e.preventDefault();
+                    onEnterScript?.(sid);
+                  }
+                }}
+              >
+                <header>
+                  <strong>{String(item.title)}</strong>
+                  <StatusBadge status={String(item.status)} />
+                </header>
+                <p className="muted board-preview">
+                  {String(item.content_preview || "暂无正文")}
+                </p>
+                <ul className="board-stats-row">
+                  <li>资产 {String(item.asset_count)}</li>
+                  <li>媒体 {String(item.media_count)}</li>
+                  <li>分镜 {String(item.shot_count)}</li>
+                  <li>
+                    进度 {String(item.plan_steps_completed)}/{String(item.plan_steps_total)}
+                  </li>
+                </ul>
+                {onEnterScript && sid && (
+                  <div className="board-card-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary btn-sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEnterScript(sid);
+                      }}
+                    >
+                      进入剧本
+                    </button>
+                    {onDeleteScript && (
+                      <button
+                        type="button"
+                        className="btn-danger btn-sm"
+                        disabled={deletingId === sid}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void (async () => {
+                            setDeletingId(sid);
+                            try {
+                              await onDeleteScript(sid);
+                            } finally {
+                              setDeletingId(null);
+                            }
+                          })();
+                        }}
+                      >
+                        {deletingId === sid ? "删除中…" : "删除"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 
-function KnowledgeBoard({ board }: { board: BoardView }) {
+function KnowledgeBoard({
+  board,
+  projectId,
+  onEdit,
+  onDelete,
+  manualEditEnabled,
+}: {
+  board: BoardView;
+  projectId?: string | null;
+  onEdit?: (item: ImageTextAssetItem) => void;
+  onDelete?: (item: ImageTextAssetItem) => void;
+  manualEditEnabled?: boolean;
+}) {
   const items = board.items ?? [];
   const stats = board.stats ?? {};
   return (
     <>
       <div className="board-stats-chips">
         {Object.entries(stats).map(([k, v]) => (
-          <span key={k} className="stat-chip">{k}: {String(v)}</span>
+          <span key={k} className="stat-chip">
+            {k}: {String(v)}
+          </span>
         ))}
       </div>
       <ul className="knowledge-list">
         {items.map((raw) => {
-          const item = raw as Record<string, unknown>;
-          const media = (item.media as { url?: string; name?: string }[]) ?? [];
+          const item = raw as unknown as ImageTextAssetItem;
           return (
-            <li key={String(item.id)} className="knowledge-item">
-              <span className="asset-type-badge">{String(item.type)}</span>
-              <strong>{String(item.name)}</strong>
-              <p>{String(item.preview || "")}</p>
-              {media.length > 0 && (
-                <div className="thumb-row">
-                  {media.map((m) =>
-                    m.url ? (
-                      <a key={m.url} href={m.url} target="_blank" rel="noreferrer" className="thumb-link">
-                        {m.name ?? "图片"}
-                      </a>
-                    ) : null
-                  )}
-                </div>
-              )}
+            <li key={item.id} className="knowledge-item">
+              <ImageTextAssetCard
+                item={item}
+                onEdit={projectId && manualEditEnabled ? onEdit : undefined}
+                onDelete={projectId && manualEditEnabled ? onDelete : undefined}
+                manualEditEnabled={manualEditEnabled}
+              />
             </li>
           );
         })}
@@ -104,73 +208,193 @@ function KnowledgeBoard({ board }: { board: BoardView }) {
   );
 }
 
-function CharacterSceneBoard({ board, kind }: { board: BoardView; kind: "character" | "scene" }) {
+function CharacterSceneBoard({
+  board,
+  kind,
+  projectId,
+  scriptId,
+  onEdit,
+  onDelete,
+  onCreate,
+  manualEditEnabled,
+}: {
+  board: BoardView;
+  kind: "character" | "scene" | "prop";
+  projectId?: string | null;
+  scriptId?: string | null;
+  onEdit?: (item: ImageTextAssetItem) => void;
+  onDelete?: (item: ImageTextAssetItem) => void;
+  onCreate?: (kind: "character" | "scene" | "prop") => void;
+  manualEditEnabled?: boolean;
+}) {
   const items = board.items ?? [];
-  const empty = kind === "character" ? "暂无角色资产" : "暂无场景资产";
-  if (items.length === 0) return <p className="muted">{empty}</p>;
-  const bodyKey = kind === "character" ? "appearance" : "description";
+  const empty =
+    kind === "character"
+      ? "暂无角色资产"
+      : kind === "scene"
+        ? "暂无空镜资产"
+        : "暂无物品资产";
+  if (items.length === 0 && !manualEditEnabled) return <p className="muted">{empty}</p>;
   return (
-    <div className="board-cards character-cards">
-      {items.map((raw) => {
-        const item = raw as Record<string, unknown>;
-        const images = (item.images as { url?: string; name?: string }[]) ?? [];
-        return (
-          <article key={String(item.id)} className="board-card character-card">
-            <h4>{String(item.name)}</h4>
-            <p>{String(item[bodyKey] || "")}</p>
-            {images.length > 0 ? (
-              <div className="character-images">
-                {images.map((img) =>
-                  img.url ? (
-                    <figure key={img.url}>
-                      <img src={img.url} alt={img.name ?? ""} loading="lazy" />
-                      <figcaption>{img.name}</figcaption>
-                    </figure>
-                  ) : null
-                )}
-              </div>
-            ) : (
-              <p className="muted">尚未生成关联图片</p>
-            )}
-          </article>
-        );
-      })}
+    <div className="character-scene-board">
+      {manualEditEnabled && projectId && scriptId && onCreate && (
+        <div className="board-toolbar">
+          <button type="button" className="btn-secondary btn-sm" onClick={() => onCreate(kind)}>
+            ＋ 新建{kind === "character" ? "角色" : kind === "scene" ? "空镜" : "物品"}
+          </button>
+        </div>
+      )}
+      {items.length === 0 ? (
+        <p className="muted">{empty}</p>
+      ) : (
+        <div className="board-cards character-cards">
+          {items.map((raw) => {
+            const item = raw as unknown as ImageTextAssetItem;
+            return (
+              <ImageTextAssetCard
+                key={item.id}
+                item={item}
+                onEdit={projectId && manualEditEnabled ? onEdit : undefined}
+                onDelete={projectId && manualEditEnabled ? onDelete : undefined}
+                manualEditEnabled={manualEditEnabled}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-function ScriptBoard({ board }: { board: BoardView }) {
+function ScriptBoard({
+  board,
+  projectId,
+  scriptId,
+  manualEditEnabled,
+  onRefresh,
+}: {
+  board: BoardView;
+  projectId?: string | null;
+  scriptId?: string | null;
+  manualEditEnabled?: boolean;
+  onRefresh?: () => void;
+}) {
+  const [editingPlot, setEditingPlot] = useState<{
+    id: string;
+    name: string;
+    text: string;
+  } | null>(null);
+  const [createPlotOpen, setCreatePlotOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const stats = board.stats ?? {};
-  const content = String(stats.content_md ?? "");
+  const content = String(stats.content_md ?? "").trim();
+  const plotItems = board.items ?? [];
+
+  const handleDeletePlot = async (assetId: string) => {
+    if (!projectId || !scriptId) return;
+    if (!window.confirm("确定删除该剧情资产？")) return;
+    setDeletingId(assetId);
+    try {
+      await deleteTextAsset(projectId, scriptId, assetId);
+      onRefresh?.();
+    } catch (err) {
+      window.alert((err as Error).message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div className="script-board">
-      <div className="script-board-meta">
-        <span>{String(stats.title ?? "")}</span>
-        <StatusBadge status={String(stats.status ?? "draft")} />
-        {stats.style_mode != null && stats.style_mode !== "" && (
-          <span className="muted">{String(stats.style_mode)}</span>
+      {content ? (
+        <>
+          <div className="script-board-meta">
+            <span>{String(stats.title ?? "")}</span>
+            <StatusBadge status={String(stats.status ?? "draft")} />
+            {stats.style_mode != null && stats.style_mode !== "" && (
+              <span className="muted">{String(stats.style_mode)}</span>
+            )}
+          </div>
+          <pre className="script-md-block">{content}</pre>
+        </>
+      ) : null}
+      <div className="board-toolbar">
+        {manualEditEnabled && projectId && scriptId && (
+          <button
+            type="button"
+            className="btn-secondary btn-sm"
+            onClick={() => setCreatePlotOpen(true)}
+          >
+            ＋ 新建剧情
+          </button>
         )}
       </div>
-      {content ? (
-        <pre className="script-md-block">{content}</pre>
-      ) : (
-        <p className="muted">剧本正文将在 script_agent 执行 parse_brief 后显示。</p>
-      )}
-      {(board.items ?? []).length > 0 && (
+      {plotItems.length > 0 && (
         <>
           <h4>私有文字资产</h4>
           <ul className="simple-item-list">
-            {(board.items ?? []).map((raw) => {
+            {plotItems.map((raw) => {
               const item = raw as Record<string, unknown>;
+              const id = String(item.id);
               return (
-                <li key={String(item.id)}>
+                <li key={id} className="simple-item-row">
                   <span className="asset-type-badge">{String(item.type)}</span>
-                  {String(item.name)} — {String(item.preview ?? "")}
+                  <span className="simple-item-text">
+                    {String(item.name)} — {String(item.preview ?? "")}
+                  </span>
+                  {manualEditEnabled && projectId && (
+                    <span className="simple-item-actions">
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm"
+                        onClick={() =>
+                          setEditingPlot({
+                            id,
+                            name: String(item.name),
+                            text: String(item.preview ?? ""),
+                          })
+                        }
+                      >
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-danger btn-sm"
+                        disabled={deletingId === id}
+                        onClick={() => void handleDeletePlot(id)}
+                      >
+                        {deletingId === id ? "删除中…" : "删除"}
+                      </button>
+                    </span>
+                  )}
                 </li>
               );
             })}
           </ul>
         </>
+      )}
+      {!content && plotItems.length === 0 && (
+        <p className="muted">暂无剧本内容。</p>
+      )}
+
+      {createPlotOpen && projectId && scriptId && (
+        <CreateTextAssetDialog
+          projectId={projectId}
+          scriptId={scriptId}
+          assetType="plot"
+          onClose={() => setCreatePlotOpen(false)}
+          onCreated={() => onRefresh?.()}
+        />
+      )}
+      {editingPlot && projectId && (
+        <PlotAssetEditor
+          projectId={projectId}
+          assetId={editingPlot.id}
+          initialName={editingPlot.name}
+          initialText={editingPlot.text}
+          onClose={() => setEditingPlot(null)}
+          onSaved={() => onRefresh?.()}
+        />
       )}
     </div>
   );
@@ -183,17 +407,25 @@ function StoryboardBoard({ board }: { board: BoardView }) {
   }
   return (
     <ol className="shot-list board-shot-list">
-      {items.map((raw) => {
+      {items.map((raw, index) => {
         const shot = raw as Record<string, unknown>;
         return (
           <li key={String(shot.id)} className="shot-item">
             <div className="shot-header">
-              <span className="shot-order">镜 {Number(shot.order) + 1}</span>
+              <span className="shot-order">镜 {index + 1}</span>
               <span className="shot-meta">
                 {Number(shot.duration_ms) / 1000}s · {String(shot.camera_motion)}
               </span>
             </div>
             <p className="shot-narration">{String(shot.narration_text)}</p>
+            {shot.tts_audio_url ? (
+              <MediaPreview
+                kind="audio"
+                url={String(shot.tts_audio_url)}
+                label="配音试听"
+                className="shot-tts-preview"
+              />
+            ) : null}
           </li>
         );
       })}
@@ -216,15 +448,25 @@ function MediaBoard({ board }: { board: BoardView }) {
     <div className="media-board-groups">
       {Object.entries(byType).map(([type, group]) => (
         <section key={type}>
-          <h4>{type}（{group.length}）</h4>
+          <h4>
+            {type}（{group.length}）
+          </h4>
           <ul className="media-output-list">
             {group.map((raw) => {
               const m = raw as Record<string, unknown>;
+              const url = m.url ? String(m.url) : "";
+              const type = String(m.type);
               return (
                 <li key={String(m.id)} className="media-output-item">
                   <strong>{String(m.name)}</strong>
-                  {m.url ? (
-                    <a href={String(m.url)} target="_blank" rel="noreferrer">{String(m.url)}</a>
+                  {m.shot_id ? (
+                    <span className="muted"> · 镜头 {String(m.shot_id)}</span>
+                  ) : null}
+                  <MediaPreview kind={type} url={url} className="board-media-preview" />
+                  {url ? (
+                    <a href={url} target="_blank" rel="noreferrer" className="media-link">
+                      打开文件
+                    </a>
                   ) : (
                     <code>{String(m.id)}</code>
                   )}
@@ -279,28 +521,123 @@ function PipelineBoard({ board }: { board: BoardView }) {
 function BoardContent({
   activeTab,
   board,
-  onSelectScript,
+  onEnterScript,
+  onCreateScript,
+  onDeleteScript,
+  projectId,
+  scriptId,
+  onEdit,
+  onDelete,
+  onCreateAsset,
+  onRefresh,
+  manualEditEnabled,
 }: {
   activeTab: BoardTabId;
   board: BoardView;
-  onSelectScript?: (id: string) => void;
+  onEnterScript?: (id: string) => void;
+  onCreateScript?: (title: string) => void | Promise<void>;
+  onDeleteScript?: (id: string) => void | Promise<void>;
+  projectId?: string | null;
+  scriptId?: string | null;
+  onEdit?: (item: ImageTextAssetItem) => void;
+  onDelete?: (item: ImageTextAssetItem) => void;
+  onCreateAsset?: (kind: "character" | "scene" | "prop") => void;
+  onRefresh?: () => void;
+  manualEditEnabled?: boolean;
 }) {
   switch (activeTab) {
     case "overview":
-      return <OverviewBoard board={board} onSelectScript={onSelectScript} />;
+      return (
+        <OverviewBoard
+          board={board}
+          onEnterScript={onEnterScript}
+          onCreateScript={onCreateScript}
+          onDeleteScript={onDeleteScript}
+        />
+      );
     case "knowledge":
-      return <KnowledgeBoard board={board} />;
+      return (
+        <KnowledgeBoard
+          board={board}
+          projectId={projectId}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          manualEditEnabled={manualEditEnabled}
+        />
+      );
     case "script_details":
-      // Two-stage: first load scripts via overview data, selection is local (no global scriptId change)
-      return <OverviewBoard board={board} onSelectScript={onSelectScript} />;
+      return (
+        <ScriptDetailsBoard
+          board={board}
+          projectId={projectId}
+          scriptId={scriptId}
+          manualEditEnabled={manualEditEnabled}
+          onRefresh={onRefresh}
+        />
+      );
     case "script":
-      return <ScriptBoard board={board} />;
+      return (
+        <ScriptBoard
+          board={board}
+          projectId={projectId}
+          scriptId={scriptId}
+          manualEditEnabled={manualEditEnabled}
+          onRefresh={onRefresh}
+        />
+      );
     case "character":
-      return <CharacterSceneBoard board={board} kind="character" />;
+      return (
+        <CharacterSceneBoard
+          board={board}
+          kind="character"
+          projectId={projectId}
+          scriptId={scriptId}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onCreate={onCreateAsset}
+          manualEditEnabled={manualEditEnabled}
+        />
+      );
     case "scene":
-      return <CharacterSceneBoard board={board} kind="scene" />;
+      return (
+        <CharacterSceneBoard
+          board={board}
+          kind="scene"
+          projectId={projectId}
+          scriptId={scriptId}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onCreate={onCreateAsset}
+          manualEditEnabled={manualEditEnabled}
+        />
+      );
+    case "prop":
+      return (
+        <CharacterSceneBoard
+          board={board}
+          kind="prop"
+          projectId={projectId}
+          scriptId={scriptId}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onCreate={onCreateAsset}
+          manualEditEnabled={manualEditEnabled}
+        />
+      );
     case "storyboard":
       return <StoryboardBoard board={board} />;
+    case "edit":
+      if (projectId && scriptId) {
+        return (
+          <EditStudio
+            projectId={projectId}
+            scriptId={scriptId}
+            initialBoard={board.stats as unknown as EditTimelineData | undefined}
+            editable={manualEditEnabled}
+          />
+        );
+      }
+      return <EditTimelineBoard board={board} />;
     case "media":
       return <MediaBoard board={board} />;
     case "pipeline":
@@ -311,36 +648,71 @@ function BoardContent({
 }
 
 export function BoardPanel({
+  workspaceMode,
   activeTab,
   onTabChange,
   board,
   loading,
   error,
   onRefresh,
-  onSelectScript,
+  onEnterScript,
+  onCreateScript,
+  onDeleteScript,
+  onBackToOverview,
+  projectId,
+  scriptId,
+  scriptMeta,
+  manualEditEnabled = false,
 }: BoardPanelProps) {
-  const level1 = BOARD_TABS.filter((t) => t.level === 1 && ["overview", "knowledge", "script_details"].includes(t.id));
-  const level2 = BOARD_TABS.filter((t) => t.level === 2);
+  const [editing, setEditing] = useState<ImageTextAssetItem | null>(null);
+  const [createAssetKind, setCreateAssetKind] = useState<
+    "character" | "scene" | "prop" | null
+  >(null);
+  const isProjectMode = workspaceMode === "project";
+  const projectTabs = BOARD_TABS.filter((t) => t.id === "overview" || t.id === "knowledge");
+  const visibleSecondaryIds = useMemo(
+    () => new Set(visibleScriptTabs(scriptMeta ?? null)),
+    [scriptMeta]
+  );
+  const scriptSecondaryTabs = BOARD_TABS.filter(
+    (t) => t.level === 2 && visibleSecondaryIds.has(t.id)
+  );
+  const visibleTabs = isProjectMode
+    ? projectTabs
+    : [
+        ...BOARD_TABS.filter((t) => t.id === "script_details"),
+        ...scriptSecondaryTabs,
+      ];
+
+  useEffect(() => {
+    if (isProjectMode) return;
+    if (activeTab === "script_details") return;
+    if (!visibleSecondaryIds.has(activeTab)) {
+      onTabChange("script_details");
+    }
+  }, [isProjectMode, activeTab, visibleSecondaryIds, onTabChange]);
+
+  const handleDeleteAsset = async (item: ImageTextAssetItem) => {
+    if (!projectId || !scriptId || !manualEditEnabled) return;
+    if (!window.confirm(`确定删除「${item.name}」？`)) return;
+    try {
+      await deleteTextAsset(projectId, scriptId, item.id);
+      onRefresh();
+    } catch (err) {
+      window.alert((err as Error).message);
+    }
+  };
 
   return (
     <div className="board-panel">
       <div className="board-tab-bar">
-        <div className="board-tab-group">
-          <span className="board-tab-group-label">层级 1</span>
-          {level1.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className={`board-tab ${activeTab === t.id ? "active" : ""}`}
-              onClick={() => onTabChange(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <div className="board-tab-group">
-          <span className="board-tab-group-label">层级 2</span>
-          {level2.map((t) => (
+        {!isProjectMode && onBackToOverview && (
+          <button type="button" className="board-back-link btn-secondary btn-sm" onClick={onBackToOverview}>
+            ← 返回整体看板
+          </button>
+        )}
+        <div className="board-tab-list">
+          {visibleTabs.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -359,17 +731,47 @@ export function BoardPanel({
       <div className="board-content">
         {loading && <p className="muted">加载看板…</p>}
         {error && <p className="board-error">{error}</p>}
+        {!isProjectMode && <ManualEditBanner visible={!manualEditEnabled} />}
         {!loading && board && (
           <>
             {board.description && <p className="muted board-desc">{board.description}</p>}
             <BoardContent
               activeTab={activeTab}
               board={board}
-              onSelectScript={onSelectScript}
+              onEnterScript={onEnterScript}
+              onCreateScript={isProjectMode ? onCreateScript : undefined}
+              onDeleteScript={isProjectMode ? onDeleteScript : undefined}
+              projectId={projectId}
+              scriptId={scriptId}
+              onEdit={manualEditEnabled ? setEditing : undefined}
+              onDelete={manualEditEnabled ? handleDeleteAsset : undefined}
+              onCreateAsset={manualEditEnabled ? setCreateAssetKind : undefined}
+              onRefresh={onRefresh}
+              manualEditEnabled={manualEditEnabled}
             />
           </>
         )}
       </div>
+
+      {editing && projectId && (
+        <ImageTextAssetEditor
+          projectId={projectId}
+          item={editing}
+          disabled={!manualEditEnabled}
+          onClose={() => setEditing(null)}
+          onSaved={onRefresh}
+        />
+      )}
+
+      {createAssetKind && projectId && scriptId && (
+        <CreateTextAssetDialog
+          projectId={projectId}
+          scriptId={scriptId}
+          assetType={createAssetKind}
+          onClose={() => setCreateAssetKind(null)}
+          onCreated={onRefresh}
+        />
+      )}
     </div>
   );
 }

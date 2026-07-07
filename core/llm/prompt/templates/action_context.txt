@@ -1,0 +1,7 @@
+角色：{{display_name}}
+角色说明：{{role_prompt}}
+工作上下文：{{work_context_line}}
+{{store_context}}当前行动：{{current_action}}
+已完成行动：{{completed_actions}}
+{{history_summary_block}}历史观察：
+{{observations_block}}

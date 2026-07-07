@@ -15,7 +15,8 @@ async def test_get_llm_config():
         data = r.json()
         assert data["provider"] == "deepseek"
         assert "available_providers" in data
-        assert any(p["id"] == "openai" for p in data["available_providers"])
+        assert any(p["id"] == "anthropic" for p in data["available_providers"])
+        assert not any(p["id"] == "openai" for p in data["available_providers"])
 
 
 @pytest.mark.asyncio
@@ -24,11 +25,11 @@ async def test_patch_llm_provider():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.patch(
             "/api/llm/config",
-            json={"provider": "openai", "model": "gpt-4o-mini"},
+            json={"provider": "anthropic", "model": "claude-sonnet-4-20250514"},
         )
         assert r.status_code == 200
-        assert r.json()["provider"] == "openai"
-        assert r.json()["model"] == "gpt-4o-mini"
+        assert r.json()["provider"] == "anthropic"
+        assert r.json()["model"] == "claude-sonnet-4-20250514"
 
         r = await client.patch("/api/llm/config", json={"provider": "deepseek"})
         assert r.status_code == 200

@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from apps.api.state import state
-from core.agents.prompts import PromptProfile
+from core.llm.agent.prompts import PromptProfile
 from core.models.entities import AgentPromptOverride, VideoStyleMode
 
 router = APIRouter(prefix="/api/agents")

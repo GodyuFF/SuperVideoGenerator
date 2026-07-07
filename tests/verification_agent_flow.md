@@ -25,7 +25,7 @@ fixed/role.*.md ──► prompt_resolver ──► role_prompt
 PreparedContext ◄── context_window ◄── ConversationStore
        │                                      │
        └────► AgentContextManager ──► PromptBuilder.build_react_user ──► LLM user
-rules/react_xml.md ──► PromptBuilder.build_react_system ──► LLM system
+rules/react_tools.md ──► PromptBuilder.build_react_system ──► LLM system
 ```
 
 ---
@@ -36,7 +36,7 @@ rules/react_xml.md ──► PromptBuilder.build_react_system ──► LLM syst
 |------|------|
 | `test_agent_role_prompt_flow_to_xml` | ✅ patch `build_react_user` 验证传递链 |
 | `test_role_prompt_in_decide_method` | ✅ decide 传递 role_prompt |
-| `test_prompt_builder.py` | ✅ 模板渲染与 action system 含 actions.md |
+| `test_prompt_builder.py` | ✅ 模板渲染与 action system 协议 |
 | `test_context_manager.py` | ✅ 子 Agent 动态槽位 |
 | `test_prompt_registry.py` | ✅ fixed 路径加载与 role 分段格式 |
 

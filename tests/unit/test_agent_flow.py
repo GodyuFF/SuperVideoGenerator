@@ -2,12 +2,12 @@
 
 import pytest
 
-from core.agents.definitions import AGENT_DEFINITIONS
+from core.llm.agent.definitions import AGENT_DEFINITIONS
 from core.conversation import ConversationStore
-from core.agents.registry import AgentRegistry
+from core.llm.agent.registry import AgentRegistry
 from core.events.emitter import EventEmitter
 from core.interaction_log.recorder import InteractionRecorder
-from core.llm.settings import LLMConfigManager
+from core.llm.client.settings import LLMConfigManager
 from core.store.memory import MemoryStore
 from tests.support.scripted_llm import ScriptedLLMClient
 
@@ -37,12 +37,12 @@ async def test_role_prompt_in_decide_method():
     """验证 ReActAgent.decide 将 resolve_role_prompt 结果传给 decide_sub_agent。"""
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from core.agents.react_core import AgentRunContext
+    from core.llm.agent.react_core import AgentRunContext
 
     mock_decision = MagicMock(action="finish", thought="test")
 
     with patch(
-        "core.agents.base.decide_sub_agent", new_callable=AsyncMock
+        "core.llm.agent.base.decide_sub_agent", new_callable=AsyncMock
     ) as mock_decide:
         mock_decide.return_value = mock_decision
 

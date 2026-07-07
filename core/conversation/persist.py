@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from core.conversation.index import ConversationIndex
-from core.conversation.store import ConversationMessage, ConversationStore
+from core.conversation.store import ConversationMessage, ConversationStore, load_conversation_messages
 from core.models.entities import Conversation
 from core.store.persist import DEFAULT_PATH, is_enabled
 
@@ -59,6 +59,6 @@ def load_conversations(
     index.load_dict(convs)
     msg_data: dict[str, list[ConversationMessage]] = {}
     for k, items in raw.get(_CONV_MESSAGES_KEY, {}).items():
-        msg_data[k] = [ConversationMessage.model_validate(i) for i in items]
+        msg_data[k] = load_conversation_messages(items)
     store.load_dict(msg_data)
     return bool(convs or msg_data)

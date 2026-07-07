@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "composition_id": "DynamicImageTimeline",
+  "motions": [
+    "ken_burns_in",
+    "ken_burns_out",
+    "ken_burns_pan",
+    "pan_right",
+    "static"
+  ],
+  "motion_aliases": {
+    "fade": "ken_burns_in",
+    "fade_in": "ken_burns_in",
+    "pan": "ken_burns_pan",
+    "ken_burns": "ken_burns_in",
+    "push_in": "ken_burns_in",
+    "gentle_push_in": "ken_burns_in",
+    "slow_zoom_in": "ken_burns_in",
+    "zoom_in": "ken_burns_in",
+    "pull_out": "ken_burns_out",
+    "gentle_pull_out": "ken_burns_out",
+    "slow_zoom_out": "ken_burns_out",
+    "zoom_out": "ken_burns_out",
+    "slow_pan": "ken_burns_pan",
+    "slow_pan_right": "pan_right",
+    "pan_left": "ken_burns_pan"
+  },
+  "transitions": ["cut", "fade", "dissolve"],
+  "backgrounds": ["solid", "image", "blur"],
+  "transition_max_duration_ms": 2000,
+  "motion_detail": {
+    "from_focal_range": [0, 1],
+    "to_focal_range": [0, 1],
+    "scale_range": [0.5, 3.0],
+    "description": "Normalized focal points (0–1) and scale interpolation for Ken Burns"
+  },
+  "style_modes": ["dynamic_image", "dynamic_comic"]
+}

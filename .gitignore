@@ -6,6 +6,19 @@ __pycache__/
 node_modules/
 apps/web/dist/
 apps/web/node_modules/
+apps/remotion/
 *.tsbuildinfo
 .venv/
 venv/
+
+# 本地运行时二进制/参考仓库
+.remotion/
+MoneyPrinterTurbo/
+
+# 构建/测试产物
+*.egg-info/
+fake_*.mp4
+
+# IDE / Cursor
+.idea/
+.cursor/

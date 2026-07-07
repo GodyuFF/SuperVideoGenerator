@@ -1,9 +1,10 @@
-"""LLM 配置 API：查看/切换服务商与模型。"""
+"""LLM 配置 API（兼容旧版；推荐使用 /api/ai/config）。"""
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from apps.api.state import state
+from core.models.entities import ImageSourceMode
 
 router = APIRouter(prefix="/api/llm")
 
@@ -18,26 +19,23 @@ class UpdateLLMConfigRequest(BaseModel):
     use_llm_react: bool | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    image_source_default: ImageSourceMode | None = None
+    image_text_preset: str | None = None
+    comic_preset: str | None = None
+    image_batch_pending_assets: bool | None = None
+    image_allow_search_fallback: bool | None = None
 
 
 @router.get("/config")
 def get_llm_config():
-    """获取当前 LLM 配置与可用服务商列表。"""
-    return state.llm_config.get_public_config()
+    """获取 LLM 配置（扁平结构，兼容旧前端）。"""
+    return state.ai_config.get_llm_legacy_config()
 
 
 @router.patch("/config")
 def patch_llm_config(body: UpdateLLMConfigRequest):
-    """运行时更新 LLM 配置（默认 DeepSeek，可切换主流模型）。"""
+    """运行时更新 LLM 与图文流水线默认项（兼容旧 API）。"""
     try:
-        return state.llm_config.update(
-            provider=body.provider,
-            model=body.model,
-            api_key=body.api_key,
-            base_url=body.base_url,
-            use_llm_react=body.use_llm_react,
-            temperature=body.temperature,
-            max_tokens=body.max_tokens,
-        )
+        return state.ai_config.patch_llm_legacy(**body.model_dump(exclude_none=True))
     except ValueError as e:
         raise HTTPException(400, str(e))

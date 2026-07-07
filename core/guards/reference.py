@@ -40,9 +40,14 @@ class ScriptEditGuardError(Exception):
 
 
 class ScriptEditGuard:
-    """未执行态（draft/planned）才允许 CRUD。"""
+    """AI 执行中（executing）禁止人工 CRUD；其余态（含执行完成/失败）允许。"""
 
-    EDITABLE_STATUSES = {ScriptStatus.DRAFT, ScriptStatus.PLANNED}
+    EDITABLE_STATUSES = {
+        ScriptStatus.DRAFT,
+        ScriptStatus.PLANNED,
+        ScriptStatus.COMPLETED,
+        ScriptStatus.FAILED,
+    }
 
     @staticmethod
     def is_editable(script: Script) -> bool:

@@ -1,16 +1,21 @@
 /** 对话面板结构化消息类型 */
 
-export type ActionKind = "delegate" | "tool" | "finish" | "unknown";
+import type { A2UIConfirmationRequest } from "../types";
+
+export type ActionKind = "delegate" | "tool" | "finish" | "ask_user" | "unknown";
 
 export interface UserChatMessage {
   kind: "user";
   id: string;
   text: string;
+  skillId?: string;
 }
 
 export interface ReactTurnMessage {
   kind: "react_turn";
   id: string;
+  /** 用户第几轮发言（同一 conversation 内 monotonic） */
+  round: number;
   iteration: number;
   thought: string;
   thoughtStreaming?: boolean;
@@ -19,6 +24,26 @@ export interface ReactTurnMessage {
   actionKind?: ActionKind;
   actionInput?: Record<string, string>;
   observation?: string;
+}
+
+export interface SubAgentIteration {
+  iteration: number;
+  thought?: string;
+  action?: string;
+  actionInput?: Record<string, string>;
+  observation?: string;
+}
+
+export interface SubAgentTurnMessage {
+  kind: "sub_agent";
+  id: string;
+  stepId: string;
+  /** 所属主编排轮次（与用户发言轮次对齐） */
+  round: number;
+  agentName: string;
+  displayName: string;
+  iterations: SubAgentIteration[];
+  finished?: { iterations: number; outputCount: number };
 }
 
 export interface AssistantChatMessage {
@@ -34,11 +59,24 @@ export interface SystemChatMessage {
   text: string;
 }
 
+export type A2UIConfirmationStatus = "pending" | "submitted" | "cancelled" | "superseded";
+
+export interface A2UIChatMessage {
+  kind: "a2ui_confirmation";
+  id: string;
+  confirmationId: string;
+  request: A2UIConfirmationRequest;
+  status: A2UIConfirmationStatus;
+  submittedValues?: Record<string, unknown>;
+}
+
 export type ChatMessage =
   | UserChatMessage
   | ReactTurnMessage
+  | SubAgentTurnMessage
   | AssistantChatMessage
-  | SystemChatMessage;
+  | SystemChatMessage
+  | A2UIChatMessage;
 
 /** 将 WebSocket 事件中的 action_input 规范为字符串键值对 */
 export function normalizeActionInput(

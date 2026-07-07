@@ -4,17 +4,23 @@
 
 import type { PlanStep, TextAsset, VideoPlan, VideoPlanShot } from "../types";
 import type { MediaAsset } from "../types/agents";
+import { MediaPreview } from "./MediaPreview";
+import {
+  ImageTextAssetCard,
+  isImageTextAssetType,
+} from "./ImageTextAssetCard";
+import { resolveMediaPlayUrl } from "../utils/mediaUrl";
 
 const ASSET_TYPE_LABEL: Record<string, string> = {
   plot: "剧情",
   character: "人物",
-  scene: "场景",
+  scene: "空镜",
   prop: "道具",
   narration: "旁白",
 };
 
 function formatAssetBody(content: Record<string, unknown>): string {
-  for (const key of ["text", "description", "appearance", "content"]) {
+  for (const key of ["summary", "text", "description", "appearance", "content"]) {
     const val = content[key];
     if (typeof val === "string" && val.trim()) return val.trim();
   }
@@ -53,7 +59,15 @@ function isPlaceholderMediaUrl(url: string | undefined): boolean {
   return false;
 }
 
-function StoredMediaList({ items }: { items: MediaAsset[] }) {
+function StoredMediaList({
+  items,
+  projectId,
+  scriptId,
+}: {
+  items: MediaAsset[];
+  projectId?: string | null;
+  scriptId?: string | null;
+}) {
   const visible = items.filter((m) => !isPlaceholderMediaUrl(m.url));
   if (visible.length === 0) return null;
 
@@ -68,25 +82,45 @@ function StoredMediaList({ items }: { items: MediaAsset[] }) {
     <section className="content-section media-section stored-media-section">
       <h3>数字资产库（{visible.length}）</h3>
       <ul className="media-output-list">
-        {visible.map((item) => (
+        {visible.map((item) => {
+          const playUrl = resolveMediaPlayUrl(item.url, projectId, scriptId);
+          return (
           <li key={item.id} className={`media-output-item kind-${item.type}`}>
             <span className="media-kind">{typeLabel[item.type] ?? item.type}</span>
             <strong>{item.name}</strong>
-            {item.url ? (
-              <a className="media-link" href={item.url} target="_blank" rel="noreferrer">
-                {item.url}
+            <MediaPreview
+              kind={item.type}
+              url={playUrl || item.url}
+              label={item.type === "audio" ? "试听" : undefined}
+              projectId={projectId}
+              scriptId={scriptId}
+            />
+            {playUrl ? (
+              <a className="media-link" href={playUrl} target="_blank" rel="noreferrer">
+                {playUrl}
               </a>
+            ) : item.url ? (
+              <span className="muted">{item.url}</span>
             ) : (
               <code className="media-id">{item.id}</code>
             )}
           </li>
-        ))}
+          );
+        })}
       </ul>
     </section>
   );
 }
 
-function MediaOutputList({ steps }: { steps: PlanStep[] }) {
+function MediaOutputList({
+  steps,
+  projectId,
+  scriptId,
+}: {
+  steps: PlanStep[];
+  projectId?: string | null;
+  scriptId?: string | null;
+}) {
   const items = steps
     .flatMap((step) =>
       (step.outputs ?? []).map((o) => ({ ...o, stepTitle: step.title }))
@@ -112,20 +146,31 @@ function MediaOutputList({ steps }: { steps: PlanStep[] }) {
     <section className="content-section media-section">
       <h3>媒体产出</h3>
       <ul className="media-output-list">
-        {items.map((item, i) => (
+        {items.map((item, i) => {
+          const playUrl = resolveMediaPlayUrl(item.url, projectId, scriptId);
+          return (
           <li key={`${item.asset_id}-${i}`} className={`media-output-item kind-${item.kind}`}>
             <span className="media-kind">{item.kind}</span>
             <strong>{item.label}</strong>
             <span className="muted media-step">{item.stepTitle}</span>
-            {item.url ? (
-              <a className="media-link" href={item.url} target="_blank" rel="noreferrer">
-                {item.url}
+            <MediaPreview
+              kind={item.kind}
+              url={playUrl || item.url}
+              projectId={projectId}
+              scriptId={scriptId}
+            />
+            {playUrl ? (
+              <a className="media-link" href={playUrl} target="_blank" rel="noreferrer">
+                {playUrl}
               </a>
+            ) : item.url ? (
+              <span className="muted">{item.url}</span>
             ) : (
               <code className="media-id">{item.asset_id}</code>
             )}
           </li>
-        ))}
+          );
+        })}
       </ul>
     </section>
   );
@@ -138,10 +183,10 @@ function ShotList({ shots }: { shots: VideoPlanShot[] }) {
     <section className="content-section storyboard-section">
       <h3>分镜计划（{sorted.length} 镜）</h3>
       <ol className="shot-list">
-        {sorted.map((shot) => (
+        {sorted.map((shot, index) => (
           <li key={shot.id} className="shot-item">
             <div className="shot-header">
-              <span className="shot-order">镜 {shot.order + 1}</span>
+              <span className="shot-order">镜 {index + 1}</span>
               <span className="shot-meta">
                 {shot.duration_ms / 1000}s · {shot.camera_motion}
               </span>
@@ -158,11 +203,55 @@ function ShotList({ shots }: { shots: VideoPlanShot[] }) {
 
 function AssetCards({ assets }: { assets: TextAsset[] }) {
   if (assets.length === 0) return null;
-  const grouped = [...assets].sort((a, b) => a.type.localeCompare(b.type));
+  const imageText = assets.filter((a) => isImageTextAssetType(a.type));
+  const textOnly = assets.filter((a) => !isImageTextAssetType(a.type));
+  const grouped = [...textOnly].sort((a, b) => a.type.localeCompare(b.type));
 
   return (
+    <>
+      {imageText.length > 0 && (
+        <section className="content-section assets-detail-section">
+          <h3>图文资产（{imageText.length}）</h3>
+          <div className="asset-cards image-text-cards">
+            {imageText.map((asset) => {
+              const c = asset.content ?? {};
+              const traits: Record<string, string> = {};
+              for (const [k, v] of Object.entries(c)) {
+                if (typeof v === "string" && v.trim() && k !== "description" && k !== "summary") {
+                  if (!["image_prompt", "negative_prompt", "prompt_hint", "visual_style", "color_palette", "notes", "display_mode", "prompt_version", "prompt_locked", "tags"].includes(k)) {
+                    traits[k] = v;
+                  }
+                }
+              }
+              return (
+              <ImageTextAssetCard
+                key={asset.id}
+                item={{
+                  id: asset.id,
+                  type: asset.type,
+                  name: asset.name,
+                  scope: asset.scope,
+                  content: c,
+                  description: String(c.description ?? ""),
+                  summary: String(c.summary ?? ""),
+                  visual_style: String(c.visual_style ?? ""),
+                  color_palette: String(c.color_palette ?? ""),
+                  prompt_hint: String(c.prompt_hint ?? ""),
+                  image_prompt: String(c.image_prompt ?? ""),
+                  negative_prompt: String(c.negative_prompt ?? ""),
+                  notes: String(c.notes ?? ""),
+                  tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
+                  display_mode: String(c.display_mode ?? "static_image"),
+                  traits,
+                }}
+              />
+            );})}
+          </div>
+        </section>
+      )}
+      {grouped.length > 0 && (
     <section className="content-section assets-detail-section">
-      <h3>文字资产（{assets.length}）</h3>
+      <h3>文字资产（{grouped.length}）</h3>
       <div className="asset-cards">
         {grouped.map((asset) => {
           const body = formatAssetBody(asset.content);
@@ -185,6 +274,8 @@ function AssetCards({ assets }: { assets: TextAsset[] }) {
         })}
       </div>
     </section>
+      )}
+    </>
   );
 }
 
@@ -195,6 +286,8 @@ interface GeneratedContentProps {
   mediaAssets: MediaAsset[];
   videoPlan: VideoPlan | null;
   planSteps: PlanStep[];
+  projectId?: string | null;
+  scriptId?: string | null;
 }
 
 export function GeneratedContent({
@@ -204,6 +297,8 @@ export function GeneratedContent({
   mediaAssets,
   videoPlan,
   planSteps,
+  projectId,
+  scriptId,
 }: GeneratedContentProps) {
   const hasScript = scriptContentMd.trim().length > 0;
   const hasAny =
@@ -237,9 +332,9 @@ export function GeneratedContent({
 
       <AssetCards assets={assets} />
 
-      <StoredMediaList items={mediaAssets} />
+      <StoredMediaList items={mediaAssets} projectId={projectId} scriptId={scriptId} />
 
-      <MediaOutputList steps={planSteps} />
+      <MediaOutputList steps={planSteps} projectId={projectId} scriptId={scriptId} />
     </div>
   );
 }

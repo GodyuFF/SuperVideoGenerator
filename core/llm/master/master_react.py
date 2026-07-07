@@ -1,30 +1,71 @@
 """超级视频大师 ReAct 编排：与用户对话隔离，向子 Agent 下发任务简报。"""
 
-import asyncio
 from typing import Any
 
-from core.a2ui.manager import ConfirmationManager
-from core.agents.react_core import MasterRunContext, ReActDecision
-from core.agents.registry import AgentRegistry
+from core.llm.a2ui.manager import ConfirmationManager
+from core.llm.a2ui.schemas import A2UIComponent
+from core.llm.hook.return_to_master import ReturnToMasterError
+from core.llm.hook.react_guard import (
+    DuplicateActionAbortError,
+    EditComposeMissingAssetsError,
+    ImageGenerationAbortError,
+    TtsAbortError,
+)
+from core.llm.master.edit_failure import (
+    format_edit_compose_failure_observation,
+    upstream_steps_to_redo,
+)
+from core.llm.tools.image.errors import (
+    build_image_gen_failure_analysis,
+    enrich_failure_names,
+    format_image_gen_failure_observation,
+)
+from core.llm.agent.react_core import MasterRunContext, ReActDecision
+from core.llm.agent.registry import AgentRegistry
 from core.constants import MAX_REACT_ITERATIONS
-from core.conversation import ConversationRole, ConversationStore
+from core.conversation import ConversationStore
+from core.execution.cancel import ExecutionCancelledError, check_cancelled, wait_or_cancel
 from core.events.emitter import EventEmitter
 from core.llm.client import LLMClient
+from core.llm.tools.shared.agent_tools import ASK_USER_QUESTION_ACTION
 from core.llm.master.actions import (
     ACTION_TO_STEP,
     STEP_META,
     TASK_BRIEFS,
     action_kind,
     action_label,
+    task_brief_for_step,
+    uses_image_text_pipeline,
+)
+from core.llm.image_text_config import (
+    effective_image_source,
+    resolve_image_text_config,
+    should_prompt_image_source,
+)
+from core.llm.hook.confirm_gates import (
+    CONFIRM_AFTER_STEP,
+    CONFIRM_BEFORE_ACTION,
+    build_script_structure_summary,
 )
 from core.llm.master.session import create_master_react_session
 from core.llm.master.tools import MasterToolExecutor
 from core.llm.react_decide import decide_master_session
+from core.llm.plan_context import (
+    apply_plan_update_to_document,
+    build_plan_slice_for_step,
+    build_plan_snapshot,
+    extract_plan_update,
+    normalize_remaining_plan,
+    trim_plan_status_history,
+)
 from core.llm.settings import LLMConfigManager
-from core.llm.streaming import OnDelta, ReactJsonThoughtParser
+from core.llm.streaming import OnDelta
 from core.logging.setup import get_logger, log_stage
+from core.llm.execution_mode import resolve_execution_mode
 from core.models.entities import (
+    ExecutionMode,
     GenerationMode,
+    ImageSourceMode,
     PlanDocument,
     PlanStep,
     ScriptStatus,
@@ -88,6 +129,62 @@ class MasterReActEngine:
             payload["step_id"] = step_id
         return payload
 
+    def _persist_master_react_turn(
+        self,
+        conversation_id: str,
+        project_id: str,
+        script_id: str,
+        decision: ReActDecision,
+        observation: str,
+    ) -> None:
+        self._conversations.add_react_turn(
+            conversation_id,
+            project_id,
+            script_id,
+            thought=decision.thought,
+            action=decision.action,
+            action_input=dict(decision.action_input or {}),
+            observation=observation,
+            channel="master",
+        )
+
+    def _apply_master_plan_update(
+        self,
+        session: Any,
+        plan: PlanDocument,
+        script_id: str,
+        decision: ReActDecision,
+    ) -> str | None:
+        update = extract_plan_update(decision.action_input)
+        if update is None:
+            return "提示：请在 tool_calls 中填写 plan_status 与 remaining_plan，以便跟踪全局计划。"
+        session.plan_status_history = trim_plan_status_history(
+            [*session.plan_status_history, update.plan_status]
+        )
+        session.last_remaining_plan = normalize_remaining_plan(update.remaining_plan)
+        apply_plan_update_to_document(plan, update)
+        self._store.set_plan(script_id, plan)
+        session.execution_plan = build_plan_snapshot(plan)
+        return None
+
+    async def _emit_plan_updated(
+        self,
+        script_id: str,
+        conversation_id: str,
+        plan: PlanDocument,
+        session: Any,
+    ) -> None:
+        await self._emit(
+            script_id,
+            "plan_updated",
+            {
+                "conversation_id": conversation_id,
+                "plan": plan.model_dump(),
+                "plan_status_history": session.plan_status_history,
+                "last_remaining_plan": session.last_remaining_plan,
+            },
+        )
+
     def _make_thought_stream_handler(
         self,
         script_id: str,
@@ -95,18 +192,15 @@ class MasterReActEngine:
         stream_id: str,
         iteration: int,
     ) -> OnDelta:
-        parser = ReactJsonThoughtParser()
-
         async def on_delta(raw_delta: str) -> None:
-            thought_delta = parser.feed(raw_delta)
-            if not thought_delta:
+            if not raw_delta:
                 return
             await self._emit(
                 script_id,
                 "llm_stream_delta",
                 {
                     "stream_id": stream_id,
-                    "delta": thought_delta,
+                    "delta": raw_delta,
                     "kind": "react_thought",
                     "visibility": "user",
                     "conversation_id": conversation_id,
@@ -157,13 +251,27 @@ class MasterReActEngine:
     def _build_delegate_task_brief(
         self,
         ctx: MasterRunContext,
+        session: Any,
         step_type: str,
         decision: ReActDecision,
+        *,
+        resume_context: dict[str, Any] | None = None,
     ) -> str:
-        parts = [TASK_BRIEFS[step_type], f"用户创意：{ctx.user_message}"]
+        brief = (session.task_brief or "").strip()
+        step_brief = task_brief_for_step(step_type, ctx.style_mode)
+        if brief and "用户补充" in brief:
+            parts = [step_brief, brief]
+        else:
+            parts = [step_brief, f"用户创意：{ctx.user_message}"]
+            if brief:
+                parts.append(brief)
         note = decision.action_input.get("备注")
         if note:
             parts.append(f"主编排说明：{note}")
+        if resume_context:
+            hint = str(resume_context.get("resume_hint") or resume_context.get("message") or "").strip()
+            if hint:
+                parts.append(f"续跑上下文：{hint}")
         script = self._store.get_script(ctx.script_id)
         if script and step_type == "script_design":
             parts.append(f"目标时长 {script.duration_sec}s")
@@ -187,6 +295,8 @@ class MasterReActEngine:
         style_mode: VideoStyleMode,
         generation_mode: GenerationMode,
         conversation_id: str,
+        execution_mode: ExecutionMode | None = None,
+        skill_overlay: dict[str, Any] | None = None,
     ) -> list[str]:
         script = self._store.get_script(script_id)
         if not script:
@@ -201,6 +311,10 @@ class MasterReActEngine:
             conversation_id=conversation_id,
         )
 
+        project = self._store.get_project(project_id)
+        resolved_execution = resolve_execution_mode(project, override=execution_mode)
+        goal_mode = resolved_execution == ExecutionMode.GOAL
+
         session = create_master_react_session(
             conversation_id=conversation_id,
             project_id=project_id,
@@ -208,11 +322,33 @@ class MasterReActEngine:
             user_message=user_message,
             style_mode=style_mode,
             generation_mode=generation_mode,
+            execution_mode=resolved_execution,
         )
 
+        from core.llm.master.pipeline_progress import (
+            build_pipeline_progress,
+            build_resume_observation,
+            detect_resume_target_step,
+        )
+
+        progress = build_pipeline_progress(self._store, script_id, style_mode)
+        resume_target = detect_resume_target_step(user_message)
+        session.extra["pipeline_progress"] = progress
+        if resume_target:
+            session.extra["user_resume_target"] = resume_target
+        resume_obs = build_resume_observation(
+            resume_target=resume_target,
+            progress=progress,
+            user_message=user_message,
+        )
+        if resume_obs:
+            ctx.observations.append(resume_obs)
+            session.observations = list(ctx.observations)
+
+        plan_goal = (user_message or "").strip() or script.title
         plan = PlanDocument(
             version=script.plan_version + 1,
-            goal=script.title,
+            goal=plan_goal,
             constraints={
                 "duration_sec": script.duration_sec,
                 "style_mode": style_mode.value,
@@ -238,13 +374,36 @@ class MasterReActEngine:
 
         execution_started = False
         last_step_id: str | None = None
+        finished_normally = False
+        user_aborted = False
+        require_script_approval = (
+            not goal_mode
+            and project is not None
+            and project.config.generation.require_script_structure_approval
+        ) if project else (not goal_mode)
 
         try:
             for _ in range(MAX_REACT_ITERATIONS):
+                try:
+                    check_cancelled(script_id)
+                except ExecutionCancelledError:
+                    user_aborted = True
+                    abort_obs = "用户已中止执行。"
+                    ctx.observations.append(abort_obs)
+                    session.observations = list(ctx.observations)
+                    self._conversations.add_orphan_observation(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        abort_obs,
+                        channel="master",
+                    )
+                    break
                 ctx.iteration += 1
                 session.iteration = ctx.iteration
                 session.observations = list(ctx.observations)
                 session.completed_step_types = set(ctx.completed_step_types)
+                session.execution_plan = build_plan_snapshot(plan)
 
                 stream_id = f"master-thought-{ctx.iteration}"
                 await self._start_llm_stream(
@@ -263,6 +422,7 @@ class MasterReActEngine:
                 )
 
                 try:
+                    check_cancelled(script_id)
                     decision = await decide_master_session(
                         self._llm_client,
                         self._llm_config,
@@ -270,17 +430,19 @@ class MasterReActEngine:
                         self._conversations,
                         on_delta=on_delta,
                     )
+                except ExecutionCancelledError:
+                    user_aborted = True
+                    break
                 except (RuntimeError, ValueError) as e:
                     observation = f"主编排决策失败：{e}"
                     ctx.observations.append(observation)
                     session.observations = list(ctx.observations)
-                    self._conversations.add(
+                    self._conversations.add_orphan_observation(
                         conversation_id,
                         project_id,
                         script_id,
-                        "master",
-                        ConversationRole.OBSERVATION,
                         observation,
+                        channel="master",
                     )
                     await self._emit(
                         script_id,
@@ -300,7 +462,7 @@ class MasterReActEngine:
                         iteration=ctx.iteration,
                         visibility="user",
                     )
-                    continue
+                    raise RuntimeError(observation) from e
 
                 await self._end_llm_stream(
                     script_id,
@@ -311,14 +473,13 @@ class MasterReActEngine:
                     visibility="user",
                 )
 
-                self._conversations.add(
-                    conversation_id,
-                    project_id,
-                    script_id,
-                    "master",
-                    ConversationRole.THOUGHT,
-                    decision.thought,
+                plan_warn = self._apply_master_plan_update(
+                    session, plan, script_id, decision
                 )
+                if plan_warn:
+                    ctx.observations.append(plan_warn)
+                    session.observations = list(ctx.observations)
+                await self._emit_plan_updated(script_id, conversation_id, plan, session)
 
                 if session.is_delegate_action(decision.action):
                     step_type = session.step_type_for_delegate(decision.action)
@@ -328,32 +489,24 @@ class MasterReActEngine:
                         )
                         ctx.observations.append(observation)
                         session.observations = list(ctx.observations)
-                        self._conversations.add(
+                        self._persist_master_react_turn(
                             conversation_id,
                             project_id,
                             script_id,
-                            "master",
-                            ConversationRole.ACTION,
-                            f"{decision.action}: {decision.action_input}",
-                        )
-                        self._conversations.add(
-                            conversation_id,
-                            project_id,
-                            script_id,
-                            "master",
-                            ConversationRole.OBSERVATION,
+                            decision,
                             observation,
                         )
                         continue
 
                 if decision.action == "finish":
-                    self._conversations.add(
+                    self._persist_master_react_turn(
                         conversation_id,
                         project_id,
                         script_id,
-                        "master",
-                        ConversationRole.ACTION,
-                        f"{decision.action}: {decision.action_input}",
+                        decision,
+                        str(
+                            decision.action_input.get("observation", "主编排已完成。")
+                        ),
                     )
                     await self._emit(
                         script_id,
@@ -362,17 +515,92 @@ class MasterReActEngine:
                             decision, conversation_id, ctx.iteration
                         ),
                     )
+                    finished_normally = True
                     break
 
-                if session.is_tool_action(decision.action):
-                    self._conversations.add(
+                if decision.action == ASK_USER_QUESTION_ACTION:
+                    if goal_mode:
+                        observation = (
+                            "目标模式下不可用 ask_user_question，请根据已有信息合理推断并继续。"
+                        )
+                        ctx.observations.append(observation)
+                        session.observations = list(ctx.observations)
+                        self._persist_master_react_turn(
+                            conversation_id,
+                            project_id,
+                            script_id,
+                            decision,
+                            observation,
+                        )
+                        await self._emit(
+                            script_id,
+                            "react_observation",
+                            {
+                                "iteration": ctx.iteration,
+                                "observation": observation,
+                                "conversation_id": conversation_id,
+                                "kind": "master",
+                            },
+                        )
+                        continue
+                    await self._emit(
+                        script_id,
+                        "react_action",
+                        self._react_action_payload(
+                            decision, conversation_id, ctx.iteration
+                        ),
+                    )
+                    from core.llm.tools.shared.ask_user import (
+                        execute_ask_user_question,
+                        merge_user_answers_into_brief,
+                    )
+
+                    values: dict[str, Any] = {}
+                    try:
+                        observation, values = await wait_or_cancel(
+                            script_id,
+                            execute_ask_user_question(
+                                self._confirmation,
+                                decision.action_input,
+                                step_id=script_id,
+                                conversation_id=conversation_id,
+                            ),
+                        )
+                        if values:
+                            session.task_brief = merge_user_answers_into_brief(
+                                session.task_brief, values
+                            )
+                    except ExecutionCancelledError:
+                        user_aborted = True
+                        break
+                    except Exception as e:
+                        observation = f"ask_user_question 失败：{e}"
+                        values = {}
+                    if user_aborted:
+                        break
+                    ctx.observations.append(observation)
+                    session.observations = list(ctx.observations)
+                    self._persist_master_react_turn(
                         conversation_id,
                         project_id,
                         script_id,
-                        "master",
-                        ConversationRole.ACTION,
-                        f"{decision.action}: {decision.action_input}",
+                        decision,
+                        observation,
                     )
+                    await self._emit(
+                        script_id,
+                        "react_observation",
+                        {
+                            "iteration": ctx.iteration,
+                            "observation": observation,
+                            "conversation_id": conversation_id,
+                            "kind": "ask_user",
+                            "user_values": values if values else None,
+                        },
+                    )
+                    continue
+
+                if session.is_tool_action(decision.action):
                     await self._emit(
                         script_id,
                         "react_action",
@@ -382,18 +610,19 @@ class MasterReActEngine:
                     )
                     try:
                         observation = await self._tool_executor.execute(
-                            decision.action, script_id
+                            decision.action,
+                            script_id,
+                            decision.action_input,
                         )
                     except Exception as e:
                         observation = f"工具 {decision.action} 执行失败：{e}"
                     session.completed_tools.add(decision.action.removeprefix("tool_"))
                     ctx.observations.append(observation)
-                    self._conversations.add(
+                    self._persist_master_react_turn(
                         conversation_id,
                         project_id,
                         script_id,
-                        "master",
-                        ConversationRole.OBSERVATION,
+                        decision,
                         observation,
                     )
                     await self._emit(
@@ -411,20 +640,11 @@ class MasterReActEngine:
                 if not session.is_delegate_action(decision.action):
                     observation = f"未知行动「{decision.action}」，已跳过。"
                     ctx.observations.append(observation)
-                    self._conversations.add(
+                    self._persist_master_react_turn(
                         conversation_id,
                         project_id,
                         script_id,
-                        "master",
-                        ConversationRole.ACTION,
-                        f"{decision.action}: {decision.action_input}",
-                    )
-                    self._conversations.add(
-                        conversation_id,
-                        project_id,
-                        script_id,
-                        "master",
-                        ConversationRole.OBSERVATION,
+                        decision,
                         observation,
                     )
                     await self._emit(
@@ -439,20 +659,118 @@ class MasterReActEngine:
                     continue
 
                 step_type = ACTION_TO_STEP[decision.action]
+                image_text_cfg = resolve_image_text_config(project, self._llm_config)
+                resolved_image_source = effective_image_source(image_text_cfg)
+
+                if (
+                    not goal_mode
+                    and step_type == "image_gen"
+                    and uses_image_text_pipeline(style_mode)
+                    and should_prompt_image_source(image_text_cfg, style_mode)
+                ):
+                    source_response = await self._confirmation.request(
+                        kind="image_source",
+                        title="选择图片来源",
+                        description=(
+                            "即将为角色、道具、场景文字资产批量配图。"
+                            "请选择 AI 生图或搜索配图。"
+                        ),
+                        components=[
+                            A2UIComponent(
+                                id="image_source",
+                                component="select",
+                                label="图片来源",
+                                value=ImageSourceMode.GENERATE.value,
+                                options=[
+                                    {
+                                        "label": "AI 批量生图",
+                                        "value": ImageSourceMode.GENERATE.value,
+                                    },
+                                    {
+                                        "label": "搜索配图",
+                                        "value": ImageSourceMode.SEARCH.value,
+                                    },
+                                ],
+                                required=True,
+                            ),
+                        ],
+                        conversation_id=conversation_id,
+                    )
+                    if not source_response.approved:
+                        observation = "用户取消图片素材步骤。"
+                        ctx.observations.append(observation)
+                        self._persist_master_react_turn(
+                            conversation_id,
+                            project_id,
+                            script_id,
+                            decision,
+                            observation,
+                        )
+                        await self._emit(
+                            script_id,
+                            "react_observation",
+                            {
+                                "iteration": ctx.iteration,
+                                "observation": observation,
+                                "conversation_id": conversation_id,
+                                "kind": "master",
+                            },
+                        )
+                        continue
+                    resolved_image_source = effective_image_source(
+                        image_text_cfg,
+                        str(source_response.values.get("image_source", "")),
+                    )
+                elif step_type == "image_gen" and uses_image_text_pipeline(style_mode):
+                    resolved_image_source = effective_image_source(image_text_cfg)
+
+                if self._confirmation.has_pending():
+                    observation = "存在未完成的确认请求，跳过委派。"
+                    ctx.observations.append(observation)
+                    self._persist_master_react_turn(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        decision,
+                        observation,
+                    )
+                    await self._emit(
+                        script_id,
+                        "react_observation",
+                        {
+                            "iteration": ctx.iteration,
+                            "observation": observation,
+                            "conversation_id": conversation_id,
+                            "kind": "master",
+                        },
+                    )
+                    continue
+
+                if not goal_mode and decision.action in CONFIRM_BEFORE_ACTION:
+                    gate = CONFIRM_BEFORE_ACTION[decision.action]
+                    response = await self._confirmation.request(
+                        kind="generic",
+                        title=gate.title,
+                        description=gate.description,
+                        conversation_id=conversation_id,
+                    )
+                    if not response.approved:
+                        observation = f"用户取消执行 {decision.action}。"
+                        ctx.observations.append(observation)
+                        self._persist_master_react_turn(
+                            conversation_id,
+                            project_id,
+                            script_id,
+                            decision,
+                            observation,
+                        )
+                        continue
+
                 depends_on = [last_step_id] if last_step_id else []
                 step = self._make_step(step_type, depends_on)
                 plan.steps.append(step)
                 self._store.set_plan(script_id, plan)
                 last_step_id = step.id
-
-                self._conversations.add(
-                    conversation_id,
-                    project_id,
-                    script_id,
-                    "master",
-                    ConversationRole.ACTION,
-                    f"{decision.action}: {decision.action_input}",
-                )
 
                 await self._emit(
                     script_id,
@@ -478,38 +796,155 @@ class MasterReActEngine:
                     {"step_id": step.id, "step_type": step.type},
                 )
 
-                task_brief = self._build_delegate_task_brief(ctx, step_type, decision)
+                image_gen_abort: ImageGenerationAbortError | None = None
+                return_to_master_abort: ReturnToMasterError | None = None
+                edit_compose_abort: EditComposeMissingAssetsError | None = None
 
                 agent = self._registry.get(step.agent)
+                resume_context = self._conversations.pop_agent_suspend(
+                    conversation_id, agent.name
+                )
+
+                task_brief = self._build_delegate_task_brief(
+                    ctx, session, step_type, decision, resume_context=resume_context
+                )
+                plan_slice = build_plan_slice_for_step(
+                    plan, step, session.last_remaining_plan
+                )
                 work_context = {
                     "project_id": project_id,
                     "script_id": script_id,
                     "style_mode": style_mode,
                     "generation_mode": generation_mode,
+                    "execution_mode": resolved_execution.value,
                     "conversation_id": conversation_id,
                     "user_message": ctx.user_message,
+                    "plan_slice": plan_slice.model_dump(),
                 }
+                if skill_overlay:
+                    work_context["skill_overlay"] = skill_overlay
+                if uses_image_text_pipeline(style_mode):
+                    work_context["image_text_config"] = image_text_cfg.model_dump()
+                    if step_type == "image_gen":
+                        work_context["image_source"] = resolved_image_source.value
 
                 try:
-                    sub_task = asyncio.create_task(
+                    outputs = await wait_or_cancel(
+                        script_id,
                         agent.run(
                             task_brief=task_brief,
                             work_context=work_context,
                             script_id=script_id,
                             step_id=step.id,
-                        )
+                        ),
                     )
-                    outputs = await sub_task
                     step.outputs = outputs
-                    step.status = StepStatus.COMPLETED
-                    step.progress = 100
+                    needs_confirm = (
+                        step_type in CONFIRM_AFTER_STEP and require_script_approval
+                    )
+                    if needs_confirm:
+                        step.status = StepStatus.AWAITING_CONFIRMATION
+                        await self._emit(
+                            script_id,
+                            "step_awaiting_confirmation",
+                            {
+                                "step_id": step.id,
+                                "step_type": step.type,
+                                "kind": "script_structure",
+                            },
+                        )
+                    else:
+                        step.status = StepStatus.COMPLETED
+                        step.progress = 100
+                        await self._emit(
+                            script_id,
+                            "step_completed",
+                            {
+                                "step_id": step.id,
+                                "outputs": [o.model_dump() for o in outputs],
+                            },
+                        )
+                except ExecutionCancelledError:
+                    user_aborted = True
+                    step.status = StepStatus.FAILED
+                    step.error = "用户已中止执行"
                     await self._emit(
                         script_id,
-                        "step_completed",
-                        {
-                            "step_id": step.id,
-                            "outputs": [o.model_dump() for o in outputs],
-                        },
+                        "step_failed",
+                        {"step_id": step.id, "error": step.error},
+                    )
+                    break
+                except DuplicateActionAbortError as e:
+                    step.status = StepStatus.FAILED
+                    step.error = str(e)
+                    await self._emit(
+                        script_id,
+                        "step_failed",
+                        {"step_id": step.id, "error": str(e)},
+                    )
+                except ImageGenerationAbortError as e:
+                    analysis = e.failure_analysis
+                    if analysis is not None:
+                        enriched = enrich_failure_names(
+                            self._store, list(analysis.failures)
+                        )
+                        analysis = build_image_gen_failure_analysis(
+                            enriched,
+                            succeeded_count=analysis.succeeded_count,
+                            total_count=analysis.total_count,
+                        )
+                        image_gen_abort = ImageGenerationAbortError(
+                            e.action,
+                            str(e),
+                            failure_analysis=analysis,
+                        )
+                    else:
+                        image_gen_abort = e
+                    step.status = StepStatus.FAILED
+                    step.error = str(image_gen_abort)
+                    fail_payload: dict[str, Any] = {
+                        "step_id": step.id,
+                        "error": str(image_gen_abort),
+                    }
+                    if image_gen_abort.failure_analysis is not None:
+                        fail_payload["image_gen_failures"] = (
+                            image_gen_abort.failure_analysis.to_dict()
+                        )
+                    await self._emit(script_id, "step_failed", fail_payload)
+                    if image_gen_abort.needs_upstream_prompt_adjustment():
+                        ctx.completed_step_types.discard("script_design")
+                except ReturnToMasterError as e:
+                    return_to_master_abort = e
+                    edit_compose_abort = (
+                        e if isinstance(e, EditComposeMissingAssetsError) else None
+                    )
+                    step.status = StepStatus.PAUSED
+                    step.error = str(e)
+                    fail_payload: dict[str, Any] = {
+                        "step_id": step.id,
+                        "error": str(e),
+                        "return_to_master": e.to_dict(),
+                    }
+                    if e.validation_report is not None:
+                        fail_payload["edit_missing"] = e.validation_report.to_dict()
+                    await self._emit(script_id, "step_paused", fail_payload)
+                    if isinstance(e, EditComposeMissingAssetsError) and e.validation_report:
+                        for upstream in upstream_steps_to_redo(
+                            e.validation_report.missing_items
+                        ):
+                            ctx.completed_step_types.discard(upstream)
+                    else:
+                        for delegate in e.structured.get("suggested_delegates") or []:
+                            upstream = ACTION_TO_STEP.get(str(delegate))
+                            if upstream:
+                                ctx.completed_step_types.discard(upstream)
+                except TtsAbortError as e:
+                    step.status = StepStatus.FAILED
+                    step.error = str(e)
+                    await self._emit(
+                        script_id,
+                        "step_failed",
+                        {"step_id": step.id, "error": str(e)},
                     )
                 except Exception as e:
                     step.status = StepStatus.FAILED
@@ -525,18 +960,43 @@ class MasterReActEngine:
                     suffix = f"，产出：{', '.join(labels)}" if labels else ""
                     observation = f"已委派 {agent.display_name}，步骤「{step.title}」完成{suffix}。"
                     ctx.completed_step_types.add(step_type)
-                else:
+                elif step.status == StepStatus.AWAITING_CONFIRMATION:
                     observation = (
-                        f"委派 {agent.display_name} 失败：{step.error or '未知错误'}。"
+                        f"已委派 {agent.display_name}，步骤「{step.title}」"
+                        "等待用户确认剧本结构。"
                     )
+                elif step.status == StepStatus.PAUSED:
+                    if return_to_master_abort:
+                        observation = return_to_master_abort.to_master_observation()
+                    else:
+                        observation = (
+                            f"已委派 {agent.display_name}，步骤「{step.title}」暂停，"
+                            "等待主编排协调。"
+                        )
+                elif step.status == StepStatus.FAILED:
+                    if image_gen_abort and image_gen_abort.failure_analysis:
+                        observation = format_image_gen_failure_observation(
+                            image_gen_abort.failure_analysis,
+                            agent_display_name=agent.display_name,
+                            step_title=step.title,
+                        )
+                    elif edit_compose_abort and edit_compose_abort.validation_report:
+                        observation = format_edit_compose_failure_observation(
+                            edit_compose_abort.validation_report,
+                            agent_display_name=agent.display_name,
+                            step_title=step.title,
+                        )
+                    else:
+                        observation = (
+                            f"委派 {agent.display_name} 失败：{step.error or '未知错误'}。"
+                        )
 
                 ctx.observations.append(observation)
-                self._conversations.add(
+                self._persist_master_react_turn(
                     conversation_id,
                     project_id,
                     script_id,
-                    "master",
-                    ConversationRole.OBSERVATION,
+                    decision,
                     observation,
                 )
                 await self._emit(
@@ -553,16 +1013,124 @@ class MasterReActEngine:
                 )
 
                 if step.status == StepStatus.FAILED:
+                    if step_type in ("image_gen", "edit_compose"):
+                        continue
                     break
+
+                if (
+                    step.status == StepStatus.AWAITING_CONFIRMATION
+                    and step_type in CONFIRM_AFTER_STEP
+                ):
+                    gate = CONFIRM_AFTER_STEP[step_type]
+                    summary_md = build_script_structure_summary(
+                        self._store, script_id
+                    )
+                    response = await wait_or_cancel(
+                        script_id,
+                        self._confirmation.request(
+                            kind="script_structure",
+                            title=gate.title,
+                            description=gate.description,
+                            components=[
+                                A2UIComponent(
+                                    id="summary",
+                                    component="markdown",
+                                    label="剧本概要",
+                                    value=summary_md,
+                                ),
+                            ],
+                            step_id=step.id,
+                            conversation_id=conversation_id,
+                        ),
+                    )
+                    intent = str(
+                        response.values.get(
+                            "intent",
+                            "continue" if response.approved else "abort",
+                        )
+                    )
+                    if intent == "regenerate":
+                        step.status = StepStatus.RUNNING
+                        self._conversations.clear_agent_session(
+                            conversation_id, step.agent
+                        )
+                        ctx.completed_step_types.discard(step_type)
+                        feedback = str(response.values.get("feedback", "")).strip()
+                        if feedback:
+                            regen_obs = f"用户要求重新生成剧本：{feedback}"
+                            ctx.observations.append(regen_obs)
+                            session.observations = list(ctx.observations)
+                            self._conversations.add_user_message(
+                                conversation_id,
+                                project_id,
+                                script_id,
+                                feedback,
+                            )
+                            self._conversations.add_orphan_observation(
+                                conversation_id,
+                                project_id,
+                                script_id,
+                                regen_obs,
+                                channel="master",
+                            )
+                        continue
+                    if intent == "abort":
+                        user_aborted = True
+                        break
+                    if not response.approved:
+                        break
+                    step.status = StepStatus.COMPLETED
+                    step.progress = 100
+                    await self._emit(
+                        script_id,
+                        "step_resumed",
+                        {
+                            "step_id": step.id,
+                            "outputs": [o.model_dump() for o in step.outputs],
+                        },
+                    )
+                    ctx.completed_step_types.add(step_type)
+
+            if user_aborted:
+                script = self._store.get_script(script_id)
+                if script and script.status == ScriptStatus.EXECUTING:
+                    script.status = ScriptStatus.FAILED
+                for step in plan.steps:
+                    if step.status == StepStatus.RUNNING:
+                        step.status = StepStatus.FAILED
+                        step.error = "用户已中止执行"
+                await self._emit(
+                    script_id,
+                    "execution_aborted",
+                    {
+                        "script_id": script_id,
+                        "conversation_id": conversation_id,
+                        "error": "用户已中止执行",
+                    },
+                )
+            elif not finished_normally:
+                script = self._store.get_script(script_id)
+                if script and script.status == ScriptStatus.EXECUTING:
+                    script.status = ScriptStatus.FAILED
+                if not any(s.status == StepStatus.FAILED for s in plan.steps):
+                    await self._emit(
+                        script_id,
+                        "execution_failed",
+                        {
+                            "script_id": script_id,
+                            "error": "主编排未正常结束（用户中止或达到最大迭代次数）",
+                        },
+                    )
 
             await self._finalize(script_id, plan)
 
+            script = self._store.get_script(script_id)
             await self._emit(
                 script_id,
                 "react_finished",
                 {
                     "iterations": ctx.iteration,
-                    "status": script.status.value,
+                    "status": script.status.value if script else ScriptStatus.FAILED.value,
                     "completed_steps": list(ctx.completed_step_types),
                     "conversation_id": conversation_id,
                 },
@@ -584,6 +1152,24 @@ class MasterReActEngine:
                 script_id,
                 "execution_failed",
                 {"script_id": script_id, "error": str(e)},
+            )
+            await self._emit(
+                script_id,
+                "react_finished",
+                {
+                    "iterations": ctx.iteration,
+                    "status": script.status.value if script else ScriptStatus.FAILED.value,
+                    "completed_steps": list(ctx.completed_step_types),
+                    "conversation_id": conversation_id,
+                },
+            )
+            log_stage(
+                logger,
+                "master.react",
+                "主 Agent ReAct 异常结束",
+                script_id=script_id,
+                iterations=ctx.iteration,
+                error=str(e),
             )
             raise
 
@@ -615,4 +1201,11 @@ class MasterReActEngine:
             return
 
         if script.status == ScriptStatus.EXECUTING:
-            script.status = ScriptStatus.COMPLETED
+            script.status = ScriptStatus.FAILED
+            await self._emitter.emit(
+                {
+                    "type": "execution_failed",
+                    "script_id": script_id,
+                    "error": "执行未完成",
+                }
+            )

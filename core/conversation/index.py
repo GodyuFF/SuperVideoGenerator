@@ -108,5 +108,36 @@ class ConversationIndex:
     def clear(self) -> None:
         self._conversations.clear()
 
+    def delete_by_script_id(self, project_id: str, script_id: str) -> None:
+        to_del = [
+            cid
+            for cid, conv in self._conversations.items()
+            if conv.project_id == project_id and conv.script_id == script_id
+        ]
+        for cid in to_del:
+            del self._conversations[cid]
+
+    def delete_by_project_id(self, project_id: str) -> None:
+        to_del = [
+            cid for cid, conv in self._conversations.items() if conv.project_id == project_id
+        ]
+        for cid in to_del:
+            del self._conversations[cid]
+
     def load_dict(self, data: dict[str, Conversation]) -> None:
         self._conversations = dict(data)
+
+    def merge_conversation(self, conv: Conversation) -> bool:
+        """合并 SQLite 等外部来源的对话元数据（已存在则跳过）。"""
+        if conv.id in self._conversations:
+            return False
+        self._conversations[conv.id] = conv
+        return True
+
+    def merge_from_sqlite(self, sqlite_store: Any) -> int:
+        """将 SQLite 中缺失于内存索引的对话补全到 index。"""
+        added = 0
+        for conv in sqlite_store.list_all_conversations():
+            if self.merge_conversation(conv):
+                added += 1
+        return added

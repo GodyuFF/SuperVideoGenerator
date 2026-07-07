@@ -1,7 +1,7 @@
 # SuperVideoGenerator 产品计划手册
 
 > 版本：v0.1  
-> 更新日期：2026-06-15  
+> 更新日期：2026-07-05  
 > 状态：规划阶段
 
 ---
@@ -71,38 +71,58 @@
 
 ## 3. 产品形态与页面布局
 
-### 3.1 主工作台布局
+### 3.1 主工作台布局（两阶段）
+
+**阶段 A — 项目级整体看板**（全宽，无对话）：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  SuperVideoGenerator    [项目列表]  [当前项目]  [配置]  [设置]        │
-├──────────────────┬──────────────────────────────────────────────────┤
-│  左侧 ~35%       │  右侧 ~65%  剧本页                                │
-│                  │                                                  │
-│  对话区          │  ┌─ Header: 剧本选择 / 状态 / 时长 ─────────────┐ │
-│  ─────────       │  │ Tab: 剧本正文 | 资产库 | 计划稿 | 关系看板   │ │
-│  Director 回复   │  └──────────────────────────────────────────────┘ │
-│  用户消息        │                                                  │
-│  RAG 复用摘要    │  [当前 Tab 内容区]                                │
-│  执行进度日志    │  未执行态: 资产支持增删改                         │
-│                  │                                                  │
-│  [输入框]        │                                                  │
-│  [上传 PDF]      │                                                  │
-│  [生成 Plan]     │                                                  │
-│  [开始执行]      │                                                  │
-├──────────────────┴──────────────────────────────────────────────────┤
-│  底部（可选）: 步骤日志流 / WebSocket 事件                          │
+│  SuperVideoGenerator    [项目]  [配置]                               │
+├─────────────────────────────────────────────────────────────────────┤
+│  Tab: 整体看板 | 图文资产（项目共享池）                              │
+│  · 剧本卡片列表 + 「新建剧本」                                       │
+│  · 点击「进入剧本」→ 进入阶段 B                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+**阶段 B — 剧本工作台**（左对话 + 右看板，进入某剧本后加载）：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  SuperVideoGenerator  [剧本标题] [状态]  [返回整体看板]              │
+├──────────────────┬──────────────────────────────────────────────────┤
+│  左侧 ~35%       │  右侧 ~65%  剧本页                                │
+│  对话区          │  Tab: 剧本详情 | 层级2（角色/分镜/剪辑…）         │
+│  [输入框]        │  PlanPanel + 看板内容                             │
+└──────────────────┴──────────────────────────────────────────────────┘
+```
+
+刷新页面时：若 URL 为 `#/project/{id}/script/{sid}` 或 localStorage 记录上次会话，自动恢复项目/剧本工作台。
+
+### 3.1.1 应用入口（项目列表）
+
+| 路由 | 页面 |
+|------|------|
+| `#/` | **项目列表**：展示全部项目，支持多选批量删除、新建项目 |
+| `#/project/{projectId}` | **项目看板**（整体看板 / 图文资产；可新建/删除剧本） |
+| `#/project/{projectId}/script/{scriptId}` | **剧本工作台**（对话 + 看板） |
+| `#/logs` | **交互日志**（全部项目） |
+| `#/project/{projectId}/logs` | **交互日志**（当前项目） |
+| `#/project/{projectId}/script/{scriptId}/logs` | **交互日志**（当前剧本） |
+
+点击项目卡片进入项目看板；顶栏「← 项目列表」返回首页。删除项目/剧本时同步清理 `data/projects/` 目录与 `conversations.db`（交互日志保留，可在日志页按项目+日期手动删除）。**启动时**后端会从 `data/projects/` 扫描 `project.json` / `script.json`，补齐 `dev_store.json` 中缺失的项目（图文资产等完整数据仍以 `dev_store.json` 为准）。
+
+**交互日志页**：支持按日期筛选、类型筛选；全局视图（`#/logs`）可选择项目后删除指定日期的 SQLite + JSONL 记录；项目/剧本上下文进入时项目已锁定，删除前二次确认且不可恢复。
 
 ### 3.2 区域职责
 
 | 区域 | 职责 |
 |------|------|
-| **左侧对话** | 与 Director / 剧本 Agent 自然语言交互；触发 Plan、Execute；展示 RAG 复用决策摘要与执行进度 |
-| **右侧剧本页** | 当前 `active_script_id` 主工作区：正文、资产 CRUD、计划稿、关系看板 |
-| **项目配置页** | LLM / 生图 / 生视频 / TTS / 视频风格五类配置（独立页面或设置抽屉） |
-| **项目列表页** | 历史项目、状态、进入工作台 |
+| **项目看板** | 多剧本总览、项目共享图文资产、新建剧本；**不加载** WebSocket / 对话 |
+| **左侧对话** | 仅在进入剧本后加载；与 Director / 子 Agent 交互 |
+| **右侧剧本页** | 当前 `active_script_id`：剧本详情 + 层级 2 看板 + PlanPanel |
+| **项目配置页** | LLM / 生图 / 生视频 / TTS / 视频风格五类配置 |
+| **项目切换器** | 可仅切换项目（回整体看板）或点选剧本（直达剧本工作台） |
 
 ### 3.3 右侧剧本页 Tab 结构
 
@@ -120,6 +140,13 @@
 - 执行开始 → 右侧 CRUD 禁用，进入只读预览
 - Plan 完成后继续改资产 → 软提示「建议重新 Plan」（不阻塞编辑）
 
+### 3.5 Skill 与目标模式
+
+| 能力 | 说明 |
+|------|------|
+| **Skill（单轮）** | 消息以 `/skillId` 开头（如 `/thriller 做悬疑短片`），仅当前轮注入 Skill 提示词与设定；输入 `/` 弹出可选 Skill 列表；`GET /api/skills` 列出内置 Skill |
+| **目标模式** | 项目配置 `execution_mode=goal` 或工作台开关；AI 自主执行至成功/失败，不调用 `ask_user_question`、不弹出任何 A2UI 确认 |
+
 ---
 
 ## 4. 领域模型与资产体系
@@ -132,7 +159,7 @@ Project（项目）
 ├── SharedAssetPool（共享资产池）
 │   ├── character（人物）    ← 项目级共享
 │   ├── prop（道具）         ← 项目级共享
-│   └── scene（场景）        ← 项目级共享
+│   └── scene（空镜）        ← 项目级共享；生图为无人物环境镜头
 └── Script × N（剧本/章节，粒度用户确认）
     ├── plot / narration（剧情、旁白）     ← 剧本私有
     ├── VoiceRoleAsset（声音角色）         ← 关联人物或旁白
@@ -198,11 +225,34 @@ interface TextAsset {
   content: Record<string, unknown>;
   embedding_id?: string;
   source_script_id?: string;  // 首次创建来源
+  primary_media_id?: string;
   reuse_policy: "shared" | "private";
   status: AssetStatus;
   user_edited: boolean;
 }
 ```
+
+**图文资产 content**（`type` 为 `character` | `prop` | `scene`，存储于 `TextAsset.content`）：
+
+| 字段 | 说明 |
+|------|------|
+| `summary` | 卡片一句话摘要 |
+| `description` | 主视觉描述（生图主文案，必填） |
+| `visual_style` / `color_palette` | 画风与主色调 |
+| `tags` | 标签数组 |
+| `prompt_hint` | 生图增强 prompt（LLM 填写，纳入组装） |
+| `image_prompt` | 系统组装的最终生图 prompt（可用户锁定覆盖） |
+| `negative_prompt` | 负向 prompt |
+| `prompt_version` / `prompt_locked` | 组装器版本 / 用户锁定标志 |
+| `display_mode` | `static_image` \| `dynamic_image` |
+| `notes` | 创作备注 |
+| character 扩展 | 原 6 字段 + `ethnicity`, `body_type`, `height`, `build`, `hair_style`, `hair_color`, `eye_color`, `facial_features`, `default_expression`, `default_pose`, `accessories` |
+| scene 扩展 | 原 6 字段 + `architecture_style`, `key_objects`, `foreground`, `background`, `camera_angle`, `depth_of_field`, `color_tone` |
+| prop 扩展 | 原 5 字段 + `shape`, `color`, `texture`, `brand_style`, `visual_details` |
+| `image_variants[]` | 多图变体：`kind`（base/expression/pose/action…）、`label`、`meaning`、`variant_prompt`、`media_id`；`description` 为设定主形象，衍生变体以 base 为 reference 生图 |
+| 生图策略 | **scene**：空镜，无人物主体；**character/prop**：绿幕 `#00FF00` 生图后 FFmpeg colorkey 抠透明 PNG（`core/assets/chroma_key.py`） |
+
+旧键 `appearance` 加载时合并入 `description`。图片仍通过 `MediaAsset` + `generates` 关联；`primary_media_id` 固定指向 base 变体 media。
 
 ### 4.5 引用关系
 
@@ -229,7 +279,7 @@ interface TextAsset {
 | # | 配置页 | 主要字段 |
 |---|--------|----------|
 | 1 | **LLM 模型配置** | provider、model、apiKeyRef、temperature、maxTokens |
-| 2 | **AI 生图模型配置** | provider、model、defaultSize、stylePreset |
+| 2 | **AI 生图模型配置** | provider（默认 `agnes`）、model（`agnes-image-2.0-flash`）、apiKey（`SVG_IMAGE_GEN_API_KEY` / `AGNES_API_KEY`）、defaultSize（`1024x768`） |
 | 3 | **AI 视频模型配置** | enabled、provider、model、maxDurationSec、supportedModes（图生视频/首尾帧）、resolution |
 | 4 | **TTS 模型配置** | provider、model、defaultLanguage、sampleRate |
 | 5 | **视频风格配置** | mode（动态图片/视频生成）、aspectRatio、transition、watermarkFreeImagesOnly、bgmEnabled |
@@ -269,20 +319,24 @@ interface ProjectConfig {
 
 ## 6. 视频生产模式
 
+> **更新 2026-06-29**：视频风格三分——动态图文、动态漫画、AI 视频；动态图文/漫画共用「文字设计 → 图片 → 分镜 → TTS → 剪辑」路径（无 `video_gen`）。
+
 ### 6.1 模式对比
 
 | 模式 | 标识 | Video Agent | TTS | 剪辑输入 |
 |------|------|-------------|-----|----------|
-| **动态图片模式** | `dynamic_image` | 不调用 | 必须（分镜含配音文案） | 无水印图片 + 运镜模拟 + 配音 |
-| **视频生成模式** | `ai_video` | 必须 | 按镜头 | AI 视频片段 + 配音 + 合成 |
+| **动态图文模式** | `dynamic_image` | 不调用 | 必须（分镜含配音文案） | 讲解类配图 + Ken Burns 运镜 + 配音 |
+| **动态漫画模式** | `dynamic_comic` | 不调用 | 必须 | 漫画分格配图 + 运镜 + 配音/对白 |
+| **AI 视频模式** | `ai_video` | 必须 | 按镜头 | AI 视频片段 + 配音 + 合成 |
 
 ### 6.2 流水线差异
 
-**动态图片模式**：
+**动态图文 / 动态漫画**（`core/llm/master/actions.py` → `pipeline_for_style`）：
 
 ```
-分镜 Agent → TTS Agent → 剪辑 Agent → 成片
-（跳过 Video Agent，用 Ken Burns / 平移等运镜处理静态图）
+剧本 Agent（剧情/角色/道具/场景文字）
+  → 图片 Agent（批量生图或搜索，可 A2UI 选择）
+  → 分镜 Agent → TTS Agent → 剪辑 Agent → 成片
 ```
 
 **AI 视频模式**：
@@ -290,6 +344,31 @@ interface ProjectConfig {
 ```
 分镜 Agent → [图片 Agent 补图] → Video Agent → TTS Agent → 剪辑 Agent → 成片
 ```
+
+### 6.3 图文配置（ImageTextConfig）
+
+| 字段 | 说明 |
+|------|------|
+| `source_mode` | `generate` / `search` / `user_choice`（图片步骤前弹窗） |
+| `image_text_preset` | 图文子风格：`explainer` / `report` / `lecture` |
+| `comic_preset` | 漫画画风：`manga` / `webtoon` / `ink` |
+| `batch_pending_assets` | 是否批量处理所有缺图文字资产 |
+| `allow_search_fallback` | 生图失败时是否允许搜索回退 |
+
+- 项目级：`ProjectConfig.image_text`（PATCH `/api/projects/{id}/config`）
+- 全局默认：AI 配置页 → `/api/ai/config` → `image.pipeline`（原 `LLMConfigManager.image_text_defaults`）
+
+### 6.4 动态图文策略补充（2026-07-04）
+
+| 阶段 | 行为 |
+|------|------|
+| 图片完善 | `image_agent`：`generate_images` 或 `search_images`；**仅搜图**后 `sync_text_from_image` 白名单 auto-patch（`color_palette` 等），生图产出无需 sync；`description/summary` 重大变更需 `apply_major_changes` 或 `update_*` |
+| 分镜 | `storyboard_agent`：`load_context`（含 linked images）→ `create_shots` → `persist_plan`（仅 VideoPlan，不生成 EditTimeline） |
+| 剪辑计划 + 成片 | **TTS 之后** `editing_agent`：`load_edit_context` → `plan_edit_timeline` → `validate_edit_assets` →（缺失则 `report_missing_assets` 上报主编排）→ `gather_media` → `compose_final`；主编排可据缺失项重委派 `script_design` / `image_gen` / `tts_gen` / `storyboard` |
+| 剪辑看板 | 看板 Tab `edit`：只读多轨时间轴（含 `edit_description`、转场、背景、source_refs 摘要） |
+| 成片 | **dynamic_image/comic**：`EditTimeline` → FFmpeg `compose_final`（运镜/转场/背景/字幕/配音）；**ai_video**：`video_agent.generate_from_timeline` → `editing_agent` 混流 |
+
+实体：`EditTimeline` / `EditClip`（[`core/models/entities.py`](../core/models/entities.py)），持久化 `dev_store.json` → `edit_timelines`。
 
 ---
 
@@ -314,6 +393,8 @@ Plan（规划）→ Execute（执行）→ [Replan（重规划）]
 | Plan | `PlanDocument`（步骤 + 依赖 + 资产目标） | 计划列表 / DAG；可选手动确认 |
 | Execute | 逐步 `StepResult`、数字资产文件 | 步骤状态、进度条、产物预览 |
 | Replan | 新版 `PlanDocument`（version++） | 计划更新通知、受影响步骤高亮 |
+
+**MVP 已落地**：Execute 阶段每轮 ReAct 注入 `PlanDocument` 快照，LLM 回写 `plan_status` / `remaining_plan` 至 `runtime_summary` 与 WS `plan_updated`（见 `core/llm/plan_context.py`）。独立 Plan 预览 UI 与人工审批流仍待后续迭代。
 
 ### 7.3 PlanDocument 结构
 
@@ -350,18 +431,18 @@ interface PlanStep {
 | 2 | `script_design_with_rag` | 剧本 Agent | 剧情设计 + RAG 实体解析 |
 | 3 | `text_asset_resolve` | 剧本 Agent | RAG 检索 + 复用判定 |
 | 4 | `voice_role_create` | 剧本 Agent | 声音角色资产 |
-| 5 | `image_gen` | 图片 Agent | 为缺图文字资产生图 |
+| 5 | `image_gen` | 图片 Agent | 为缺图文字资产生图（并发 Agnes API；前端 `ImageGenProgressModal` 逐张进度，完成后看板刷新） |
 | 6 | `storyboard` | 分镜 Agent | 视频计划稿 + 镜头 |
 | 7 | `video_gen` | 视频 Agent | 仅 ai_video 模式 |
 | 8 | `tts_gen` | TTS Agent | 按镜头/计划稿生成配音 |
-| 9 | `edit_compose` | 剪辑 Agent | FFmpeg 合成成片 |
+| 9 | `edit_compose` | 剪辑 Agent | FFmpeg 合成成片（dynamic 模式） |
 | 10 | `qa` | 质检（可选 P2） | 一致性检查 |
 
 ---
 
 ## 8. 子 Agent 设计
 
-> **提示词**：各 Agent 的固定角色说明与行动约束存放在 [`core/prompt/agents/*/fixed/`](../core/prompt/agents/)，动态上下文由 `PromptBuilder` + `AgentContextManager` 按轮次注入。详见 [提示词架构](prompt-architecture.md)。
+> **提示词**：各 Agent 的固定角色说明与行动约束存放在 [`core/llm/prompt/agents/*/fixed/`](../core/llm/prompt/agents/)，动态上下文由 `PromptBuilder` + `AgentContextManager` 按轮次注入。详见 [提示词架构](prompt-architecture.md)。
 
 ### 8.1 剧本 Agent（Script Agent）
 
@@ -377,17 +458,27 @@ interface PlanStep {
 | 声音角色设定 | 角色 + TTS 配置 | VoiceRoleAsset | 无 TTS/分镜引用 |
 | 旁白声音设定 | 剧本 | narrator_voice | 同上 |
 
-**Tool 接口**：
+**Tool 接口**（产品层通用 CRUD 命名；**当前实现**为 type-specific action，与 Registry input_schema 对齐）：
 
 ```
+# 产品层（目标 API 语义）
 script.parse_from_chat(project_id, message)
-script.parse_from_pdf(project_id, file_id)
-script.create_script / update_script / delete_script
-script.create_text_asset / update_text_asset / delete_text_asset
-script.create_voice_role / update_voice_role / delete_voice_role
-script.link_shared_asset(script_id, asset_id)    // 引用共享资产
-script.unlink_shared_asset(script_id, asset_id)  // 解除引用
+...
+# 当前 ReAct action（core/llm/tools/bootstrap.py）
+parse_brief / update_script
+create_plot | create_character | create_scene | create_prop   # create 强校验全字段 content
+update_* / delete_*                                          # update 支持 partial content merge
+list_text_assets                                             # 只读，Registry 直调
+read_webpage(url)                                            # script_agent + 主编排；拒绝 localhost/内部 API
 ```
+
+**共享只读 Tool**（`agent=common`；bootstrap 注入 `script_agent`，主编排为 `tool_read_webpage`；storyboard/tts/editing/image/video **不注入**）：
+
+| action | 说明 |
+|--------|------|
+| `read_webpage` | 抓取公网 URL HTML 并提取正文；拒绝 localhost/内网与 `/api/projects/` 路径 |
+
+create_* 路径禁止字符串/observation 降级落盘；字段名统一 `content_md`（剧本正文）。
 
 ### 8.2 图片素材 Agent（Image Asset Agent）
 
@@ -416,7 +507,7 @@ image.delete(image_asset_id)
 ```json
 {
   "shot_id": "shot_xxx",
-  "order": 2,
+  "order": 0,
   "duration_ms": 4000,
   "camera_motion": "ken_burns_in",
   "narration_text": "……",
@@ -457,34 +548,41 @@ video.regenerate(video_asset_id)
 video.delete(video_asset_id)
 ```
 
-### 8.5 TTS Agent
+### 8.5 TTS Agent（已接入）
 
 | 能力 | 说明 |
 |------|------|
-| 按镜头生成配音 | 文案 + VoiceRoleAsset + tts 配置 |
-| 批量生成 | 整个 VideoPlan |
+| 按镜头生成配音 | 从 `VideoPlan.shots[].narration_text` 合成 mp3，写入 `MediaAsset(AUDIO)`，`metadata.shot_id` |
+| 多引擎 | Edge TTS（默认）、OpenAI、Azure v2、SiliconFlow、Gemini、MiMo、`no-voice` |
+| 批量生成 | `synthesize` 并发（默认 3）；失败 3 次重试后 `TtsAbortError` 中止步骤 |
+| 合成试听 | 落盘 mp3 经 `resolve_media_access()` 转为 `/api/projects/.../assets/media/{filename}`；前端 `MediaPreview` 内嵌 `<audio controls>` |
 
-关联：`tts_asset` ↔ `shot_id` ↔ `voice_role_id` ↔ `video_plan_id`
+实现：`core/tts/` + `core/llm/tools/tts/synthesize.py`；剪辑时间轴通过 `build_tts_by_shot()` 自动关联配音时长。
 
-```
-tts.generate_for_shot(shot_id, voice_role_id?)
-tts.generate_for_plan(plan_id)
-tts.delete(tts_asset_id)
-```
+**合成结果试听入口**（无需下载，页面内直接播放）：
+
+| 位置 | 说明 |
+|------|------|
+| 计划面板 `PlanPanel` | TTS 步骤 `outputs`（`kind=audio`）内嵌播放器 |
+| 看板 · 分镜 `storyboard` | 每镜 `tts_audio_url` + 时长 |
+| 看板 · 媒体 `media` | 音频类资产卡片播放器 |
+| 看板 · 剪辑 `edit` | 音频轨 clip 下方「配音试听」列表（`preview_url`） |
+| AI 配置页 TTS Tab | 短文本 `POST /api/ai/tts/preview` 试听（配置验证，非成片） |
 
 ### 8.6 剪辑 Agent（Editing Agent）
 
 | 能力 | 说明 |
 |------|------|
+| 计划稿 | TTS 之后：`load_edit_context` → `plan_edit_timeline`（三轨 + 运镜/转场/背景/source_refs）→ `validate_edit_assets` |
+| 缺失闭环 | 校验不通过时 `report_missing_assets`；主编排据 `suggested_upstream` 重委派上游后再 `delegate_edit_compose` |
 | 动态图片模式 | 图片轨道 + 运镜（Ken Burns/平移）+ 配音 |
 | AI 视频模式 | 视频轨道拼接 + 配音 |
 | 混音 | BGM、音量平衡 |
-| 导出 | FFmpeg → FinalVideoAsset |
+| 导出 | `compose_final` 前硬校验素材与 **edit capabilities**；FFmpeg 渲染 → `assets/exports/` |
 
 ```
-edit.compose(plan_id)
-edit.preview_segment(shot_id)
-edit.delete_final(final_video_id)
+load_edit_context → plan_edit_timeline → validate_edit_assets
+  → report_missing_assets（缺失）| gather_media → compose_final（就绪）
 ```
 
 ---
@@ -575,7 +673,21 @@ interface ReuseDecision {
 | 计划稿/镜头 | 青 | 运镜、关联列表 |
 | 视频/TTS/成片 | 红 | 播放器 |
 
-### 10.4 边样式
+### 10.4 看板 Tab 层级（前端）
+
+| 模式 | 层级 1 | 层级 2 |
+|------|--------|--------|
+| **项目级** | `overview` 整体看板、`knowledge` 项目共享图文 | 无 |
+| **剧本级** | `script_details` 单剧本详情 | `script` / `character` / `scene` / `prop` / `storyboard` / `edit` / `media` / `pipeline` |
+
+### 10.5 剪辑工作室（edit）
+
+- 看板 API：`GET /api/projects/{id}/board/edit?script_id=…`
+- **Edit Studio**：`GET/PATCH .../edit-timeline`（revision 乐观锁）；`POST .../export` FFmpeg 异步导出
+- 前端：[`EditStudio.tsx`](../apps/web/src/edit/EditStudio.tsx) 可拖拽三轨 + Canvas 预览 + ClipInspector
+- 规格：[`edit-studio-plan.md`](edit-studio-plan.md)
+
+### 10.6 边样式
 
 | 边类型 | 样式 |
 |--------|------|
@@ -635,7 +747,7 @@ interface ReuseDecision {
 
 ### 11.5 守卫中间件
 
-`ScriptEditGuard`：执行中/已完成 → 403  
+`ScriptEditGuard`：`executing` 态（AI 执行中）→ 403；`draft` / `planned` / `completed` / `failed` 允许人工 CRUD  
 `ReferenceGuard.can_delete(asset_id)`：有引用 → 拒绝 + 返回引用链
 
 ---
@@ -666,6 +778,7 @@ interface ReuseDecision {
 │  LLM / 生图 / 生视频 / TTS / FFmpeg                      │
 ├─────────────────────────────────────────────────────────┤
 │  存储                                                    │
+│  dev_store.json（MemoryStore 索引）+ data/projects/ 目录双写 │
 │  SQLite（MVP）→ PostgreSQL                               │
 │  本地 assets/ 文件存储 → S3（生产）                      │
 │  向量库：Chroma/sqlite-vec（MVP）→ pgvector              │
@@ -730,7 +843,7 @@ SuperVideoGenerator/
 | 编排 | 自研 Plan-Execute（MVP） | 状态清晰 |
 | 模型校验 | Pydantic v2 | 全链路 Schema |
 | DB | SQLite（MVP） | 渐进扩展 |
-| 视频处理 | FFmpeg + MoviePy | 剪辑导出 |
+| 视频处理 | FFmpeg（成片导出 + TTS/ai_video 混流） | 剪辑导出 |
 
 ---
 
@@ -741,7 +854,8 @@ SuperVideoGenerator/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/projects` | 创建项目 |
-| GET/PATCH | `/api/projects/{id}/config` | 五类配置 |
+| GET/PATCH | `/api/ai/config` | 统一 AI 配置（`llm` / `image` / `video` / `tts` 分区） |
+| GET/PATCH | `/api/llm/config` | LLM 配置（兼容旧版扁平结构） |
 | POST | `/api/projects/{id}/scripts` | 创建剧本 |
 | GET | `/api/projects/{id}/scripts/{script_id}/assets` | 本片资产列表 |
 | POST | `/api/projects/{id}/scripts/{script_id}/assets/text` | 新建文字资产 |
@@ -758,7 +872,7 @@ SuperVideoGenerator/
 | POST | `/api/projects/{id}/scripts/{script_id}/chat` | 对话消息（body 可选 `conversation_id`） |
 | POST | `/api/projects/{id}/scripts/{script_id}/conversations` | 创建对话线程 |
 | GET | `/api/projects/{id}/conversations` | 历史对话列表（`?script_id=` 过滤） |
-| GET | `/api/projects/{id}/conversations/{conversation_id}/messages` | 唤醒：加载主会话 user/master 消息 |
+| GET | `/api/projects/{id}/conversations/{conversation_id}/messages` | 唤醒：`?view=ui` 摘要；`?view=full` 完整时间线 |
 | WS | `/ws/projects/{id}/scripts/{script_id}` | 实时事件 |
 
 ### 13.2 WebSocket 事件
@@ -769,9 +883,13 @@ type WsEvent =
   | { type: "plan_ready"; plan: PlanDocument }
   | { type: "plan_updated"; plan: PlanDocument; reason: string }
   | { type: "execution_started" }
+  | { type: "execution_paused"; confirmation_id: string; kind: string; conversation_id?: string; step_id?: string }
+  | { type: "execution_resumed"; confirmation_id: string; conversation_id?: string }
   | { type: "step_started"; stepId: string }
   | { type: "step_progress"; stepId: string; progress: number }
+  | { type: "step_awaiting_confirmation"; step_id: string; step_type: string; kind: string }
   | { type: "step_completed"; stepId: string; outputs: StepOutput[] }
+  | { type: "step_resumed"; step_id: string; outputs: StepOutput[] }
   | { type: "step_failed"; stepId: string; error: string }
   | { type: "asset_created"; asset: Asset }
   | { type: "asset_updated"; asset: Asset }
@@ -824,10 +942,10 @@ type WsEvent =
 
 | 任务 | 交付物 |
 |------|--------|
-| 图片 Agent | 生图 API 接入 |
+| 图片 Agent | 生图 API 已接入（默认 Agnes AI） |
 | 分镜 Agent | VideoPlan + Shot |
 | TTS Agent | 配音生成 |
-| 剪辑 Agent | FFmpeg 图片运镜 + 配音合成 |
+| 剪辑 Agent | FFmpeg Ken Burns + 配音 + 字幕合成 |
 | 首个可播放成片 | dynamic_image 端到端 |
 
 ### Phase 4：AI 视频模式
@@ -860,7 +978,7 @@ type WsEvent =
 | 3 | 共享资产图片跨剧本引用策略 | 只读引用已有 image，不自动复制 | 已设计 |
 | 4 | Embedding 模型 | 与 LLM 共用或独立配置 | 待定 |
 | 5 | API Key 存储 | 环境变量 / Vault，不落库明文 | 已设计 |
-| 6 | 字幕生成 | P2 可选 | 待定 |
+| 6 | 字幕生成 | TTS subtitle_cues + enrich_subtitles_from_audio；可选 Whisper/MFA（P2） | 已实现 P0 |
 | 7 | 手动/自动 Plan 确认 | 默认手动确认（可看 Plan UI） | 已建议，可配置 |
 
 ---

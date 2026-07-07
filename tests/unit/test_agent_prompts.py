@@ -2,11 +2,11 @@
 
 import pytest
 
-from core.agents.config_manager import AgentConfigManager
-from core.agents.definitions import AGENT_DEFINITIONS
-from core.agents.prompt_resolver import resolve_agent_prompts
-from core.agents.prompts import PromptProfile
-from core.agents.tools.specs import AGENT_TOOLS
+from core.llm.agent.config_manager import AgentConfigManager
+from core.llm.agent.definitions import AGENT_DEFINITIONS
+from core.llm.agent.prompt_resolver import resolve_agent_prompts
+from core.llm.agent.prompts import PromptProfile
+from core.llm.tools.shared.agent_tools import AGENT_TOOLS
 from core.models.entities import AgentPromptOverride, AgentsProjectConfig, Project, ProjectConfig
 
 
@@ -40,7 +40,7 @@ def test_style_mode_selects_dynamic_image_prompt():
         "storyboard_agent",
         style_mode=VideoStyleMode.DYNAMIC_IMAGE,
     )
-    assert "动态图片" in bundle.role_prompt
+    assert "动态图文" in bundle.role_prompt
     assert bundle.action_hint
 
 

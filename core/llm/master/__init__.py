@@ -9,6 +9,9 @@ from core.llm.master.actions import (
     action_kind,
     action_label,
     pipeline_for_style,
+    style_mode_label,
+    task_brief_for_step,
+    uses_image_text_pipeline,
 )
 from core.llm.master.master_react import MasterReActEngine
 from core.llm.master.session import (
@@ -35,4 +38,7 @@ __all__ = [
     "build_master_tools",
     "create_master_react_session",
     "pipeline_for_style",
+    "style_mode_label",
+    "task_brief_for_step",
+    "uses_image_text_pipeline",
 ]

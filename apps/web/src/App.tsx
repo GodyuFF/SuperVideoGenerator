@@ -1,41 +1,40 @@
 /**
- * 应用根：主页对话 ↔ AI 配置页 ↔ 日志页（哈希路由 #/settings、#/logs）。
+ * 应用根：项目首页 ↔ 工作台 ↔ 配置/日志页（哈希路由）。
  */
 
 import { useEffect } from "react";
 import { useAppRoute } from "./hooks/useAppRoute";
-import { useLlmConfig } from "./hooks/useLlmConfig";
-import { useProject } from "./hooks/useApi";
+import { useAiConfig } from "./hooks/useAiConfig";
 import { AgentSettingsPage } from "./pages/AgentSettingsPage";
 import { AiSettingsPage } from "./pages/AiSettingsPage";
 import { LogsPage } from "./pages/LogsPage";
+import { ProjectHomePage } from "./pages/ProjectHomePage";
 import { Workbench } from "./pages/Workbench";
 
 export default function App() {
-  const { route, navigate } = useAppRoute();
-  const llm = useLlmConfig();
-  const { projectId, scriptId } = useProject();
+  const { route, projectId, scriptId, navigate, navigateHome, navigateToProject, navigateToLogs } =
+    useAppRoute();
+  const ai = useAiConfig();
 
-  // 从配置页返回时刷新 AI 状态
   useEffect(() => {
-    if (route === "chat") {
-      llm.refresh();
+    if (route === "home" || route === "project") {
+      ai.refresh();
     }
   }, [route]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (route === "agents") {
-    return <AgentSettingsPage onBack={() => navigate("chat")} />;
+    return <AgentSettingsPage onBack={() => navigate("home")} />;
   }
 
   if (route === "settings") {
     return (
       <AiSettingsPage
-        config={llm.config}
-        loading={llm.loading}
-        loadError={llm.error}
-        onSave={llm.update}
-        onBack={() => navigate("chat")}
-        onRefresh={llm.refresh}
+        config={ai.config}
+        loading={ai.loading}
+        loadError={ai.error}
+        onSave={ai.update}
+        onBack={() => navigate("home")}
+        onRefresh={ai.refresh}
       />
     );
   }
@@ -45,19 +44,38 @@ export default function App() {
       <LogsPage
         scriptId={scriptId}
         projectId={projectId}
-        onBack={() => navigate("chat")}
+        onBack={() => {
+          if (projectId && scriptId) navigateToProject(projectId, scriptId);
+          else if (projectId) navigateToProject(projectId);
+          else navigateHome();
+        }}
+      />
+    );
+  }
+
+  if (route === "project" && projectId) {
+    return (
+      <Workbench
+        routeProjectId={projectId}
+        routeScriptId={scriptId}
+        aiConfig={ai.config}
+        llmLoading={ai.loading}
+        needsAiConfig={ai.needsAiConfig}
+        onOpenSettings={() => navigate("settings")}
+        onOpenAgents={() => navigate("agents")}
+        onOpenLogs={() => navigateToLogs(projectId, scriptId)}
+        onBackHome={navigateHome}
+        onNavigateToProject={navigateToProject}
       />
     );
   }
 
   return (
-    <Workbench
-      llmConfig={llm.config}
-      llmLoading={llm.loading}
-      needsAiConfig={llm.needsAiConfig}
+    <ProjectHomePage
+      onOpenProject={(id) => navigateToProject(id)}
       onOpenSettings={() => navigate("settings")}
       onOpenAgents={() => navigate("agents")}
-      onOpenLogs={() => navigate("logs")}
+      onOpenLogs={() => navigateToLogs()}
     />
   );
 }

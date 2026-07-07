@@ -2,8 +2,8 @@
 
 import pytest
 
-from core.a2ui.manager import ConfirmationManager, ConfirmationRejectedError, ConfirmationTimeoutError
-from core.a2ui.schemas import A2UIConfirmationResponse
+from core.llm.a2ui.manager import ConfirmationManager, ConfirmationRejectedError, ConfirmationTimeoutError
+from core.llm.a2ui.schemas import A2UIConfirmationResponse
 from core.events.emitter import EventEmitter
 from core.guards.reference import ReferenceGuard, ReferenceGuardError, ScriptEditGuard, ScriptEditGuardError
 from core.models.entities import (
@@ -38,14 +38,16 @@ def test_project_config_defaults():
   assert cfg.style.mode == VideoStyleMode.DYNAMIC_IMAGE
 
 
-def test_script_editable_only_draft_planned():
-  """仅 draft/planned 状态剧本可编辑。"""
+def test_script_editable_only_when_not_executing():
+  """executing 禁止编辑；draft/planned/completed/failed 允许。"""
   draft = Script(project_id="p1", title="t", status=ScriptStatus.DRAFT)
   planned = Script(project_id="p1", title="t", status=ScriptStatus.PLANNED)
+  completed = Script(project_id="p1", title="t", status=ScriptStatus.COMPLETED)
   executing = Script(project_id="p1", title="t", status=ScriptStatus.EXECUTING)
 
   assert ScriptEditGuard.is_editable(draft)
   assert ScriptEditGuard.is_editable(planned)
+  assert ScriptEditGuard.is_editable(completed)
   assert not ScriptEditGuard.is_editable(executing)
 
   with pytest.raises(ScriptEditGuardError):
@@ -111,6 +113,140 @@ async def test_confirmation_manager_resolve():
   )
   await approve_task
   assert response.approved
+
+
+@pytest.mark.asyncio
+async def test_a2ui_persisted_to_sqlite(tmp_path):
+    from core.conversation.sqlite_store import ConversationSqliteStore
+
+    sqlite = ConversationSqliteStore(db_path=tmp_path / "a2ui.db")
+    emitter = EventEmitter()
+    events = []
+
+    async def capture(e):
+        events.append(e)
+
+    emitter.subscribe(capture)
+    mgr = ConfirmationManager(emitter, default_timeout=5.0, sqlite_store=sqlite)
+
+    async def approve():
+        import asyncio
+
+        await asyncio.sleep(0.05)
+        conf_id = events[0]["confirmation_id"]
+        mgr.resolve(
+            A2UIConfirmationResponse(
+                confirmation_id=conf_id,
+                approved=True,
+                values={"theme": "科幻"},
+            )
+        )
+
+    import asyncio
+
+    approve_task = asyncio.create_task(approve())
+    await mgr.request(
+        kind="generic",
+        title="测试确认",
+        description="描述",
+        timeout=5.0,
+        conversation_id="conv_sqlite",
+    )
+    await approve_task
+    records = sqlite.list_a2ui("conv_sqlite")
+    assert len(records) == 1
+    assert records[0].approved is True
+
+
+@pytest.mark.asyncio
+async def test_confirmation_manager_has_pending():
+    """has_pending 应反映未 resolve 的确认。"""
+    emitter = EventEmitter()
+    mgr = ConfirmationManager(emitter, default_timeout=5.0)
+
+    async def approve_later():
+        import asyncio
+
+        await asyncio.sleep(0.05)
+        conf_id = next(iter(mgr._pending))
+        mgr.resolve(
+            A2UIConfirmationResponse(confirmation_id=conf_id, approved=True)
+        )
+
+    import asyncio
+
+    task = asyncio.create_task(approve_later())
+    request_task = asyncio.create_task(
+        mgr.request(kind="generic", title="pending 测试", timeout=5.0)
+    )
+    await asyncio.sleep(0.02)
+    assert mgr.has_pending()
+    await request_task
+    await task
+    assert not mgr.has_pending()
+
+
+@pytest.mark.asyncio
+async def test_confirmation_emits_execution_paused_resumed():
+    """确认请求应推送 execution_paused / execution_resumed。"""
+    emitter = EventEmitter()
+    events: list[dict] = []
+
+    async def capture(e: dict) -> None:
+        events.append(e)
+
+    emitter.subscribe(capture)
+    mgr = ConfirmationManager(emitter, default_timeout=5.0)
+
+    async def approve():
+        import asyncio
+
+        await asyncio.sleep(0.05)
+        conf_id = next(iter(mgr._pending))
+        mgr.resolve(
+            A2UIConfirmationResponse(confirmation_id=conf_id, approved=True)
+        )
+
+    import asyncio
+
+    task = asyncio.create_task(approve())
+    await mgr.request(
+        kind="generic",
+        title="事件测试",
+        timeout=5.0,
+        conversation_id="conv_evt",
+    )
+    await task
+    types = [e.get("type") for e in events]
+    assert "execution_paused" in types
+    assert "execution_resumed" in types
+
+
+@pytest.mark.asyncio
+async def test_confirmation_waits_indefinitely_until_user_responds():
+    """默认无超时时，确认应持续挂起直至用户响应。"""
+    import asyncio
+
+    emitter = EventEmitter()
+    mgr = ConfirmationManager(emitter, default_timeout=None)
+
+    async def approve_later():
+        await asyncio.sleep(0.15)
+        conf_id = next(iter(mgr._pending))
+        mgr.resolve(
+            A2UIConfirmationResponse(confirmation_id=conf_id, approved=True)
+        )
+
+    task = asyncio.create_task(approve_later())
+    request_task = asyncio.create_task(
+        mgr.request(kind="generic", title="无限等待测试")
+    )
+    await asyncio.sleep(0.05)
+    assert mgr.has_pending()
+    response = await request_task
+    await task
+    assert response.approved
+    assert not mgr.has_pending()
 
 
 @pytest.mark.asyncio

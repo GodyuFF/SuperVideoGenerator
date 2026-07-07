@@ -3,6 +3,7 @@
 from core.models.entities import (
     AssetReference,
     AssetScope,
+    EditTimeline,
     MediaAsset,
     MediaAssetType,
     PlanDocument,
@@ -23,6 +24,7 @@ class MemoryStore:
         self.references: dict[str, AssetReference] = {}
         self.plans: dict[str, PlanDocument] = {}
         self.video_plans: dict[str, VideoPlan] = {}
+        self.edit_timelines: dict[str, EditTimeline] = {}
         self.media_assets: dict[str, MediaAsset] = {}
         # script_id -> 当前 plan 存储键
         self._script_plans: dict[str, str] = {}
@@ -130,6 +132,19 @@ class MemoryStore:
                 return vp
         return None
 
+    def set_edit_timeline(self, timeline: EditTimeline) -> EditTimeline:
+        self.edit_timelines[timeline.id] = timeline
+        return timeline
+
+    def get_edit_timeline_for_script(self, script_id: str) -> EditTimeline | None:
+        for etl in self.edit_timelines.values():
+            if etl.script_id == script_id:
+                return etl
+        return None
+
+    def get_edit_timeline(self, timeline_id: str) -> EditTimeline | None:
+        return self.edit_timelines.get(timeline_id)
+
     def add_media_asset(self, asset: MediaAsset) -> MediaAsset:
         self.media_assets[asset.id] = asset
         return asset
@@ -165,5 +180,81 @@ class MemoryStore:
         self.references.clear()
         self.plans.clear()
         self.video_plans.clear()
+        self.edit_timelines.clear()
         self.media_assets.clear()
         self._script_plans.clear()
+
+    def delete_script(self, script_id: str) -> bool:
+        """级联删除剧本及其关联资产、计划与媒体。"""
+        script = self.scripts.get(script_id)
+        if script is None:
+            return False
+
+        asset_ids = {
+            a.id for a in self.text_assets.values() if a.script_id == script_id
+        }
+        media_ids = {
+            m.id for m in self.media_assets.values() if m.script_id == script_id
+        }
+        entity_ids = asset_ids | media_ids
+
+        ref_ids = [
+            rid
+            for rid, ref in self.references.items()
+            if ref.script_id == script_id
+            or ref.source_id in entity_ids
+            or ref.target_id in entity_ids
+        ]
+        for rid in ref_ids:
+            del self.references[rid]
+
+        for aid in asset_ids:
+            del self.text_assets[aid]
+        for mid in media_ids:
+            del self.media_assets[mid]
+
+        plan_prefix = f"{script_id}_"
+        for key in [k for k in self.plans if k.startswith(plan_prefix)]:
+            del self.plans[key]
+        self._script_plans.pop(script_id, None)
+
+        for vp in [v for v in self.video_plans.values() if v.script_id == script_id]:
+            del self.video_plans[vp.id]
+
+        for et in [e for e in self.edit_timelines.values() if e.script_id == script_id]:
+            del self.edit_timelines[et.id]
+
+        del self.scripts[script_id]
+        return True
+
+    def delete_project(self, project_id: str) -> bool:
+        """级联删除项目、其下全部剧本与项目级共享资产。"""
+        if project_id not in self.projects:
+            return False
+
+        for script in list(self.list_scripts_for_project(project_id)):
+            self.delete_script(script.id)
+
+        shared_ids = [
+            a.id
+            for a in self.text_assets.values()
+            if a.project_id == project_id and a.scope == AssetScope.PROJECT_SHARED
+        ]
+        for aid in shared_ids:
+            ref_ids = [
+                rid
+                for rid, ref in self.references.items()
+                if ref.source_id == aid or ref.target_id == aid
+            ]
+            for rid in ref_ids:
+                del self.references[rid]
+            del self.text_assets[aid]
+
+        leftover_media = [
+            m.id for m in self.media_assets.values() if m.project_id == project_id
+        ]
+        for mid in leftover_media:
+            del self.media_assets[mid]
+
+        del self.projects[project_id]
+        return True

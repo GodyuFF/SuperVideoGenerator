@@ -1,18 +1,27 @@
 /**
- * AI 模型配置页：服务商、模型、API Key 等。
+ * AI 配置页：分区管理 LLM / 图片 / 视频 / TTS。
  */
 
-import { useEffect, useState } from "react";
-import type { LLMConfig, LLMConfigPatch } from "../types";
+import { useCallback, useEffect, useState } from "react";
+import type { AiConfig, AiConfigPatch, AiConfigTab, ImageSourceMode } from "../types";
+import { IMAGE_SOURCE_LABELS } from "../constants";
 
 interface AiSettingsPageProps {
-  config: LLMConfig | null;
+  config: AiConfig | null;
   loading: boolean;
   loadError: string | null;
-  onSave: (patch: LLMConfigPatch) => Promise<LLMConfig>;
+  onSave: (patch: AiConfigPatch) => Promise<AiConfig>;
   onBack: () => void;
   onRefresh: () => void;
 }
+
+const TABS: { id: AiConfigTab; label: string }[] = [
+  { id: "llm", label: "LLM" },
+  { id: "image", label: "图片" },
+  { id: "video", label: "视频" },
+  { id: "tts", label: "TTS" },
+  { id: "export", label: "剪辑导出 / FFmpeg" },
+];
 
 export function AiSettingsPage({
   config,
@@ -22,34 +31,216 @@ export function AiSettingsPage({
   onBack,
   onRefresh,
 }: AiSettingsPageProps) {
+  const [tab, setTab] = useState<AiConfigTab>("llm");
+
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
-  const [apiKey, setApiKey] = useState("");
+  const [llmApiKey, setLlmApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [useLlmReact, setUseLlmReact] = useState(true);
+  const [showReactDetails, setShowReactDetails] = useState(true);
   const [temperature, setTemperature] = useState(0.2);
   const [maxTokens, setMaxTokens] = useState(1024);
+
+  const [imageEnabled, setImageEnabled] = useState(true);
+  const [imageModel, setImageModel] = useState("");
+  const [imageBaseUrl, setImageBaseUrl] = useState("");
+  const [imageApiKey, setImageApiKey] = useState("");
+  const [imageSize, setImageSize] = useState("1024x768");
+  const [imageSourceDefault, setImageSourceDefault] = useState<ImageSourceMode>("generate");
+  const [imageTextPreset, setImageTextPreset] = useState<"explainer" | "report" | "lecture">("explainer");
+  const [comicPreset, setComicPreset] = useState<"manga" | "webtoon" | "ink">("manga");
+  const [imageBatchPending, setImageBatchPending] = useState(true);
+  const [imageSearchFallback, setImageSearchFallback] = useState(true);
+
+  const [videoEnabled, setVideoEnabled] = useState(false);
+  const [videoProvider, setVideoProvider] = useState("agnes");
+  const [videoModel, setVideoModel] = useState("");
+  const [videoBaseUrl, setVideoBaseUrl] = useState("");
+  const [videoApiKey, setVideoApiKey] = useState("");
+  const [videoMaxDuration, setVideoMaxDuration] = useState(10);
+  const [videoResolution, setVideoResolution] = useState("1080p");
+
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [ttsProvider, setTtsProvider] = useState("edge");
+  const [ttsModel, setTtsModel] = useState("");
+  const [ttsBaseUrl, setTtsBaseUrl] = useState("");
+  const [ttsApiKey, setTtsApiKey] = useState("");
+  const [ttsLanguage, setTtsLanguage] = useState("zh-CN");
+  const [ttsVoice, setTtsVoice] = useState("");
+  const [ttsRate, setTtsRate] = useState(1);
+  const [ttsVolume, setTtsVolume] = useState(1);
+  const [ttsVoices, setTtsVoices] = useState<string[]>([]);
+  const [ttsPreviewText, setTtsPreviewText] = useState("你好，这是一段配音试听。");
+  const [ttsPreviewUrl, setTtsPreviewUrl] = useState<string | null>(null);
+  const [ttsPreviewLoading, setTtsPreviewLoading] = useState(false);
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [mimoApiKey, setMimoApiKey] = useState("");
+  const [siliconflowApiKey, setSiliconflowApiKey] = useState("");
+  const [azureSpeechKey, setAzureSpeechKey] = useState("");
+  const [azureSpeechRegion, setAzureSpeechRegion] = useState("");
+
+  const [exportEnabled, setExportEnabled] = useState(true);
+  const [exportFfmpegPath, setExportFfmpegPath] = useState("");
+  const [exportFps, setExportFps] = useState(30);
+  const [exportWidth, setExportWidth] = useState(1920);
+  const [exportHeight, setExportHeight] = useState(1080);
+  const [exportCrf, setExportCrf] = useState(23);
+
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!config) return;
-    setProvider(config.provider);
-    setModel(config.model);
-    setBaseUrl(config.base_url);
-    setUseLlmReact(config.use_llm_react);
-    setTemperature(config.temperature);
-    setMaxTokens(config.max_tokens);
-    setApiKey("");
+    const llm = config.llm;
+    setProvider(llm.provider);
+    setModel(llm.model);
+    setBaseUrl(llm.base_url);
+    setUseLlmReact(llm.use_llm_react);
+    setShowReactDetails(llm.show_react_details ?? true);
+    setTemperature(llm.temperature);
+    setMaxTokens(llm.max_tokens);
+    setLlmApiKey("");
+
+    const img = config.image;
+    setImageEnabled(img.enabled);
+    setImageModel(img.model);
+    setImageBaseUrl(img.base_url);
+    setImageSize(img.default_size);
+    setImageApiKey("");
+    const pipe = img.pipeline;
+    setImageSourceDefault(pipe.source_mode);
+    setImageTextPreset(pipe.image_text_preset);
+    setComicPreset(pipe.comic_preset);
+    setImageBatchPending(pipe.batch_pending_assets);
+    setImageSearchFallback(pipe.allow_search_fallback);
+
+    const vid = config.video;
+    setVideoEnabled(vid.enabled);
+    setVideoProvider(vid.provider);
+    setVideoModel(vid.model);
+    setVideoBaseUrl(vid.base_url);
+    setVideoMaxDuration(vid.max_duration_sec);
+    setVideoResolution(vid.resolution);
+    setVideoApiKey("");
+
+    const tts = config.tts;
+    setTtsEnabled(tts.enabled);
+    setTtsProvider(tts.provider);
+    setTtsModel(tts.model);
+    setTtsBaseUrl(tts.base_url);
+    setTtsLanguage(tts.default_language);
+    setTtsVoice(tts.default_voice || "");
+    setTtsRate(tts.voice_rate ?? 1);
+    setTtsVolume(tts.voice_volume ?? 1);
+    setAzureSpeechRegion(tts.azure_speech_region || "");
+    setTtsApiKey("");
+    setGeminiApiKey("");
+    setMimoApiKey("");
+    setSiliconflowApiKey("");
+    setAzureSpeechKey("");
+
+    const exp = config.export;
+    setExportEnabled(exp.enabled);
+    setExportFfmpegPath(exp.ffmpeg_path || "");
+    setExportFps(exp.fps ?? 30);
+    setExportWidth(exp.width ?? 1920);
+    setExportHeight(exp.height ?? 1080);
+    setExportCrf(exp.crf ?? 23);
   }, [config]);
 
-  const selectedProvider = config?.available_providers.find((p) => p.id === provider);
+  const loadTtsVoices = useCallback(async (locale: string) => {
+    try {
+      const params = locale ? `?locale=${encodeURIComponent(locale)}` : "";
+      const r = await fetch(`/api/ai/tts/voices${params}`);
+      if (!r.ok) return;
+      const data = await r.json();
+      const voices = (data.voices as string[]) ?? [];
+      setTtsVoices(voices);
+      if (voices.length > 0 && !voices.includes(ttsVoice)) {
+        setTtsVoice(voices.find((v) => v.includes("Xiaoxiao")) ?? voices[0]);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [ttsVoice]);
+
+  useEffect(() => {
+    if (tab === "tts") {
+      void loadTtsVoices(ttsLanguage);
+    }
+  }, [tab, ttsLanguage, loadTtsVoices]);
+
+  const selectedProvider = config?.llm.available_providers.find((p) => p.id === provider);
 
   function handleProviderChange(id: string) {
     setProvider(id);
-    const p = config?.available_providers.find((x) => x.id === id);
+    const p = config?.llm.available_providers.find((x) => x.id === id);
     if (p) setModel(p.default_model);
+  }
+
+  function buildPatch(): AiConfigPatch {
+    const patch: AiConfigPatch = {
+      llm: {
+        provider,
+        model,
+        base_url: baseUrl || undefined,
+        use_llm_react: useLlmReact,
+        show_react_details: showReactDetails,
+        temperature,
+        max_tokens: maxTokens,
+      },
+      image: {
+        enabled: imageEnabled,
+        model: imageModel,
+        base_url: imageBaseUrl || undefined,
+        default_size: imageSize,
+        pipeline: {
+          source_mode: imageSourceDefault,
+          image_text_preset: imageTextPreset,
+          comic_preset: comicPreset,
+          batch_pending_assets: imageBatchPending,
+          allow_search_fallback: imageSearchFallback,
+        },
+      },
+      video: {
+        enabled: videoEnabled,
+        provider: videoProvider,
+        model: videoModel,
+        base_url: videoBaseUrl || undefined,
+        max_duration_sec: videoMaxDuration,
+        resolution: videoResolution,
+      },
+      tts: {
+        enabled: ttsEnabled,
+        provider: ttsProvider,
+        model: ttsModel,
+        base_url: ttsBaseUrl || undefined,
+        default_language: ttsLanguage,
+        default_voice: ttsVoice || undefined,
+        voice_rate: ttsRate,
+        voice_volume: ttsVolume,
+        azure_speech_region: azureSpeechRegion || undefined,
+      },
+      export: {
+        enabled: exportEnabled,
+        ffmpeg_path: exportFfmpegPath || undefined,
+        fps: exportFps,
+        width: exportWidth,
+        height: exportHeight,
+        crf: exportCrf,
+      },
+    };
+    if (llmApiKey.trim()) patch.llm!.api_key = llmApiKey.trim();
+    if (imageApiKey.trim()) patch.image!.api_key = imageApiKey.trim();
+    if (videoApiKey.trim()) patch.video!.api_key = videoApiKey.trim();
+    if (ttsApiKey.trim()) patch.tts!.api_key = ttsApiKey.trim();
+    if (geminiApiKey.trim()) patch.tts!.gemini_api_key = geminiApiKey.trim();
+    if (mimoApiKey.trim()) patch.tts!.mimo_api_key = mimoApiKey.trim();
+    if (siliconflowApiKey.trim()) patch.tts!.siliconflow_api_key = siliconflowApiKey.trim();
+    if (azureSpeechKey.trim()) patch.tts!.azure_speech_key = azureSpeechKey.trim();
+    return patch;
   }
 
   async function saveConfig(andBack = false) {
@@ -57,29 +248,22 @@ export function AiSettingsPage({
     setSaveMsg(null);
     setSaveError(null);
     try {
-      const patch: LLMConfigPatch = {
-        provider,
-        model,
-        base_url: baseUrl || undefined,
-        use_llm_react: useLlmReact,
-        temperature,
-        max_tokens: maxTokens,
-      };
-      if (apiKey.trim()) {
-        patch.api_key = apiKey.trim();
-      } else if (useLlmReact && !config?.has_api_key) {
-        setSaveError("启用 LLM ReAct 时必须填写 API Key");
+      if (useLlmReact && !config?.llm.has_api_key && !llmApiKey.trim()) {
+        setSaveError("启用 LLM ReAct 时必须填写 LLM API Key");
         setSaving(false);
         return false;
       }
-      const updated = await onSave(patch);
+      const updated = await onSave(buildPatch());
       setSaveMsg(
-        updated.llm_active
+        updated.llm.llm_active
           ? "保存成功，AI 已就绪，可以返回对话。"
-          : "已保存。请填写 API Key 并启用 LLM ReAct。"
+          : "已保存。请填写 LLM API Key 并启用 ReAct。"
       );
-      setApiKey("");
-      if (andBack && updated.llm_active) {
+      setLlmApiKey("");
+      setImageApiKey("");
+      setVideoApiKey("");
+      setTtsApiKey("");
+      if (andBack && updated.llm.llm_active) {
         onBack();
       }
       return true;
@@ -100,18 +284,20 @@ export function AiSettingsPage({
     await saveConfig(true);
   }
 
+  const statusLabel = config?.llm.llm_active ? "LLM 已配置" : "LLM 未配置 Key";
+
   return (
     <div className="settings-page">
       <header className="top-bar settings-top-bar">
         <button type="button" className="btn-secondary" onClick={onBack}>
           返回对话
         </button>
-        <h1>AI 模型配置</h1>
+        <h1>AI 配置</h1>
         {config && (
           <span
-            className={`status-badge ${config.llm_active ? "ai-ready" : "ai-missing"}`}
+            className={`status-badge ${config.llm.llm_active ? "ai-ready" : "ai-missing"}`}
           >
-            {config.llm_active ? "AI 已配置" : "未配置 API Key"}
+            {statusLabel}
           </span>
         )}
       </header>
@@ -127,113 +313,623 @@ export function AiSettingsPage({
         )}
 
         {!loading && config && (
-          <form className="settings-form" onSubmit={handleSubmit}>
-            <p className="muted settings-intro">
-              ReAct 编排通过 XML 与所选大模型交互。默认 DeepSeek，可切换 OpenAI、Kimi、
-              智谱、通义等 OpenAI 兼容接口。
-            </p>
+          <>
+            <nav className="settings-tabs" aria-label="AI 配置分区">
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`settings-tab ${tab === t.id ? "active" : ""}`}
+                  onClick={() => setTab(t.id)}
+                >
+                  {t.label}
+                  {t.id === "llm" && config.llm.llm_active && (
+                    <span className="settings-tab-dot" aria-hidden />
+                  )}
+                  {t.id === "image" && config.image.active && (
+                    <span className="settings-tab-dot" aria-hidden />
+                  )}
+                </button>
+              ))}
+            </nav>
 
-            <label className="settings-field">
-              <span>服务商</span>
-              <select
-                value={provider}
-                onChange={(e) => handleProviderChange(e.target.value)}
-              >
-                {config.available_providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}（默认 {p.default_model}）
-                  </option>
-                ))}
-              </select>
-            </label>
+            <form className="settings-form" onSubmit={handleSubmit}>
+              {tab === "llm" && (
+                <>
+                  <p className="muted settings-intro">
+                    ReAct 编排所用大模型。默认 DeepSeek，可切换 Anthropic 等兼容接口。
+                  </p>
+                  <label className="settings-field">
+                    <span>服务商</span>
+                    <select
+                      value={provider}
+                      onChange={(e) => handleProviderChange(e.target.value)}
+                    >
+                      {config.llm.available_providers.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}（默认 {p.default_model}）
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="settings-field">
+                    <span>模型名称</span>
+                    <input
+                      type="text"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      placeholder={selectedProvider?.default_model ?? "model-id"}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>API Key</span>
+                    <input
+                      type="password"
+                      value={llmApiKey}
+                      onChange={(e) => setLlmApiKey(e.target.value)}
+                      placeholder={
+                        config.llm.has_api_key ? "已配置（留空不修改）" : "请输入 API Key"
+                      }
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>API Base URL（可选）</span>
+                    <input
+                      type="text"
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      placeholder={config.llm.base_url}
+                    />
+                  </label>
+                  <label className="settings-field checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={useLlmReact}
+                      onChange={(e) => setUseLlmReact(e.target.checked)}
+                    />
+                    <span>启用 LLM ReAct（关闭后使用规则回退，无需 Key）</span>
+                  </label>
+                  <label className="settings-field checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={showReactDetails}
+                      onChange={(e) => setShowReactDetails(e.target.checked)}
+                    />
+                    <span>展示完整思维过程（关闭后工作台仅显示所调用的工具名称）</span>
+                  </label>
+                  <div className="settings-row">
+                    <label className="settings-field">
+                      <span>Temperature</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        value={temperature}
+                        onChange={(e) => setTemperature(Number(e.target.value))}
+                      />
+                    </label>
+                    <label className="settings-field">
+                      <span>Max Tokens</span>
+                      <input
+                        type="number"
+                        min={256}
+                        max={8192}
+                        step={256}
+                        value={maxTokens}
+                        onChange={(e) => setMaxTokens(Number(e.target.value))}
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
 
-            <label className="settings-field">
-              <span>模型名称</span>
-              <input
-                type="text"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder={selectedProvider?.default_model ?? "model-id"}
-              />
-            </label>
+              {tab === "image" && (
+                <>
+                  <p className="muted settings-intro">
+                    默认使用 Agnes AI 文生图（OpenAI 兼容）。下方「流水线策略」控制动态图文/漫画模式的搜图与生图行为。
+                  </p>
+                  <label className="settings-field checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={imageEnabled}
+                      onChange={(e) => setImageEnabled(e.target.checked)}
+                    />
+                    <span>启用 AI 生图</span>
+                  </label>
+                  <label className="settings-field">
+                    <span>服务商</span>
+                    <input type="text" value={config.image.provider_label} readOnly />
+                  </label>
+                  <label className="settings-field">
+                    <span>模型</span>
+                    <input
+                      type="text"
+                      value={imageModel}
+                      onChange={(e) => setImageModel(e.target.value)}
+                      placeholder="agnes-image-2.0-flash"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>API Key</span>
+                    <input
+                      type="password"
+                      value={imageApiKey}
+                      onChange={(e) => setImageApiKey(e.target.value)}
+                      placeholder={
+                        config.image.has_api_key ? "已配置（留空不修改）" : "Agnes API Key"
+                      }
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Base URL</span>
+                    <input
+                      type="text"
+                      value={imageBaseUrl}
+                      onChange={(e) => setImageBaseUrl(e.target.value)}
+                      placeholder={config.image.base_url}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>默认尺寸</span>
+                    <select value={imageSize} onChange={(e) => setImageSize(e.target.value)}>
+                      {config.image.available_sizes.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </label>
 
-            <label className="settings-field">
-              <span>API Key</span>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={
-                  config.has_api_key ? "已配置（留空不修改）" : "请输入 API Key"
-                }
-                autoComplete="off"
-              />
-              <span className="field-hint">
-                Key 仅保存在服务端内存，重启后端后需重新填写或通过环境变量配置
-              </span>
-            </label>
+                  <h2 className="settings-section-title">流水线策略</h2>
+                  <label className="settings-field">
+                    <span>默认图片来源</span>
+                    <select
+                      value={imageSourceDefault}
+                      onChange={(e) => setImageSourceDefault(e.target.value as ImageSourceMode)}
+                    >
+                      {(Object.keys(IMAGE_SOURCE_LABELS) as ImageSourceMode[]).map((key) => (
+                        <option key={key} value={key}>
+                          {IMAGE_SOURCE_LABELS[key]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="settings-row">
+                    <label className="settings-field">
+                      <span>图文子风格</span>
+                      <select
+                        value={imageTextPreset}
+                        onChange={(e) =>
+                          setImageTextPreset(e.target.value as "explainer" | "report" | "lecture")
+                        }
+                      >
+                        <option value="explainer">科普讲解</option>
+                        <option value="report">汇报</option>
+                        <option value="lecture">课程讲座</option>
+                      </select>
+                    </label>
+                    <label className="settings-field">
+                      <span>漫画画风</span>
+                      <select
+                        value={comicPreset}
+                        onChange={(e) =>
+                          setComicPreset(e.target.value as "manga" | "webtoon" | "ink")
+                        }
+                      >
+                        <option value="manga">日漫</option>
+                        <option value="webtoon">条漫</option>
+                        <option value="ink">水墨</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label className="settings-field checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={imageBatchPending}
+                      onChange={(e) => setImageBatchPending(e.target.checked)}
+                    />
+                    <span>批量处理所有缺图文字资产</span>
+                  </label>
+                  <label className="settings-field checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={imageSearchFallback}
+                      onChange={(e) => setImageSearchFallback(e.target.checked)}
+                    />
+                    <span>生图失败时允许搜索配图回退</span>
+                  </label>
+                </>
+              )}
 
-            <label className="settings-field">
-              <span>API Base URL（可选）</span>
-              <input
-                type="text"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder={config.base_url}
-              />
-            </label>
+              {tab === "video" && (
+                <>
+                  <p className="muted settings-intro">
+                    AI 视频模式所用视频生成 API（默认 Agnes Video，流水线接入中）。
+                  </p>
+                  <label className="settings-field checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={videoEnabled}
+                      onChange={(e) => setVideoEnabled(e.target.checked)}
+                    />
+                    <span>启用 AI 视频生成</span>
+                  </label>
+                  <label className="settings-field">
+                    <span>服务商</span>
+                    <input
+                      type="text"
+                      value={videoProvider}
+                      onChange={(e) => setVideoProvider(e.target.value)}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>模型</span>
+                    <input
+                      type="text"
+                      value={videoModel}
+                      onChange={(e) => setVideoModel(e.target.value)}
+                      placeholder="agnes-video-v2.0"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>API Key</span>
+                    <input
+                      type="password"
+                      value={videoApiKey}
+                      onChange={(e) => setVideoApiKey(e.target.value)}
+                      placeholder={
+                        config.video.has_api_key ? "已配置（留空不修改）" : "视频 API Key"
+                      }
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Base URL</span>
+                    <input
+                      type="text"
+                      value={videoBaseUrl}
+                      onChange={(e) => setVideoBaseUrl(e.target.value)}
+                      placeholder={config.video.base_url}
+                    />
+                  </label>
+                  <div className="settings-row">
+                    <label className="settings-field">
+                      <span>最大时长（秒）</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={60}
+                        value={videoMaxDuration}
+                        onChange={(e) => setVideoMaxDuration(Number(e.target.value))}
+                      />
+                    </label>
+                    <label className="settings-field">
+                      <span>分辨率</span>
+                      <input
+                        type="text"
+                        value={videoResolution}
+                        onChange={(e) => setVideoResolution(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
 
-            <label className="settings-field checkbox-row">
-              <input
-                type="checkbox"
-                checked={useLlmReact}
-                onChange={(e) => setUseLlmReact(e.target.checked)}
-              />
-              <span>启用 LLM ReAct（关闭后使用规则回退，无需 Key）</span>
-            </label>
+              {tab === "tts" && (
+                <>
+                  <p className="muted settings-intro">
+                    多引擎配音：Edge TTS（默认免费）、OpenAI、Azure v2、SiliconFlow、Gemini、MiMo。
+                  </p>
+                  <label className="settings-field checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={ttsEnabled}
+                      onChange={(e) => setTtsEnabled(e.target.checked)}
+                    />
+                    <span>启用 TTS 合成</span>
+                  </label>
+                  <label className="settings-field">
+                    <span>服务商</span>
+                    <select
+                      value={ttsProvider}
+                      onChange={(e) => setTtsProvider(e.target.value)}
+                    >
+                      <option value="edge">edge（Edge TTS）</option>
+                      <option value="openai">openai</option>
+                      <option value="azure_v2">azure_v2</option>
+                      <option value="siliconflow">siliconflow</option>
+                      <option value="gemini">gemini</option>
+                      <option value="mimo">mimo</option>
+                    </select>
+                  </label>
+                  <label className="settings-field">
+                    <span>默认语言</span>
+                    <input
+                      type="text"
+                      value={ttsLanguage}
+                      onChange={(e) => setTtsLanguage(e.target.value)}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>音色</span>
+                    <select
+                      value={ttsVoice}
+                      onChange={(e) => setTtsVoice(e.target.value)}
+                    >
+                      {ttsVoices.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="settings-field">
+                    <span>语速 ({ttsRate.toFixed(2)})</span>
+                    <input
+                      type="range"
+                      min={0.5}
+                      max={2}
+                      step={0.05}
+                      value={ttsRate}
+                      onChange={(e) => setTtsRate(Number(e.target.value))}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>音量 ({ttsVolume.toFixed(2)})</span>
+                    <input
+                      type="range"
+                      min={0.6}
+                      max={1.5}
+                      step={0.05}
+                      value={ttsVolume}
+                      onChange={(e) => setTtsVolume(Number(e.target.value))}
+                    />
+                  </label>
+                  {ttsProvider === "openai" && (
+                    <>
+                      <label className="settings-field">
+                        <span>模型</span>
+                        <input
+                          type="text"
+                          value={ttsModel}
+                          onChange={(e) => setTtsModel(e.target.value)}
+                          placeholder="tts-1"
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>OpenAI API Key</span>
+                        <input
+                          type="password"
+                          value={ttsApiKey}
+                          onChange={(e) => setTtsApiKey(e.target.value)}
+                          placeholder={
+                            config.tts.has_api_key ? "已配置（留空不修改）" : "TTS API Key"
+                          }
+                          autoComplete="off"
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>Base URL</span>
+                        <input
+                          type="text"
+                          value={ttsBaseUrl}
+                          onChange={(e) => setTtsBaseUrl(e.target.value)}
+                          placeholder={config.tts.base_url}
+                        />
+                      </label>
+                    </>
+                  )}
+                  <label className="settings-field">
+                    <span>Gemini API Key</span>
+                    <input
+                      type="password"
+                      value={geminiApiKey}
+                      onChange={(e) => setGeminiApiKey(e.target.value)}
+                      placeholder={
+                        config.tts.has_gemini_api_key ? "已配置（留空不修改）" : "可选"
+                      }
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>MiMo API Key</span>
+                    <input
+                      type="password"
+                      value={mimoApiKey}
+                      onChange={(e) => setMimoApiKey(e.target.value)}
+                      placeholder={
+                        config.tts.has_mimo_api_key ? "已配置（留空不修改）" : "可选"
+                      }
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>SiliconFlow API Key</span>
+                    <input
+                      type="password"
+                      value={siliconflowApiKey}
+                      onChange={(e) => setSiliconflowApiKey(e.target.value)}
+                      placeholder={
+                        config.tts.has_siliconflow_api_key ? "已配置（留空不修改）" : "可选"
+                      }
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Azure Speech Key</span>
+                    <input
+                      type="password"
+                      value={azureSpeechKey}
+                      onChange={(e) => setAzureSpeechKey(e.target.value)}
+                      placeholder={
+                        config.tts.has_azure_speech_key ? "已配置（留空不修改）" : "可选"
+                      }
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Azure Speech Region</span>
+                    <input
+                      type="text"
+                      value={azureSpeechRegion}
+                      onChange={(e) => setAzureSpeechRegion(e.target.value)}
+                      placeholder={config.tts.azure_speech_region || "eastasia"}
+                    />
+                  </label>
+                  <div className="settings-field">
+                    <span>试听</span>
+                    <textarea
+                      rows={2}
+                      value={ttsPreviewText}
+                      onChange={(e) => setTtsPreviewText(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      disabled={ttsPreviewLoading || !ttsPreviewText.trim()}
+                      onClick={async () => {
+                        setTtsPreviewLoading(true);
+                        setTtsPreviewUrl(null);
+                        try {
+                          const r = await fetch("/api/ai/tts/preview", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              text: ttsPreviewText.slice(0, 100),
+                              provider: ttsProvider,
+                              default_language: ttsLanguage,
+                              voice_name: ttsVoice || undefined,
+                              voice_rate: ttsRate,
+                              voice_volume: ttsVolume,
+                              model: ttsModel || undefined,
+                              base_url: ttsBaseUrl || undefined,
+                              api_key: ttsApiKey.trim() || undefined,
+                              gemini_api_key: geminiApiKey.trim() || undefined,
+                              mimo_api_key: mimoApiKey.trim() || undefined,
+                              siliconflow_api_key: siliconflowApiKey.trim() || undefined,
+                              azure_speech_key: azureSpeechKey.trim() || undefined,
+                              azure_speech_region: azureSpeechRegion.trim() || undefined,
+                            }),
+                          });
+                          if (!r.ok) {
+                            let detail = "试听失败";
+                            try {
+                              const err = await r.json();
+                              if (typeof err.detail === "string") detail = err.detail;
+                              else if (Array.isArray(err.detail)) {
+                                detail = err.detail.map((d: { msg?: string }) => d.msg).join("; ");
+                              }
+                            } catch {
+                              /* ignore */
+                            }
+                            throw new Error(detail);
+                          }
+                          const data = await r.json();
+                          setTtsPreviewUrl(String(data.url ?? ""));
+                        } catch (e) {
+                          setSaveError((e as Error).message || "试听失败");
+                        } finally {
+                          setTtsPreviewLoading(false);
+                        }
+                      }}
+                    >
+                      {ttsPreviewLoading ? "合成中…" : "生成试听"}
+                    </button>
+                    {ttsPreviewUrl ? (
+                      <audio controls src={ttsPreviewUrl} style={{ width: "100%", marginTop: 8 }} />
+                    ) : null}
+                  </div>
+                </>
+              )}
 
-            <div className="settings-row">
-              <label className="settings-field">
-                <span>Temperature</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={2}
-                  step={0.1}
-                  value={temperature}
-                  onChange={(e) => setTemperature(Number(e.target.value))}
-                />
-              </label>
-              <label className="settings-field">
-                <span>Max Tokens</span>
-                <input
-                  type="number"
-                  min={256}
-                  max={8192}
-                  step={256}
-                  value={maxTokens}
-                  onChange={(e) => setMaxTokens(Number(e.target.value))}
-                />
-              </label>
-            </div>
+              {tab === "export" && (
+                <>
+                  <p className="field-hint">
+                    动态图文 / 动态漫画成片通过 FFmpeg 导出。默认使用 pip 安装的内置 FFmpeg；也可填写自定义路径。
+                  </p>
+                  <label className="settings-field settings-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={exportEnabled}
+                      onChange={(e) => setExportEnabled(e.target.checked)}
+                    />
+                    <span>启用 FFmpeg 成片导出</span>
+                  </label>
+                  {config?.export.ffmpeg_available === false && (
+                    <p className="board-error">未检测到 FFmpeg，请安装或设置路径。</p>
+                  )}
+                  <label className="settings-field">
+                    <span>FFmpeg 路径（可选）</span>
+                    <input
+                      type="text"
+                      value={exportFfmpegPath}
+                      onChange={(e) => setExportFfmpegPath(e.target.value)}
+                      placeholder="留空使用内置或 PATH"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>帧率 FPS</span>
+                    <input
+                      type="number"
+                      min={24}
+                      max={60}
+                      value={exportFps}
+                      onChange={(e) => setExportFps(Number(e.target.value))}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>宽度</span>
+                    <input
+                      type="number"
+                      min={640}
+                      value={exportWidth}
+                      onChange={(e) => setExportWidth(Number(e.target.value))}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>高度</span>
+                    <input
+                      type="number"
+                      min={360}
+                      value={exportHeight}
+                      onChange={(e) => setExportHeight(Number(e.target.value))}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>CRF 质量（18–28，越小越清晰）</span>
+                    <input
+                      type="number"
+                      min={18}
+                      max={28}
+                      value={exportCrf}
+                      onChange={(e) => setExportCrf(Number(e.target.value))}
+                    />
+                  </label>
+                </>
+              )}
 
-            {saveMsg && <div className="settings-alert success">{saveMsg}</div>}
-            {saveError && <div className="settings-alert error">{saveError}</div>}
+              <p className="field-hint">
+                API Key 仅保存在服务端内存，重启后端后需重新填写或通过环境变量配置。
+              </p>
 
-            <div className="settings-actions">
-              <button type="submit" disabled={saving}>
-                {saving ? "保存中…" : "保存配置"}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                disabled={saving}
-                onClick={handleSaveAndBack}
-              >
-                {saving ? "保存中…" : "保存并返回对话"}
-              </button>
-            </div>
-          </form>
+              {saveMsg && <div className="settings-alert success">{saveMsg}</div>}
+              {saveError && <div className="settings-alert error">{saveError}</div>}
+
+              <div className="settings-actions">
+                <button type="submit" disabled={saving}>
+                  {saving ? "保存中…" : "保存配置"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={saving}
+                  onClick={handleSaveAndBack}
+                >
+                  {saving ? "保存中…" : "保存并返回对话"}
+                </button>
+              </div>
+            </form>
+          </>
         )}
       </main>
     </div>

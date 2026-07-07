@@ -2,9 +2,9 @@
 
 import pytest
 
-from core.agents.llm_action import apply_action_result
-from core.agents.react_core import AgentRunContext
-from core.agents.script_assets import (
+from core.llm.agent.llm_action import apply_action_result
+from core.llm.agent.react_core import AgentRunContext
+from core.llm.agent.script_assets import (
     create_text_asset_for_action,
     delete_text_asset_for_action,
     link_script_asset,
@@ -24,6 +24,7 @@ from core.models.entities import (
     TextAssetType,
 )
 from core.store.memory import MemoryStore
+from tests.support.image_text_fixtures import character_content, scene_content
 
 
 @pytest.fixture
@@ -72,11 +73,16 @@ def test_create_character_shared_and_linked(script_ctx):
         project_id=project_id,
         script_id=script_id,
         asset_name="舰长",
-        content={"appearance": "中年男性"},
+        content=character_content(
+            summary="舰长",
+            description="中年男性舰长，身着制服，神情沉稳，适合科幻叙事主角形象。",
+            role="主角",
+        ),
         observation="",
     )
     assert char.scope == AssetScope.PROJECT_SHARED
     assert char.source_script_id == script_id
+    assert "中年男性" in char.content["description"]
     assert any(r.target_id == char.id for r in list_script_asset_refs(store, script_id))
 
 
@@ -112,7 +118,11 @@ def test_delete_removes_asset_and_script_link(script_ctx):
         project_id=_pid,
         script_id=script_id,
         asset_name="舰桥",
-        content={"description": "金属走廊"},
+        content=scene_content(
+            summary="舰桥",
+            description="金属走廊与舰桥控制台，冷色灯光，科幻飞船内部场景，适合太空探险叙事。",
+            location="舰桥",
+        ),
         observation="",
     )
     delete_text_asset_for_action(
@@ -133,7 +143,11 @@ def test_delete_blocked_when_media_references(script_ctx):
         project_id=project_id,
         script_id=script_id,
         asset_name="机器人",
-        content={"appearance": "银色"},
+        content=character_content(
+            summary="机器人",
+            description="银色金属外壳的服务机器人，流线型设计，适合科幻短片配角形象。",
+            role="配角",
+        ),
         observation="",
     )
     store.add_reference(
@@ -170,7 +184,7 @@ def test_apply_action_result_parse_brief(script_ctx):
         "script_agent",
         "parse_brief",
         ctx,
-        {"script_md": "# 标题\n\n正文", "observation": "完成"},
+        {"content_md": "# 标题\n\n正文", "observation": "完成"},
     )
     assert "完成" in obs
     script = store.get_script(script_id)
@@ -185,7 +199,7 @@ def test_apply_action_result_update_script(script_ctx):
         "script_agent",
         "update_script",
         ctx,
-        {"title": "新标题", "script_md": "# 新标题\n\n新正文"},
+        {"title": "新标题", "content_md": "# 新标题\n\n新正文", "observation": "更新"},
     )
     script = store.get_script(script_id)
     assert script is not None
