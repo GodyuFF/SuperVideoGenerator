@@ -1,31 +1,190 @@
 # SuperVideoGenerator
 
-AI 视频生成 Agent：ReAct 主编排、A2UI 用户确认、多轮对话与 Token 预估日志。
+**SuperVideoGenerator** 是 AI 时代的视频生成工具——用对话降低创作门槛，用可控的编辑链路帮你做出**更个性化、更精品**的视频。
+
+我们关注的不是「一键吐出一支无法修改的 AI 视频」，而是 **AI 加速生产 + 人随时介入**：剧本、分镜、素材、配音、时间轴，每一步都可审、可改、可微调。AI 负责重复劳动与流程编排，你保留对风格、节奏、细节的最终掌控，从而把作品打磨到真正满意再导出。
+
+---
+
+## 核心理念
+
+| 常见 AI 视频工具 | SuperVideoGenerator |
+|------------------|---------------------|
+| 输入提示词 → 等待成片 | 对话描述创意 → **先看 Plan 再执行** |
+| 生成结果难以修改 | 剧本页 **全量 CRUD**，Edit Studio **拖拽改时间轴** |
+| 黑盒流程，出错只能重来 | 分阶段日志 + 交互确认，**哪一步有问题改哪一步** |
+| 追求「全自动」 | 追求 **可控、可改、可精品化** |
+
+**一句话**：让 AI 当你的制作团队，而不是替代你的审美判断。
+
+---
+
+## 项目优势
+
+### 1. 个性化创作，而非模板化一键成片
+
+- **自然语言起步**：描述题材、风格、时长，超级视频大师生成可审阅的生产计划，而不是直接丢给你一支成品。
+- **Skill 与项目配置**：单轮 Skill（如 `/thriller 做悬疑短片`）、项目级 role 提示词、生图/TTS/导出参数，让同一套流程产出不同气质的内容。
+- **动态图片 / AI 视频多模式**：低成本图文轮播与高质量 AI 视频可切换，按场景选性价比，而非绑死一种生成方式。
+
+### 2. 全程可控：能改、能调、能精修
+
+- **左侧对话 + 右侧看板**：AI 生成的同时，你在剧本页直接改剧情、旁白、人物/场景/道具、分镜列表——**手改优先**，改完再让 Agent 继续。
+- **Plan 可见可审**：关键节点 A2UI 确认（剧本结构、成本预估等），避免 AI 悄悄跑偏。
+- **未执行态全量编辑**：资产库、视频计划稿、关系看板联动；执行开始后只读，边界清晰。
+
+### 3. Edit Studio：把「AI 草稿」修成「成片」
+
+- **可预览、可拖拽、可写回** 的多轨时间轴，不是只能看的预览窗。
+- **多层视频轨**（画中画）、画布变换与关键帧、Ken Burns 运镜——镜头语言由你定。
+- Agent 剪辑采用 **merge** 策略：你已锁定的片段不会被覆盖；FFmpeg 导出，成品质量可控。
+
+### 4. 资产化管理：系列化、可复用的精品工作流
+
+- 人物 / 道具 / 场景进入**项目共享池**，跨剧本检索复用，系列剧保持视觉一致性。
+- 全局 `asset_id` 追踪，文字与媒体分离，引用链透明——改一处、看清影响范围。
+- 本地 `data/` 持久化项目与媒体，迭代修改不丢上下文。
+
+### 5. 专业 Agent 流水线（AI 当团队，你当导演）
+
+| 子 Agent | 你可介入的环节 |
+|----------|----------------|
+| 剧本设计 | 改剧情、旁白、资产清单 |
+| 分镜 | 调镜头、运镜、时长 |
+| 生图 | 换提示词、重生成、选手稿 |
+| TTS | 换音色、引擎，试听再定 |
+| 剪辑 | 时间轴拖拽、层叠、字幕 |
+| 视频 | AI 视频片段（按需启用） |
+
+主编排 ReAct + Tool Registry 委派子 Agent；**AI 分工协作，你在任意环节叫停或改稿**。
+
+### 6. 工程可靠：能观测、能测试、能扩展
+
+- 提示词固定/动态分层、Token 预估与对话压缩、多 LLM Provider 可切换。
+- 交互日志记录每轮 ReAct、LLM 请求与 Token；562+ 测试保障核心编排。
+- A2UI、WebSocket 实时推送，前后端结构化协作。
+
+### 7. 本地优先，创作数据留在本机
+
+- 项目、媒体、AI 配置（含 API Key）存于 `data/`，默认不入 Git，适合长期迭代同一部作品。
+
+---
+
+## 技术架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  apps/web (Vite + React)                                     │
+│  项目列表 · 剧本工作台 · Edit Studio · AI 设置 · 交互日志    │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ HTTP / WebSocket
+┌──────────────────────────▼──────────────────────────────────┐
+│  apps/api (FastAPI)                                          │
+│  REST + WS · A2UI 确认 · 导出任务 · 媒体访问                  │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────┐
+│  core/                                                       │
+│  llm/ (ReAct · prompt · tools · A2UI)                        │
+│  edit/ (时间轴 · FFmpeg) · tts/ · assets/ · conversation/    │
+│  store/ · models/ · board/                                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## 快速开始
 
+### 环境要求
+
+- Python 3.11+
+- Node.js 18+（前端）
+- FFmpeg（Edit Studio 导出，需在 PATH 中）
+
+### 1. 安装依赖
+
 ```bash
+# 后端
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS / Linux
 pip install -r requirements.txt
-pytest tests/ -v
-uvicorn apps.api.main:app --reload --port 8000
+
+# 前端
+cd apps/web && npm install && cd ../..
 ```
 
-前端：
+### 2. 配置环境变量
 
 ```bash
-cd apps/web && npm install && npm run dev
+cp .env.example .env
+# 编辑 .env，至少配置 LLM API Key（默认 DeepSeek）
 ```
 
-## 文档
+也可在 Web 端 **AI 设置页** 配置 LLM / 生图 / TTS 等，持久化至 `data/ai_config.json`（仅本机）。
 
-- [产品计划手册](docs/product-plan.md)
-- [代码设计计划](docs/code-design-plan.md)
-- [提示词架构](docs/prompt-architecture.md)（`core/prompt` 固定/动态分层）
+### 3. 启动服务
+
+**Windows（推荐）：**
+
+```bat
+start_api.bat    # 后端 http://localhost:8000
+start_web.bat    # 前端 http://localhost:5173
+```
+
+**命令行：**
+
+```bash
+uvicorn apps.api.main:app --reload --port 8000 --reload-exclude "data/*"
+cd apps/web && npm run dev
+```
+
+打开 [http://localhost:5173](http://localhost:5173) 进入项目列表，新建项目后即可开始对话创作。
+
+### 4. 运行测试
+
+```bash
+pytest tests/ -v
+```
+
+---
 
 ## 生成模式
 
-- `auto`：视频生成步骤不等待用户确认
+| 模式 | 说明 |
+|------|------|
+| `manual` | 关键步骤需用户 A2UI 确认后再执行 |
+| `auto` | 视频生成等步骤不等待用户确认 |
+| `goal` | AI 自主执行至成功/失败，不弹出确认 |
 
-用户通过 **左侧对话** 描述创意，**超级视频大师** 自动完成 Plan 并调度子 Agent 执行，无需手动点击按钮。
+可在项目配置或工作台中设置 `generation.mode` / `execution_mode`。
 
-在项目配置中设置 `generation.mode`。
+---
+
+## 文档
+
+| 文档 | 说明 |
+|------|------|
+| [产品计划手册](docs/product-plan.md) | 产品定位、页面布局、领域模型、路线图 |
+| [代码设计计划](docs/code-design-plan.md) | 仓库结构、持久化、API 设计 |
+| [提示词架构](docs/prompt-architecture.md) | `core/llm/prompt` 固定/动态分层 |
+| [Edit Studio 规格](docs/edit-studio-plan.md) | 多轨时间轴、FFmpeg 导出 |
+| [工具参考](docs/tools-reference.md) | Tool Registry 与各域工具说明 |
+
+---
+
+## 本地数据说明
+
+以下目录/文件为**本地运行时数据**，已在 `.gitignore` 中排除，请勿提交至 Git：
+
+| 路径 | 内容 |
+|------|------|
+| `data/` | 项目、剧本、媒体、对话、AI 配置 |
+| `.env` | 环境变量与 API Key |
+| `.remotion/` | Remotion headless Chrome（若使用） |
+
+---
+
+## License
+
+Private / 内部项目。使用前请确认各 LLM、生图、TTS 服务商的使用条款。
