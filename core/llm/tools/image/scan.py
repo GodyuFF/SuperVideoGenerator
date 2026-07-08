@@ -17,6 +17,7 @@ from core.llm.tools.image.variants import (
     asset_needs_any_generation,
     build_variant_scan_rows,
 )
+from core.llm.tools.image.frames import build_frame_scan_row
 from core.models.entities import MediaAssetType, TextAssetType
 from core.store.memory import MemoryStore
 
@@ -25,15 +26,39 @@ _VISUAL_TYPES = frozenset(
         TextAssetType.CHARACTER.value,
         TextAssetType.SCENE.value,
         TextAssetType.PROP.value,
+        TextAssetType.FRAME.value,
     }
 )
-
 
 def _preview_prompt(text: str, limit: int = IMAGE_PROMPT_SUMMARY_MAX) -> str:
     t = text.strip()
     if len(t) <= limit:
         return t
     return t[: limit - 1] + "…"
+
+
+def _build_trait_summary(content: dict[str, Any]) -> str:
+    """从资产 content 提取关键 trait 摘要（简短一行）。"""
+    from core.models.image_text_asset import extract_traits, trait_label_zh
+
+    traits = extract_traits(None, content) if "role" in content or "location" in content else {}
+    if not traits:
+        # 尝试直接提取常见字段
+        traits = {}
+        for k in ("role", "personality", "location", "mood", "category", "material"):
+            v = str(content.get(k, "")).strip()
+            if v and v != "未指定":
+                traits[k] = v
+    if not traits:
+        return ""
+    parts = []
+    for k, v in list(traits.items())[:4]:
+        val = str(v).strip()
+        if not val or val == "未指定":
+            continue
+        label = trait_label_zh(k)
+        parts.append(f"{label}: {val}")
+    return "; ".join(parts) if parts else ""
 
 
 def _is_placeholder_url(url: str) -> bool:
@@ -129,27 +154,44 @@ def build_scan_text_assets_payload(
         content = _normalize_content(asset, store)
         image_prompt = str(content.get("image_prompt", "")).strip()
         linked = _linked_media_with_status(store, asset.id)
-        variant_rows = build_variant_scan_rows(
-            store, asset, project_style=project_style
-        )
-        has_prompt = any(v.get("has_image_prompt") for v in variant_rows) or bool(
-            image_prompt
-        )
-        has_image, image_status = _resolve_image_status(store, asset, linked)
-        needs_generation = asset_needs_any_generation(variant_rows)
-        if not variant_rows:
-            needs_generation = not has_image
-        linked_image_id = None
-        sync_pending = False
-        if has_image:
-            linked_image_id = asset.primary_media_id or (
-                linked[0].get("id") if linked else None
-            )
-            if image_status == "ready" and linked_image_id:
-                needs_sync, _ = needs_sync_from_image(store, asset)
-                sync_pending = needs_sync
 
-        pending_variants = sum(1 for v in variant_rows if v.get("needs_generation"))
+        # 资产摘要（去掉冗余字段如 image_prompt_preview / linked_media 等）
+        summary = str(content.get("summary", "") or content.get("description", "") or "").strip()
+        trait_preview = _build_trait_summary(content)
+        if asset.type.value == TextAssetType.FRAME.value:
+            frame_row = build_frame_scan_row(
+                store, asset, project_style=project_style
+            )
+            has_prompt = frame_row.get("has_image_prompt", False)
+            has_image = frame_row.get("has_image", False)
+            image_status = frame_row.get("image_status", "missing")
+            needs_generation = frame_row.get("needs_generation", False)
+            variant_rows: list[dict[str, Any]] = []
+            pending_variants = 0
+            linked_image_id = asset.primary_media_id if has_image else None
+            sync_pending = False
+        else:
+            variant_rows = build_variant_scan_rows(
+                store, asset, project_style=project_style
+            )
+            has_prompt = any(v.get("has_image_prompt") for v in variant_rows) or bool(
+                image_prompt
+            )
+            has_image, image_status = _resolve_image_status(store, asset, linked)
+            needs_generation = asset_needs_any_generation(variant_rows)
+            if not variant_rows:
+                needs_generation = not has_image
+            linked_image_id = None
+            sync_pending = False
+            if has_image:
+                linked_image_id = asset.primary_media_id or (
+                    linked[0].get("id") if linked else None
+                )
+                if image_status == "ready" and linked_image_id:
+                    needs_sync, _ = needs_sync_from_image(store, asset)
+                    sync_pending = needs_sync
+            pending_variants = sum(1 for v in variant_rows if v.get("needs_generation"))
+            frame_row = {}
         if needs_generation:
             pending_count += pending_variants or 1
         counts_by_type[asset.type.value] = counts_by_type.get(asset.type.value, 0) + 1
@@ -159,20 +201,30 @@ def build_scan_text_assets_payload(
                 "id": asset.id,
                 "name": asset.name,
                 "type": asset.type.value,
+                "summary": summary[:200] if summary else "",
+                "trait_summary": trait_preview if trait_preview else "",
                 "linked": _is_linked(asset, script_id, ref_map),
-                "primary_media_id": asset.primary_media_id or None,
-                "has_image_prompt": has_prompt,
-                "image_prompt_preview": _preview_prompt(image_prompt) if has_prompt else "",
-                "linked_media_count": len(linked),
-                "linked_media": linked,
                 "has_image": has_image,
                 "image_status": image_status,
                 "needs_generation": needs_generation,
                 "source_mode": source_mode,
                 "linked_image_id": linked_image_id,
-                "sync_pending": sync_pending,
                 "variants": variant_rows,
                 "pending_variant_count": pending_variants,
+                **(
+                    {
+                        "element_refs": frame_row.get("element_refs"),
+                        "variant_refs": frame_row.get("variant_refs"),
+                        "references_ready": frame_row.get("references_ready"),
+                        "pending_reason": frame_row.get("pending_reason"),
+                        "reference_media_ids": frame_row.get("reference_media_ids"),
+                        "shot_id": frame_row.get("shot_id"),
+                        "has_image_prompt": frame_row.get("has_image_prompt"),
+                        "image_prompt_preview": frame_row.get("image_prompt_preview"),
+                    }
+                    if frame_row
+                    else {}
+                ),
             }
         )
 
@@ -189,7 +241,7 @@ def build_scan_text_assets_payload(
     if project:
         payload["project_title"] = project.title
     if payload["count"] == 0:
-        payload["message"] = "当前无待生图文字资产（人物/场景/道具）。"
+        payload["message"] = "当前无待生图文字资产（人物/场景/道具/画面）。"
     return payload
 
 
