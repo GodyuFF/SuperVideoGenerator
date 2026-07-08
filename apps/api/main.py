@@ -15,6 +15,7 @@ from apps.api.routes.llm import router as llm_router
 from apps.api.routes.projects import router as projects_router
 from apps.api.routes.skills import router as skills_router
 from apps.api.routes.edit_timeline import router as edit_timeline_router
+from apps.api.routes.edit_session import router as edit_session_router
 from apps.api.websocket.handler import router as ws_router
 from apps.api.state import state
 
@@ -41,6 +42,7 @@ app.include_router(llm_router)
 app.include_router(projects_router)
 app.include_router(skills_router)
 app.include_router(edit_timeline_router)
+app.include_router(edit_session_router)
 app.include_router(ws_router)
 
 

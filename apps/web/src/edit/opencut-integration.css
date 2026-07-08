@@ -1,0 +1,70 @@
+/* OpenCut Integration — iframe embedded editor styling */
+
+.opencut-integration {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+  background: #1a1d24;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.opencut-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+/* Loading overlay */
+.opencut-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #1a1d24;
+  color: #888;
+  gap: 1rem;
+  z-index: 10;
+}
+
+.opencut-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #333;
+  border-top-color: #1d9bf0;
+  border-radius: 50%;
+  animation: opencut-spin 0.8s linear infinite;
+}
+
+@keyframes opencut-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error overlay */
+.opencut-error,
+.opencut-disconnected {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #1a1d24;
+  color: #ccc;
+  gap: 1rem;
+  z-index: 10;
+}
+
+.opencut-error p,
+.opencut-disconnected p {
+  color: #ccc;
+}
+
+/* Board tab integration */
+.board-edit-studio {
+  height: calc(100vh - 280px);
+}

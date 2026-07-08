@@ -7,7 +7,7 @@ import { GraphBoard } from "./GraphBoard";
 import { ImageTextAssetCard, type ImageTextAssetItem } from "../ImageTextAssetCard";
 import { ImageTextAssetEditor } from "../ImageTextAssetEditor";
 import { EditTimelineBoard } from "./EditTimelineBoard";
-import { EditStudio } from "../../edit/EditStudio";
+import { OpenCutIntegration, type OpenCutIntegrationProps } from "../../edit/opencut-integration";
 import type { EditTimelineData } from "../../edit/types";
 import { MediaPreview } from "../MediaPreview";
 import { ScriptDetailsBoard } from "./ScriptDetailsBoard";
@@ -526,6 +526,7 @@ function BoardContent({
   onDeleteScript,
   projectId,
   scriptId,
+  scriptMeta,
   onEdit,
   onDelete,
   onCreateAsset,
@@ -539,6 +540,7 @@ function BoardContent({
   onDeleteScript?: (id: string) => void | Promise<void>;
   projectId?: string | null;
   scriptId?: string | null;
+  scriptMeta?: ScriptBoardMeta | null;
   onEdit?: (item: ImageTextAssetItem) => void;
   onDelete?: (item: ImageTextAssetItem) => void;
   onCreateAsset?: (kind: "character" | "scene" | "prop") => void;
@@ -629,11 +631,12 @@ function BoardContent({
     case "edit":
       if (projectId && scriptId) {
         return (
-          <EditStudio
-            projectId={projectId}
-            scriptId={scriptId}
-            initialBoard={board.stats as unknown as EditTimelineData | undefined}
-            editable={manualEditEnabled}
+          <OpenCutIntegration
+            project={{
+              id: scriptId,
+              name: (scriptMeta as Record<string, unknown>)?.title as string ?? "未命名剧本",
+            }}
+            className="board-edit-studio"
           />
         );
       }
@@ -743,6 +746,7 @@ export function BoardPanel({
               onDeleteScript={isProjectMode ? onDeleteScript : undefined}
               projectId={projectId}
               scriptId={scriptId}
+              scriptMeta={scriptMeta}
               onEdit={manualEditEnabled ? setEditing : undefined}
               onDelete={manualEditEnabled ? handleDeleteAsset : undefined}
               onCreateAsset={manualEditEnabled ? setCreateAssetKind : undefined}
