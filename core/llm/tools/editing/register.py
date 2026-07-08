@@ -1,6 +1,7 @@
 """editing_agent tools 注册。"""
 
 from core.llm.tools.editing.handler import HANDLERS as EDITING_HANDLERS
+from core.llm.tools.editing.opencut_handler import OPEN_CUT_HANDLERS
 from core.llm.tools.register_helpers import register_handlers
 from core.llm.tools.registry import ToolRegistry
 
@@ -40,6 +41,18 @@ _EDITING_META: dict[str, tuple[str, str, str, str]] = {
     "list_final": ("editing_agent", "read", "edit.list_final", "列出成片资产"),
 }
 
+# OpenCut Agent 可控工具
+_OPEN_CUT_META: dict[str, tuple[str, str, str, str]] = {
+    "add_clip": ("editing_agent", "write_ad_hoc", "edit.add_clip", "添加媒体片段到时间轴"),
+    "update_clip": ("editing_agent", "write_ad_hoc", "edit.update_clip", "修改片段属性（位置、时长、变换）"),
+    "remove_clip": ("editing_agent", "write_ad_hoc", "edit.remove_clip", "删除时间轴片段"),
+    "apply_effect": ("editing_agent", "write_ad_hoc", "edit.apply_effect", "应用视觉效果"),
+    "set_keyframe": ("editing_agent", "write_ad_hoc", "edit.set_keyframe", "设置动画关键帧"),
+    "export_timeline": ("editing_agent", "write_pipeline", "edit.export_timeline", "导出成片视频"),
+    "get_export_status": ("editing_agent", "read", "edit.get_export_status", "查询导出进度"),
+}
+
 
 def register_editing_tools(registry: ToolRegistry) -> None:
     register_handlers(registry, EDITING_HANDLERS, _EDITING_META)
+    register_handlers(registry, OPEN_CUT_HANDLERS, _OPEN_CUT_META)
