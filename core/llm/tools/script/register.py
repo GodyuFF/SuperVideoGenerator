@@ -8,7 +8,7 @@ _SCRIPT_META: dict[str, tuple[str, str, str, str]] = {
     "parse_brief": ("script_agent", "write_pipeline", "script.parse_brief", "解析任务简报并通过 LLM 设计/写入剧本正文"),
     "create_plot": ("script_agent", "write_pipeline", "script.create_plot", "创建剧情文字资产"),
     "create_character": ("script_agent", "write_pipeline", "script.create_character", "创建人物共享资产"),
-    "create_scene": ("script_agent", "write_pipeline", "script.create_scene", "创建场景共享资产"),
+    "create_scene": ("script_agent", "write_pipeline", "script.create_scene", "创建空镜背景板共享资产"),
     "create_prop": ("script_agent", "write_pipeline", "script.create_prop", "创建道具共享资产"),
     "update_script": ("script_agent", "write_ad_hoc", "script.update_script", "更新剧本标题或 Markdown 正文"),
     "update_plot": ("script_agent", "write_ad_hoc", "script.update_plot", "更新剧情文字资产（需 asset_id）"),

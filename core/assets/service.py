@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.assets.image_prompt import apply_composed_prompts, finalize_image_text_content
-from core.models.entities import StyleConfig, TextAsset
+from core.models.entities import StyleConfig, TextAsset, TextAssetType
 from core.models.image_text_asset import is_image_text_asset, normalize_image_text_content
 from core.store.memory import MemoryStore
 
@@ -76,6 +76,22 @@ def finalize_text_asset_content_for_store(
 ) -> dict[str, Any]:
     """Agent 创建/更新后规范化 content 并写入 prompt。"""
     style = _project_style(store, asset.project_id)
+    if asset.type == TextAssetType.FRAME:
+        from core.assets.image_prompt import compose_frame_image_prompt
+
+        content = normalize_image_text_content(asset.type, raw_content)
+        locked = bool(content.get("prompt_locked")) and not force_recompose
+        if not locked:
+            ip, neg = compose_frame_image_prompt(
+                content, store=store, project_style=style
+            )
+            content["image_prompt"] = ip
+            if not str(content.get("negative_prompt", "")).strip() or force_recompose:
+                content["negative_prompt"] = neg
+            from core.assets.image_prompt import PROMPT_VERSION
+
+            content["prompt_version"] = PROMPT_VERSION
+        return content
     return finalize_image_text_content(
         asset.type,
         raw_content,

@@ -21,6 +21,7 @@ BOARD_KINDS = [
     "character",
     "scene",
     "prop",
+    "frame",
     "storyboard",
     "edit",
     "media",
@@ -36,6 +37,7 @@ BOARD_TITLES: dict[str, str] = {
     "character": "角色看板",
     "scene": "场景看板",
     "prop": "物品看板",
+    "frame": "画面看板",
     "storyboard": "分镜看板",
     "edit": "剪辑看板",
     "media": "媒体看板",
@@ -148,6 +150,7 @@ class BoardBuilder:
             "character": self._character_board,
             "scene": self._scene_board,
             "prop": self._prop_board,
+            "frame": self._frame_board,
             "storyboard": self._storyboard_board,
             "edit": self._edit_board,
             "media": self._media_board,
@@ -226,11 +229,13 @@ class BoardBuilder:
         )
         scene_count = sum(1 for a in assets if a.type == TextAssetType.SCENE)
         prop_count = sum(1 for a in assets if a.type == TextAssetType.PROP)
+        frame_count = sum(1 for a in assets if a.type == TextAssetType.FRAME)
         return {
             "has_content_md": bool(content_md),
             "character_count": character_count,
             "scene_count": scene_count,
             "prop_count": prop_count,
+            "frame_count": frame_count,
             "shot_count": len(vp.shots) if vp else 0,
             "media_count": len(media),
             "has_edit_timeline": timeline is not None,
@@ -564,6 +569,17 @@ class BoardBuilder:
             title=BOARD_TITLES["prop"],
             description="物品/道具设定与关联图片",
             stat_key="prop_count",
+        )
+
+    def _frame_board(self, project_id: str, script_id: str | None) -> BoardView:
+        return self._image_text_board(
+            project_id,
+            script_id,
+            TextAssetType.FRAME,
+            kind="frame",
+            title=BOARD_TITLES["frame"],
+            description="分镜画面（多参考图合成）",
+            stat_key="frame_count",
         )
 
     def _storyboard_board(self, project_id: str, script_id: str | None) -> BoardView:

@@ -32,14 +32,31 @@ def apply_agent_action(
         "action": action,
         "summary": observation[:200],
     }
-    if action in ("create_shots", "persist_plan"):
+    if action in ("create_shots", "create_frames", "persist_plan"):
         pending = ctx.work_context.get("_pending_shots")
         if isinstance(pending, list):
             structured["shot_count"] = len(pending)
+            # 返回每个镜头的名称和 ID
+            structured["shots"] = [
+                {
+                    "id": s.id,
+                    "order": s.order,
+                    "name": getattr(s, "name", "") or f"shot_{s.order}",
+                }
+                for s in pending
+            ]
         elif action == "persist_plan":
             vp = store.get_video_plan_for_script(ctx.script_id)
             if vp:
                 structured["shot_count"] = len(vp.shots)
+                structured["shots"] = [
+                    {
+                        "id": s.id,
+                        "order": s.order,
+                        "name": getattr(s, "name", "") or f"shot_{s.order}",
+                    }
+                    for s in sorted(vp.shots, key=lambda x: x.order)
+                ]
     new_outputs = [o for o in ctx.outputs if o not in outputs_before]
     if new_outputs:
         structured["output_count"] = len(new_outputs)

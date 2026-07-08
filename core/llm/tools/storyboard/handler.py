@@ -7,6 +7,7 @@ import json
 from core.llm.agent.react_core import AgentRunContext
 from core.llm.tools.result import ToolResult
 from core.llm.tools.storyboard.timeline_handler import (
+    handle_create_frames,
     handle_create_shots,
     handle_load_context_enriched,
     handle_persist_plan,
@@ -59,5 +60,6 @@ HANDLERS = {
     "get_plan": handle_get_plan,
     "load_context": handle_load_context_enriched,
     "create_shots": handle_create_shots,
+    "create_frames": handle_create_frames,
     "persist_plan": handle_persist_plan,
 }

@@ -26,6 +26,10 @@ COMPOSE_FINAL_SCHEMA: dict[str, Any] = {
             "items": build_video_plan_shot_schema(),
             "description": "legacy：镜头数组；优先使用 timeline_id",
         },
+        "skip_subtitles": {
+            "type": "boolean",
+            "description": "为 true 时导出纯画面+配音，不回填 TTS 字幕轨、不烧录字幕",
+        },
     },
     "required": ["observation"],
     "additionalProperties": True,
@@ -39,6 +43,10 @@ PLAN_EDIT_TIMELINE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "enum": ["create", "merge", "replace"],
             "description": "create=新建；merge=保留用户 clip 补缺失；replace=全量替换",
+        },
+        "skip_subtitle_enrich": {
+            "type": "boolean",
+            "description": "为 true 时跳过从 TTS subtitle_cues 自动补齐 subtitle 轨",
         },
         "tracks": EDIT_TIMELINE_TRACKS_SCHEMA,
         "video_layers": EDIT_VIDEO_LAYERS_SCHEMA,

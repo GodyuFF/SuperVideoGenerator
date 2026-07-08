@@ -19,6 +19,7 @@ interface ClipBlockProps {
   onMove: (startMs: number, endMs: number) => void;
   onDelete?: () => void;
   onKeyframeSelect?: (idx: number) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 export function ClipBlock({
@@ -31,6 +32,7 @@ export function ClipBlock({
   onMove,
   onDelete,
   onKeyframeSelect,
+  onContextMenu,
 }: ClipBlockProps) {
   const start = Number(clip.start_ms ?? 0);
   const end = Number(clip.end_ms ?? start + 1000);
@@ -46,23 +48,29 @@ export function ClipBlock({
     if (!editable) return;
     e.stopPropagation();
     e.preventDefault();
+    (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
     const lane = (e.currentTarget as HTMLElement).parentElement;
     if (!lane) return;
     const rect = lane.getBoundingClientRect();
     const origStart = start;
     const origEnd = end;
 
+    let raf = 0;
     function onMoveEvt(ev: PointerEvent) {
-      const ratio = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
-      const ms = Math.round((ratio * durationMs) / 100) * 100;
-      if (edge === "move") {
-        const len = origEnd - origStart;
-        onMove(Math.max(0, ms), Math.max(ms + 500, ms + len));
-      } else if (edge === "start") {
-        onMove(Math.min(ms, origEnd - 500), origEnd);
-      } else {
-        onMove(origStart, Math.max(origStart + 500, ms));
-      }
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const ratio = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+        const ms = Math.round((ratio * durationMs) / 100) * 100;
+        if (edge === "move") {
+          const len = origEnd - origStart;
+          onMove(Math.max(0, ms), Math.max(ms + 500, ms + len));
+        } else if (edge === "start") {
+          onMove(Math.min(ms, origEnd - 500), origEnd);
+        } else {
+          onMove(origStart, Math.max(origStart + 500, ms));
+        }
+      });
     }
     function onUp() {
       window.removeEventListener("pointermove", onMoveEvt);
@@ -80,6 +88,7 @@ export function ClipBlock({
         e.stopPropagation();
         onSelect();
       }}
+      onContextMenu={onContextMenu}
       title={`${displayLabel} · ${formatMs(start)}–${formatMs(end)}`}
     >
       {badges.length > 0 && (

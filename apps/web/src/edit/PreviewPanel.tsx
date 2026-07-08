@@ -30,6 +30,10 @@ interface PreviewPanelProps {
   durationMs: number;
   exporting: boolean;
   onExport: () => void;
+  onExportNoSubtitles?: () => void;
+  exportProgress?: { pct: number; msg: string } | null;
+  onDownloadExport?: () => void;
+  exportUrl?: string | null;
   ffmpegAvailable?: boolean;
   ffmpegHint?: string;
   selectedClip?: TrackClip | null;
@@ -44,6 +48,10 @@ export function PreviewPanel({
   durationMs,
   exporting,
   onExport,
+  onExportNoSubtitles,
+  exportProgress,
+  onDownloadExport,
+  exportUrl,
   ffmpegAvailable = true,
   ffmpegHint,
   selectedClip,
@@ -141,13 +149,23 @@ export function PreviewPanel({
       if (!ctx) return;
       const w = canvas.width;
       const h = canvas.height;
+
+      // 先画背景
       ctx.fillStyle = "#0f172a";
       ctx.fillRect(0, 0, w, h);
+
+      // 按 z_index 排序所有激活的视频层（从低到高）
       const layers = engine.activeVideoLayersAt(ms);
+      layers.sort((a, b) => (a.layer.z_index ?? 0) - (b.layer.z_index ?? 0));
+
       const redraw = () => drawFrame(ms);
+
+      // 多图层合成：低层先画，高层覆盖（PIP 效果）
       for (const { clip } of layers) {
         drawClipLayer(ctx, clip, ms, w, h, redraw);
       }
+
+      // 字幕叠加在最顶层
       const subLabel = engine.activeClipsAt(ms).subtitle?.label?.trim();
       if (subLabel) {
         const fontSize = Math.max(14, Math.round(h * 0.045));
@@ -165,6 +183,22 @@ export function PreviewPanel({
         ctx.fillRect(w / 2 - boxW / 2, textY - boxH + padY, boxW, boxH);
         ctx.fillStyle = "#ffffff";
         ctx.fillText(subLabel, w / 2, textY);
+        ctx.restore();
+      }
+
+      // 图层标识叠加（调试用，仅在多图层时显示）
+      if (layers.length > 1) {
+        ctx.save();
+        ctx.font = "9px monospace";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        for (let i = 0; i < layers.length; i++) {
+          const { layer } = layers[i];
+          ctx.fillStyle = "rgba(0,0,0,0.6)";
+          ctx.fillRect(4, 4 + i * 16, 100, 14);
+          ctx.fillStyle = "#8f8";
+          ctx.fillText(`L${layer.z_index ?? i}: ${layer.name || ""}`, 6, 5 + i * 16);
+        }
         ctx.restore();
       }
     },
@@ -216,6 +250,32 @@ export function PreviewPanel({
         >
           {exporting ? "导出中…" : "导出成片"}
         </button>
+        {onExportNoSubtitles && (
+          <button
+            type="button"
+            className="btn-secondary btn-sm"
+            disabled={exporting || !ffmpegAvailable}
+            onClick={() => void onExportNoSubtitles()}
+            title="导出纯画面+配音，不烧录字幕"
+          >
+            导出(无字幕)
+          </button>
+        )}
+        {exportUrl && onDownloadExport && (
+          <button
+            type="button"
+            className="btn-primary btn-sm"
+            onClick={() => void onDownloadExport()}
+          >
+            下载成片
+          </button>
+        )}
+        {exportProgress && (
+          <div className="edit-studio-export-progress">
+            <div className="edit-studio-export-progress-bar" style={{ width: `${exportProgress.pct}%` }} />
+            <span className="edit-studio-export-progress-text">{exportProgress.msg} ({Math.round(exportProgress.pct)}%)</span>
+          </div>
+        )}
         {!ffmpegAvailable && ffmpegHint && (
           <span className="edit-studio-ffmpeg-hint muted">{ffmpegHint}</span>
         )}

@@ -110,6 +110,8 @@ export function TransformOverlay({
       startY: e.clientY,
       base: { ...DEFAULT_TRANSFORM, ...clip!.transform, ...tr },
     };
+    // capture pointer so drag continues even if cursor leaves the overlay
+    (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
   }

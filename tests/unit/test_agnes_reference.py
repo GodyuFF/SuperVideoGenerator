@@ -1,4 +1,4 @@
-"""Agnes reference 生图客户端测试。"""
+"""Agnes reference 生图客户端测试（单图薄封装）。"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,11 +19,10 @@ def _reset_settings():
 
 
 @pytest.mark.asyncio
-async def test_reference_generation_sends_image_url_in_extra_body():
+async def test_reference_generation_sends_image_array_in_extra_body():
     settings = ImageGenSettings(
         api_key="test-key",
         reference_enabled=True,
-        reference_image_field="image_url",
     )
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -45,7 +44,7 @@ async def test_reference_generation_sends_image_url_in_extra_body():
     assert url == "https://cdn.test/out.png"
     call_kwargs = client.post.call_args.kwargs
     payload = call_kwargs["json"]
-    assert payload["extra_body"]["image_url"] == "https://images.test/ref.png"
+    assert payload["extra_body"]["image"] == ["https://images.test/ref.png"]
 
 
 @pytest.mark.asyncio

@@ -14,22 +14,57 @@ from core.llm.tools.image.errors import (
     build_image_gen_failure_analysis,
     format_image_gen_abort_message,
 )
+from core.assets.image_prompt import compose_base_image_prompt, compose_variant_image_prompt
 from core.llm.tools.image.agnes_client import (
     AgnesImageGenerationError,
     generate_image_with_reference_async,
+    generate_images_with_references_async,
     generate_text_to_image_async,
+)
+from core.llm.tools.image.sd_client import (
+    SdImageGenerationError,
+    download_reference_as_base64,
+    sd_img2img,
+    sd_txt2img,
+)
+from core.llm.tools.image.bailian_client import (
+    BailianImageGenerationError,
+    bailian_img2img,
+    bailian_txt2img,
 )
 from core.llm.tools.image.reference_url import resolve_reference_url_for_media
 from core.llm.tools.image.variants import collect_variant_generation_items
+from core.llm.tools.image.frames import collect_frame_generation_items
 from core.llm.tools.image.settings import (
     ImageGenSettings,
     get_image_gen_settings,
     is_image_gen_available,
 )
-from core.models.image_text_asset import is_image_text_asset, normalize_image_text_content
+from core.models.image_text_asset import (
+    ImageVariant,
+    find_variant as find_image_variant,
+    get_base_variant,
+    is_image_text_asset,
+    normalize_image_text_content,
+)
 from core.store.memory import MemoryStore
 
 IMAGE_GEN_MAX_ATTEMPTS = 3
+
+
+def _recompose_prompt_in_english(
+    store: MemoryStore,
+    item: dict[str, Any],
+) -> str:
+    """当使用本地 SD 时，重新组装纯英文提示词。
+
+    委托给 sd_prompt_en.recompose_prompt_in_english()，
+    该函数将中文 trait 标签、trait 值、颜色词等转为英文，
+    移除无法翻译的中文内容，添加 SD 质量关键词。
+    """
+    from core.llm.tools.image.sd_prompt_en import recompose_prompt_in_english as _recompose
+
+    return _recompose(store, item)
 
 
 def _normalize_generation_item(
@@ -66,8 +101,14 @@ def _normalize_generation_item(
         out["variant_id"] = variant_id
         out["variant_kind"] = str(item.get("variant_kind", "")).strip()
     ref_mid = str(item.get("reference_media_id", "")).strip()
-    if ref_mid:
+    ref_mids = item.get("reference_media_ids")
+    if isinstance(ref_mids, list) and ref_mids:
+        out["reference_media_ids"] = [str(m).strip() for m in ref_mids if str(m).strip()]
+    elif ref_mid:
         out["reference_media_id"] = ref_mid
+    asset_type = str(item.get("asset_type", "")).strip()
+    if asset_type:
+        out["asset_type"] = asset_type
     return out
 
 
@@ -135,9 +176,13 @@ def collect_generation_items(
                 derivs = [i for i in collected if i.get("reference_media_id")]
                 return bases + derivs
 
-    return collect_variant_generation_items(
+    element_items = collect_variant_generation_items(
         store, script_id, asset_filter_ids=filter_ids if filter_ids else None
     )
+    frame_items = collect_frame_generation_items(
+        store, script_id, asset_filter_ids=filter_ids if filter_ids else None
+    )
+    return element_items + frame_items
 
 
 def _is_skippable_url(url: str) -> bool:
@@ -232,10 +277,78 @@ async def _generate_one_item(
             return result, None
 
         last_error = ""
+        ref_mids = item.get("reference_media_ids")
         ref_mid = str(item.get("reference_media_id", "")).strip()
+        is_sd = settings.provider == "local_sd"
+        is_bailian = settings.provider == "bailian"
+
+        # SD 生图时使用英文 trait 标签重新组装 prompt，提升生图质量
+        image_prompt = item["image_prompt"]
+        if is_sd:
+            en_prompt = _recompose_prompt_in_english(store, item)
+            if en_prompt:
+                image_prompt = en_prompt
+
         for attempt in range(1, IMAGE_GEN_MAX_ATTEMPTS + 1):
             try:
-                if ref_mid:
+                if is_bailian and isinstance(ref_mids, list) and ref_mids:
+                    # 百炼多参考图融合合成（frame 画面生成）
+                    ref_urls = [
+                        resolve_reference_url_for_media(store, str(m))
+                        for m in ref_mids
+                    ]
+                    image_url = await bailian_img2img(
+                        image_prompt,
+                        ref_urls,
+                        settings=settings,
+                    )
+                elif is_bailian and ref_mid:
+                    ref_url = resolve_reference_url_for_media(store, ref_mid)
+                    image_url = await bailian_img2img(
+                        image_prompt,
+                        [ref_url],
+                        settings=settings,
+                    )
+                elif is_bailian:
+                    # 百炼纯文生图
+                    image_url = await bailian_txt2img(
+                        image_prompt,
+                        settings=settings,
+                    )
+                elif is_sd and isinstance(ref_mids, list) and ref_mids:
+                    # SD 多参考图：取第一张作为 init_image
+                    ref_url = resolve_reference_url_for_media(store, str(ref_mids[0]))
+                    init_b64 = await download_reference_as_base64(ref_url)
+                    image_url = await sd_img2img(
+                        image_prompt,
+                        init_b64,
+                        settings=settings,
+                    )
+                elif is_sd and ref_mid:
+                    ref_url = resolve_reference_url_for_media(store, ref_mid)
+                    init_b64 = await download_reference_as_base64(ref_url)
+                    image_url = await sd_img2img(
+                        image_prompt,
+                        init_b64,
+                        settings=settings,
+                    )
+                elif is_sd:
+                    # SD 纯文生图
+                    image_url = await sd_txt2img(
+                        image_prompt,
+                        settings=settings,
+                    )
+                elif isinstance(ref_mids, list) and ref_mids:
+                    ref_urls = [
+                        resolve_reference_url_for_media(store, str(m))
+                        for m in ref_mids
+                    ]
+                    image_url = await generate_images_with_references_async(
+                        item["image_prompt"],
+                        ref_urls,
+                        settings=settings,
+                    )
+                elif ref_mid:
                     ref_url = resolve_reference_url_for_media(store, ref_mid)
                     image_url = await generate_image_with_reference_async(
                         item["image_prompt"],
@@ -246,7 +359,7 @@ async def _generate_one_item(
                     image_url = await generate_text_to_image_async(
                         item["image_prompt"], settings=settings
                     )
-            except AgnesImageGenerationError as e:
+            except (AgnesImageGenerationError, SdImageGenerationError, BailianImageGenerationError) as e:
                 last_error = str(e)
                 if attempt < IMAGE_GEN_MAX_ATTEMPTS:
                     await _emit_image_gen_progress(
@@ -329,8 +442,20 @@ async def run_concurrent_image_generation(
         return args, []
 
     settings = get_image_gen_settings()
-    base_items = [i for i in items if i.get("variant_kind") == "base" or not i.get("reference_media_id")]
-    deriv_items = [i for i in items if i.get("reference_media_id") and i.get("variant_kind") != "base"]
+    frame_items = [i for i in items if i.get("reference_media_ids")]
+    base_items = [
+        i
+        for i in items
+        if i.get("variant_kind") == "base"
+        or (not i.get("reference_media_id") and not i.get("reference_media_ids"))
+    ]
+    deriv_items = [
+        i
+        for i in items
+        if i.get("reference_media_id")
+        and not i.get("reference_media_ids")
+        and i.get("variant_kind") != "base"
+    ]
 
     generated: list[dict[str, Any]] = []
     failures: list[ImageGenFailureItem] = []
@@ -364,6 +489,9 @@ async def run_concurrent_image_generation(
     if deriv_items and not failures:
         check_cancelled(ctx.script_id)
         await _run_batch(deriv_items, 1)
+    if frame_items and not failures:
+        check_cancelled(ctx.script_id)
+        await _run_batch(frame_items, 1)
 
     total = len(items)
 

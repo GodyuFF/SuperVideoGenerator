@@ -9,7 +9,7 @@ import { SkillPicker } from "../components/SkillPicker";
 import { PlanPanel } from "../components/PlanPanel";
 import { BoardPanel } from "../components/board/BoardPanel";
 import { ProjectSwitcher } from "../components/ProjectSwitcher";
-import { MASTER_AGENT_NAME, styleModeLabel, type StyleMode } from "../constants";
+import { MASTER_AGENT_NAME, styleModeLabel, type StyleMode, imageTextPresetLabel, comicPresetLabel } from "../constants";
 import { useBoardData } from "../hooks/useBoardData";
 import { formatApiError, useProject, useWebSocket } from "../hooks/useApi";
 import {
@@ -902,6 +902,7 @@ export function Workbench({
       }
       if (e.type === "react_started" || e.type === "execution_started") {
         setScriptStatus("executing");
+        setIsRunning(true);
       }
       if (e.type === "step_started") {
         setPlanView((prev) =>
@@ -964,11 +965,18 @@ export function Workbench({
         }
         if (e.type === "execution_failed") {
           setScriptStatus("failed");
+          setIsRunning(false);
         }
         if (e.type === "react_finished" && e.status) {
           setScriptStatus(String(e.status));
         }
         refreshWorkspace();
+      }
+
+      // image_gen 可能抛出异常终止执行，但不等同于 execution_failed 事件
+      if (e.type === "step_failed" && String(e.step_id || "")) {
+        // 步骤失败不一定导致整个执行终止，但 isRunning 应保持
+        // 仅 step 失败明确表示生图中断时，仍然维持 isRunning 以便用户手动中止
       }
     });
   }, [
@@ -992,7 +1000,9 @@ export function Workbench({
   }
 
   async function abortExecution() {
-    if (!projectId || !scriptId || !isRunning || isAborting) return;
+    // 允许中止：isRunning 或 scriptStatus === "executing"（生图中断但 isRunning 仍为 true）
+    const isActive = isRunning || scriptStatus === "executing";
+    if (!projectId || !scriptId || !isActive || isAborting) return;
     chatAbortRef.current?.abort();
     try {
       const r = await fetch(
@@ -1002,8 +1012,12 @@ export function Workbench({
       if (!r.ok && r.status !== 409) {
         const err = (await r.json().catch(() => null)) as Record<string, unknown> | null;
         appendSystemMessage(`中止失败（${formatApiError(err, r.statusText)}）`);
+        // 即使 API 返回错误，也允许本地恢复状态
+        setIsRunning(false);
+        setScriptStatus("draft");
       } else if (r.status === 409) {
         setIsRunning(false);
+        setScriptStatus("draft");
         clearAborting();
         appendSystemMessage("当前没有正在执行的主编排。");
       } else {
@@ -1011,7 +1025,11 @@ export function Workbench({
         appendSystemMessage("正在中止执行…");
       }
     } catch {
-      appendSystemMessage("中止请求失败，请检查网络。");
+      // 网络错误时允许本地恢复
+      setIsRunning(false);
+      setScriptStatus("draft");
+      clearAborting();
+      appendSystemMessage("中止请求失败，已恢复对话状态。");
     }
   }
 
@@ -1203,6 +1221,17 @@ export function Workbench({
               <span className="status-badge style-locked">
                 风格：{styleModeLabel(styleMode)}（已锁定）
               </span>
+            )}
+            {/* 显示 AI 配置中的图文子风格和漫画画风 */}
+            {isScriptMode && aiConfig?.image?.pipeline && (
+              <>
+                <span className="status-badge muted-badge">
+                  图文：{imageTextPresetLabel(aiConfig.image.pipeline.image_text_preset)}
+                </span>
+                <span className="status-badge muted-badge">
+                  漫画：{comicPresetLabel(aiConfig.image.pipeline.comic_preset)}
+                </span>
+              </>
             )}
             {awaitingConfirmation && (
               <span className="status-badge awaiting">等待您确认剧本结构…</span>
@@ -1426,21 +1455,21 @@ export function Workbench({
             <button
               type="button"
               onClick={
-                isRunning
+                (isRunning || scriptStatus === "executing")
                   ? () => void abortExecution()
                   : needsAiConfig
                     ? promptConfigureAi
                     : () => void sendChat()
               }
               disabled={
-                isRunning
+                (isRunning || scriptStatus === "executing")
                   ? false
                   : inputBlocked || llmLoading || (!needsAiConfig && !input.trim())
               }
             >
               {awaitingConfirmation
                 ? "等待确认…"
-                : isRunning
+                : (isRunning || scriptStatus === "executing")
                   ? "中止执行"
                   : needsAiConfig
                     ? "配置 AI"

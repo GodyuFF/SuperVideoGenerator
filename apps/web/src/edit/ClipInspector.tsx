@@ -48,6 +48,22 @@ function patchKeyframeField(
   return next.sort((a, b) => (a.time_ms ?? 0) - (b.time_ms ?? 0));
 }
 
+function colorPicker(
+  value: string,
+  disabled: boolean,
+  onChange: (v: string) => void
+) {
+  return (
+    <input
+      type="color"
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ width: 32, height: 24, padding: 0, border: "1px solid #444", borderRadius: 4, cursor: "pointer" }}
+    />
+  );
+}
+
 export function ClipInspector({
   clip,
   capabilities,
@@ -210,6 +226,8 @@ export function ClipInspector({
                 ))}
               </select>
             </label>
+          </div>
+          <div className="edit-studio-inspector-row">
             <label>
               转场入
               <select
@@ -231,24 +249,28 @@ export function ClipInspector({
                 ))}
               </select>
             </label>
-            <label>
-              入时长 (ms)
-              <input
-                type="number"
-                min={0}
-                max={maxTransitionMs}
-                value={clip.transition_in?.duration_ms ?? 0}
-                disabled={!editable}
-                onChange={(e) =>
-                  onChange({
-                    transition_in: {
-                      type: clip.transition_in?.type ?? "cut",
-                      duration_ms: Number(e.target.value),
-                    },
-                  })
-                }
-              />
-            </label>
+            {clip.transition_in?.type && clip.transition_in.type !== "cut" && (
+              <label>
+                入时长 (ms)
+                <input
+                  type="number"
+                  min={0}
+                  max={maxTransitionMs}
+                  value={clip.transition_in?.duration_ms ?? 0}
+                  disabled={!editable}
+                  onChange={(e) =>
+                    onChange({
+                      transition_in: {
+                        type: clip.transition_in?.type ?? "cut",
+                        duration_ms: Number(e.target.value),
+                      },
+                    })
+                  }
+                />
+              </label>
+            )}
+          </div>
+          <div className="edit-studio-inspector-row">
             <label>
               转场出
               <select
@@ -270,24 +292,28 @@ export function ClipInspector({
                 ))}
               </select>
             </label>
-            <label>
-              出时长 (ms)
-              <input
-                type="number"
-                min={0}
-                max={maxTransitionMs}
-                value={clip.transition_out?.duration_ms ?? 0}
-                disabled={!editable}
-                onChange={(e) =>
-                  onChange({
-                    transition_out: {
-                      type: clip.transition_out?.type ?? "cut",
-                      duration_ms: Number(e.target.value),
-                    },
-                  })
-                }
-              />
-            </label>
+            {clip.transition_out?.type && clip.transition_out.type !== "cut" && (
+              <label>
+                出时长 (ms)
+                <input
+                  type="number"
+                  min={0}
+                  max={maxTransitionMs}
+                  value={clip.transition_out?.duration_ms ?? 0}
+                  disabled={!editable}
+                  onChange={(e) =>
+                    onChange({
+                      transition_out: {
+                        type: clip.transition_out?.type ?? "cut",
+                        duration_ms: Number(e.target.value),
+                      },
+                    })
+                  }
+                />
+              </label>
+            )}
+          </div>
+          <div className="edit-studio-inspector-row">
             <label>
               背景
               <select
@@ -310,6 +336,22 @@ export function ClipInspector({
                 ))}
               </select>
             </label>
+            {clip.background?.type === "solid" && (
+              <label>
+                背景色{" "}
+                {colorPicker(
+                  clip.background?.color ?? "#0f172a",
+                  !editable,
+                  (v) =>
+                    onChange({
+                      background: {
+                        type: clip.background?.type ?? "solid",
+                        color: v,
+                      },
+                    })
+                )}
+              </label>
+            )}
           </div>
           <div className="edit-studio-keyframes">
             <strong>关键帧</strong>

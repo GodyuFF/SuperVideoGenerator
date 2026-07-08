@@ -242,6 +242,18 @@ Schema：[`output_schemas.py`](../core/llm/tools/output_schemas.py) `load_edit_c
 | `script.content_md` | 剧本正文摘要（截断） |
 | `edit_timeline` | 已有剪辑时间轴 revision、user_edited、shot_gaps |
 
+### 4.3 空镜（scene）三层约束
+
+**定义**：`scene` = 空镜背景板（establishing plate / matte backdrop），仅作 frame 图生图首参考图；不承载叙事、不含人物/动物/独立道具主体。
+
+| 层级 | 位置 | 作用 |
+|------|------|------|
+| Agent 填表 | `script_agent` `role.default.md` / `role.dynamic_image.md` + `image_agent` 动态图文提示词 | 禁止人物/情节/可携带道具写入 `create_scene` content |
+| Schema 描述 | `build_scene_content_schema()`（`schema_builders.py`） | `description` / `key_objects` / `foreground` 字段描述强调背景板语义 |
+| 组装生图 | `core/assets/image_prompt.py`（`PROMPT_VERSION=2`） | positive 前缀 `environment background plate…`；扩展 `_SCENE_NEGATIVE`；`key_objects` trait 标注「非 prop 资产」 |
+
+**允许**：空间结构、光线、天气、材质、色调、环境固定陈设。**禁止**：人物/动物、可识别独立道具主体、情节动作、「行人/观众」类描写。可携带物品须 `create_prop`。
+
 ## 5. Profile 解析优先级
 
 `core/llm/agent/prompt_resolver.py`：
@@ -316,9 +328,13 @@ Schema：[`output_schemas.py`](../core/llm/tools/output_schemas.py) `load_edit_c
 | 2026-07-05 | 图文资产 **image_variants[]**：设定 base 主形象 + 表情/姿态/动作变体；reference 生图；分镜 `variant_refs`；看板变体列表 |
 | 2026-06-29 | Edit Studio：capabilities 迁至 `core/edit/capabilities.json`；PATCH edit-timeline；FFmpeg 默认导出；editing_agent `plan_edit_timeline.mode` merge |
 | 2026-07-06 | **编排状态末轮注入**：`## 当前编排状态` / 行动上下文迁至 messages 末条 user（`turn_user`）；system 仅静态协议+角色；`extract_react_state_json` 优先解析末条 user |
+| 2026-07-07 | **画面 frame + Agnes 2.1 图生图**：`TextAssetType.FRAME`；storyboard `create_frames`；`generate_images_with_references_async`（`extra_body.image[]`）；时间轴 `resolve_shot_image_ref` 优先 frame、禁止 character/prop 裸图；image_agent 两阶段生图 |
 | 2026-07-07 | **空镜 + 绿幕抠图**：scene 生图 prompt 强制无人物空镜；character/prop 绿幕 `#00FF00` 生图 + `chroma_key.py` 抠透明 PNG；看板 scene 展示为「空镜」 |
+| 2026-07-07 | **空镜背景板语义强化**：scene = establishing plate / matte backdrop；script/image Agent 提示词 + `build_scene_content_schema` + `image_prompt.py`（`PROMPT_VERSION=2`）三层约束；`key_objects` 仅环境固定陈设 |
 | 2026-07-07 | **剪辑图层摘要**：`build_timeline_layer_summary` 注入 load/plan/get/validate；compose_final 失败附【图层摘要】；FFmpeg 同层重叠 preflight |
 | 2026-07-07 | **新对话重新编排**：`completed_actions` 仅记录本对话委派；`pipeline_progress.inferred_completed_steps` 为 Store 快照，启动时不再写入 completed；新对话 goal 取 user_message |
+| 2026-07-07 | **Windows 字幕导出 + 编排修复**：ASS 路径转义/drawtext 回退；`validate_edit_assets` 专用 output schema；`plan_edit_timeline.skip_subtitle_enrich`；`pipeline_progress` frame 缺图时不推断 image_gen 完成；LLM 日志区分 estimated/actual completion tokens |
+| 2026-07-07 | **ASS 路径修复 + skip_subtitles**：Windows 去掉滤镜路径单引号（修复 FFmpeg 解析失败）；`compose_final.skip_subtitles` 跳过字幕回填与烧录 |
 | 2026-07-06 | **Remotion 移除**：成片仅 FFmpeg；`export` 配置区替代 `remotion`；全子 Agent `return_to_master`；主编排 `agents_catalog.md` + 动态 `next_actions`；`StepStatus.PAUSED` |
 | 2026-07-05 | Remotion 直连（已废弃，2026-07-06 移除） |
 | 2026-07-05 | 剪辑计划稿迁移至 `editing_agent`（TTS 后 `plan_edit_timeline`）；`EditClip` 扩展运镜/转场/背景/source_refs；`asset_resolver` 校验 + 主编排 `EditComposeMissingAssetsError` 缺失闭环 |

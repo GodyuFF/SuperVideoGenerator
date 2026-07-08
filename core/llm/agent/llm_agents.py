@@ -17,6 +17,9 @@ class StoryboardAgent(ReActAgent):
     name = "storyboard_agent"
     display_name = "分镜 Agent"
 
+    def get_action_pipeline(self) -> list[str]:
+        return ["load_context", "create_shots", "create_frames", "persist_plan"]
+
 
 class VideoAgent(ReActAgent):
     name = "video_agent"

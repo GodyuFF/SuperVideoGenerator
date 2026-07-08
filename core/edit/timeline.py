@@ -634,32 +634,30 @@ def compile_timeline_from_shots(
 def resolve_shot_image_ref(store: MemoryStore, shot: VideoPlanShot) -> str | None:
     refs = shot.asset_refs or {}
     variant_refs = shot.variant_refs or {}
-    for key in ("image", "character", "scene", "prop"):
-        ids = refs.get(key) or []
-        for ref_id in ids:
-            ref_str = str(ref_id)
-            media = store.media_assets.get(ref_str)
-            if (
-                media
-                and media.type == MediaAssetType.IMAGE
-                and media.url
-                and not str(media.url).startswith("placeholder:")
-            ):
-                return media.id
-            text = store.get_text_asset(ref_str)
-            if text:
-                vid = variant_refs.get(ref_str, "")
-                if vid:
-                    from core.models.image_text_asset import (
-                        normalize_image_text_content,
-                        resolve_variant_media_id,
-                    )
 
-                    content = normalize_image_text_content(text.type, text.content)
-                    mid = resolve_variant_media_id(content, vid)
-                    if mid:
-                        return mid
-            if text and text.primary_media_id:
+    def _resolve_ref(ref_str: str) -> str | None:
+        media = store.media_assets.get(ref_str)
+        if (
+            media
+            and media.type == MediaAssetType.IMAGE
+            and media.url
+            and not str(media.url).startswith("placeholder:")
+        ):
+            return media.id
+        text = store.get_text_asset(ref_str)
+        if text:
+            vid = variant_refs.get(ref_str, "")
+            if vid:
+                from core.models.image_text_asset import (
+                    normalize_image_text_content,
+                    resolve_variant_media_id,
+                )
+
+                content = normalize_image_text_content(text.type, text.content)
+                mid = resolve_variant_media_id(content, vid)
+                if mid:
+                    return mid
+            if text.primary_media_id:
                 return text.primary_media_id
             script_ids = {text.script_id} if text else set()
             for script in store.scripts.values():
@@ -672,6 +670,21 @@ def resolve_shot_image_ref(store: MemoryStore, shot: VideoPlanShot) -> str | Non
                         and media.url
                     ):
                         return media.id
+        return None
+
+    for key in ("frame", "image"):
+        for ref_id in refs.get(key) or []:
+            mid = _resolve_ref(str(ref_id))
+            if mid:
+                return mid
+
+    # 纯空镜镜头：仅 scene 且无 frame 时允许 scene 背景板
+    if not refs.get("frame"):
+        for ref_id in refs.get("scene") or []:
+            mid = _resolve_ref(str(ref_id))
+            if mid:
+                return mid
+
     return None
 
 
@@ -679,6 +692,8 @@ def enrich_timeline_audio_from_store(
     store: MemoryStore,
     timeline: EditTimeline,
     plan: VideoPlan | None = None,
+    *,
+    skip_subtitle_enrich: bool = False,
 ) -> EditTimeline:
     """从 Store TTS 与 VideoPlan 补齐缺失的 audio/subtitle 轨（不覆盖 user_locked clip）。"""
     if plan is None:
@@ -700,6 +715,8 @@ def enrich_timeline_audio_from_store(
 
     tracks = dict(timeline.tracks)
     for track_name in ("audio", "subtitle"):
+        if skip_subtitle_enrich and track_name == "subtitle":
+            continue
         existing = list(tracks.get(track_name, []))
         ref_clips = reference.tracks.get(track_name, [])
         if not existing and ref_clips:
@@ -745,12 +762,17 @@ def finalize_merged_timeline(
     store: MemoryStore,
     timeline: EditTimeline,
     plan: VideoPlan | None,
+    *,
+    skip_subtitle_enrich: bool = False,
 ) -> EditTimeline:
     """Agent merge / 导出前：补齐 audio/subtitle 并归一化运镜。"""
     from core.edit.subtitle_align import enrich_subtitles_from_audio
 
-    timeline = enrich_timeline_audio_from_store(store, timeline, plan)
-    timeline = enrich_subtitles_from_audio(store, timeline, plan)
+    timeline = enrich_timeline_audio_from_store(
+        store, timeline, plan, skip_subtitle_enrich=skip_subtitle_enrich
+    )
+    if not skip_subtitle_enrich:
+        timeline = enrich_subtitles_from_audio(store, timeline, plan)
     return normalize_timeline_motions(timeline)
 
 
@@ -764,6 +786,7 @@ def merge_timeline_with_fallback(
     existing: EditTimeline | None = None,
     mode: str = "create",
     llm_video_layers: list[Any] | None = None,
+    skip_subtitle_enrich: bool = False,
 ) -> EditTimeline:
     """优先使用 LLM 轨道；空轨时用 shots 编译补齐；支持 merge/replace。"""
     normalized = normalize_tracks(llm_tracks)
@@ -789,6 +812,7 @@ def merge_timeline_with_fallback(
                     agent_video_layers=video_layers,
                 ),
                 plan,
+                skip_subtitle_enrich=skip_subtitle_enrich,
             )
         duration = max(
             (c.end_ms for clips in normalized.values() for c in clips),
@@ -806,6 +830,7 @@ def merge_timeline_with_fallback(
                 updated_at=_timeline_now(),
             ),
             plan,
+            skip_subtitle_enrich=skip_subtitle_enrich,
         )
     if plan and plan.shots:
         return finalize_merged_timeline(
@@ -814,6 +839,7 @@ def merge_timeline_with_fallback(
                 store, script_id=script_id, plan=plan, tts_by_shot=tts_by_shot
             ),
             plan,
+            skip_subtitle_enrich=skip_subtitle_enrich,
         )
     return finalize_merged_timeline(
         store,
@@ -824,6 +850,7 @@ def merge_timeline_with_fallback(
             tracks=normalized,
         ),
         plan,
+        skip_subtitle_enrich=skip_subtitle_enrich,
     )
 
 

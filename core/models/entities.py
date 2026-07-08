@@ -79,6 +79,7 @@ class TextAssetType(str, Enum):
     CHARACTER = "character"  # 人物
     PROP = "prop"  # 道具
     SCENE = "scene"  # 场景
+    FRAME = "frame"  # 画面（分镜合成图）
     PLOT = "plot"  # 剧情段落
     NARRATION = "narration"  # 旁白/配音文案
 

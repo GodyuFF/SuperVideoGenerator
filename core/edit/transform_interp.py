@@ -79,6 +79,14 @@ def default_transform() -> EditClipTransform:
     return EditClipTransform()
 
 
+def snap_even_dim(n: int) -> int:
+    """将尺寸规范为 ≥2 的偶数（yuv420p / FFmpeg pad 兼容）。"""
+    n = max(2, int(n))
+    if n % 2:
+        n += 1
+    return n
+
+
 def interpolate_transform(clip: EditClip, local_ms: int) -> ResolvedTransform:
     """按 clip 内相对时间插值 transform（含 keyframes）。"""
     base = clip.transform or default_transform()
@@ -92,7 +100,8 @@ def interpolate_transform(clip: EditClip, local_ms: int) -> ResolvedTransform:
     rotation = _interp_optional(base.rotation, before, after, "rotation", t)
     scale = _interp_optional(1.0, before, after, "scale", t)
 
-    if clip.motion_detail:
+    motion = (clip.motion or "ken_burns_in").strip().lower()
+    if clip.motion_detail and motion != "static":
         clip_duration = max(clip.end_ms - clip.start_ms, 1)
         progress = min(1.0, max(0.0, local_ms / clip_duration))
         md = clip.motion_detail
@@ -118,8 +127,8 @@ def transform_to_overlay_pixels(
     canvas_height: int,
 ) -> dict[str, int]:
     """将归一化 transform 转为 FFmpeg overlay 像素参数。"""
-    w = max(1, int(transform.width * canvas_width * transform.scale))
-    h = max(1, int(transform.height * canvas_height * transform.scale))
+    w = snap_even_dim(int(transform.width * canvas_width * transform.scale))
+    h = snap_even_dim(int(transform.height * canvas_height * transform.scale))
     x = int(transform.x * canvas_width - w / 2)
     y = int(transform.y * canvas_height - h / 2)
     return {"x": x, "y": y, "w": w, "h": h}
@@ -139,7 +148,7 @@ def build_scaled_video_filter(
     )
     w, h = pixels["w"], pixels["h"]
     parts = [
-        f"scale={w}:{h}:force_original_aspect_ratio=decrease",
+        f"scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2",
         f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black@0",
     ]
     if abs(transform.rotation) > 0.01:

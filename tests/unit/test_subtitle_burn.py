@@ -7,8 +7,11 @@ import pytest
 from core.edit.export_settings import ExportSettings
 from core.edit.subtitle_burn import (
     _escape_ass_text,
+    _ffmpeg_path_arg,
     _ms_to_ass_time,
+    build_ass_vf_filter,
     build_ass_from_subtitle_clips,
+    build_drawtext_vf_filters,
     write_ass_file,
 )
 from core.models.entities import EditClip
@@ -67,3 +70,34 @@ def test_write_ass_file_writes_utf8_bom(tmp_path: Path):
     raw = path.read_bytes()
     assert raw.startswith(b"\xef\xbb\xbf")
     assert "旁白测试" in path.read_text(encoding="utf-8-sig")
+
+
+def test_ffmpeg_path_arg_escapes_windows_drive(tmp_path: Path):
+    ass_path = tmp_path / "subs.ass"
+    ass_path.write_text("test", encoding="utf-8")
+    arg = _ffmpeg_path_arg(ass_path)
+    assert not arg.startswith("'")
+    assert not arg.endswith("'")
+    assert r"\:" in arg
+    assert "subs.ass" in arg
+
+
+def test_build_ass_vf_filter_includes_escaped_paths(tmp_path: Path):
+    ass_path = tmp_path / "subs.ass"
+    fonts_dir = tmp_path / "fonts"
+    fonts_dir.mkdir()
+    vf = build_ass_vf_filter(ass_path=ass_path, fonts_dir=fonts_dir)
+    assert vf.startswith("ass=")
+    assert ":fontsdir=" in vf
+    assert "'" not in vf
+
+
+def test_build_drawtext_vf_filters():
+    clips = [
+        EditClip(track="subtitle", start_ms=0, end_ms=2000, label="你好"),
+    ]
+    filters = build_drawtext_vf_filters(clips, width=1920, height=1080, font_name="TestFont")
+    assert len(filters) == 1
+    assert "drawtext=" in filters[0]
+    assert "TestFont" in filters[0]
+    assert "enable='between(t," in filters[0]

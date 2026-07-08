@@ -159,7 +159,7 @@ Project（项目）
 ├── SharedAssetPool（共享资产池）
 │   ├── character（人物）    ← 项目级共享
 │   ├── prop（道具）         ← 项目级共享
-│   └── scene（空镜）        ← 项目级共享；生图为无人物环境镜头
+│   └── scene（空镜）        ← 项目级共享；生图为无人物环境背景板，供 frame 合成
 └── Script × N（剧本/章节，粒度用户确认）
     ├── plot / narration（剧情、旁白）     ← 剧本私有
     ├── VoiceRoleAsset（声音角色）         ← 关联人物或旁白
@@ -250,7 +250,7 @@ interface TextAsset {
 | scene 扩展 | 原 6 字段 + `architecture_style`, `key_objects`, `foreground`, `background`, `camera_angle`, `depth_of_field`, `color_tone` |
 | prop 扩展 | 原 5 字段 + `shape`, `color`, `texture`, `brand_style`, `visual_details` |
 | `image_variants[]` | 多图变体：`kind`（base/expression/pose/action…）、`label`、`meaning`、`variant_prompt`、`media_id`；`description` 为设定主形象，衍生变体以 base 为 reference 生图 |
-| 生图策略 | **scene**：空镜，无人物主体；**character/prop**：绿幕 `#00FF00` 生图后 FFmpeg colorkey 抠透明 PNG（`core/assets/chroma_key.py`） |
+| 生图策略 | **scene**：空镜背景板（establishing plate），无人物/动物/独立道具主体；`key_objects` 仅环境固定陈设（非 prop 资产）；**character/prop**：绿幕 `#00FF00` 生图后 FFmpeg colorkey 抠透明 PNG（`core/assets/chroma_key.py`） |
 
 旧键 `appearance` 加载时合并入 `description`。图片仍通过 `MediaAsset` + `generates` 关联；`primary_media_id` 固定指向 base 变体 media。
 
@@ -279,7 +279,7 @@ interface TextAsset {
 | # | 配置页 | 主要字段 |
 |---|--------|----------|
 | 1 | **LLM 模型配置** | provider、model、apiKeyRef、temperature、maxTokens |
-| 2 | **AI 生图模型配置** | provider（默认 `agnes`）、model（`agnes-image-2.0-flash`）、apiKey（`SVG_IMAGE_GEN_API_KEY` / `AGNES_API_KEY`）、defaultSize（`1024x768`） |
+| 2 | **AI 生图模型配置** | provider（默认 `agnes`）、model（`agnes-image-2.1-flash`）、apiKey（`SVG_IMAGE_GEN_API_KEY` / `AGNES_API_KEY`）、defaultSize（`1024x768`）；图生图 `img2img_model` 默认同 2.1 |
 | 3 | **AI 视频模型配置** | enabled、provider、model、maxDurationSec、supportedModes（图生视频/首尾帧）、resolution |
 | 4 | **TTS 模型配置** | provider、model、defaultLanguage、sampleRate |
 | 5 | **视频风格配置** | mode（动态图片/视频生成）、aspectRatio、transition、watermarkFreeImagesOnly、bgmEnabled |
@@ -363,7 +363,9 @@ interface ProjectConfig {
 | 阶段 | 行为 |
 |------|------|
 | 图片完善 | `image_agent`：`generate_images` 或 `search_images`；**仅搜图**后 `sync_text_from_image` 白名单 auto-patch（`color_palette` 等），生图产出无需 sync；`description/summary` 重大变更需 `apply_major_changes` 或 `update_*` |
-| 分镜 | `storyboard_agent`：`load_context`（含 linked images）→ `create_shots` → `persist_plan`（仅 VideoPlan，不生成 EditTimeline） |
+| 配图 | `image_agent` 两阶段（单次委派）：`character/prop/scene` 文生图 → `frame` 多参考图生图（分镜创建 frame 后） |
+| 分镜 | `storyboard_agent`：`load_context` → `create_shots` → `create_frames` → `persist_plan` |
+| 主编排顺序 | `script_design` → `storyboard` → `image_gen` → `tts_gen` → `edit_compose` |
 | 剪辑计划 + 成片 | **TTS 之后** `editing_agent`：`load_edit_context` → `plan_edit_timeline` → `validate_edit_assets` →（缺失则 `report_missing_assets` 上报主编排）→ `gather_media` → `compose_final`；主编排可据缺失项重委派 `script_design` / `image_gen` / `tts_gen` / `storyboard` |
 | 剪辑看板 | 看板 Tab `edit`：只读多轨时间轴（含 `edit_description`、转场、背景、source_refs 摘要） |
 | 成片 | **dynamic_image/comic**：`EditTimeline` → FFmpeg `compose_final`（运镜/转场/背景/字幕/配音）；**ai_video**：`video_agent.generate_from_timeline` → `editing_agent` 混流 |
@@ -678,7 +680,7 @@ interface ReuseDecision {
 | 模式 | 层级 1 | 层级 2 |
 |------|--------|--------|
 | **项目级** | `overview` 整体看板、`knowledge` 项目共享图文 | 无 |
-| **剧本级** | `script_details` 单剧本详情 | `script` / `character` / `scene` / `prop` / `storyboard` / `edit` / `media` / `pipeline` |
+| **剧本级** | `script_details` 单剧本详情 | `script` / `character` / `scene` / `prop` / `frame` / `storyboard` / `edit` / `media` / `pipeline` |
 
 ### 10.5 剪辑工作室（edit）
 

@@ -272,7 +272,7 @@ def _scripted_action_json(action: str) -> dict[str, Any]:
                 summary="都市黄昏",
                 description=(
                     "现代都市黄昏街道，霓虹初上，湿润路面反射灯光，"
-                    "行人稀疏，远处高楼轮廓清晰，氛围静谧。"
+                    "两侧商铺立面与玻璃幕墙，远处高楼天际线，空旷无人。"
                 ),
                 location="城市街道",
                 time_of_day="黄昏",
@@ -312,6 +312,14 @@ def _scripted_action_json(action: str) -> dict[str, Any]:
                 {"order": 0, "duration_ms": 3000, "narration_text": "开场", "camera_motion": "ken_burns_in"},
                 {"order": 1, "duration_ms": 4000, "narration_text": "发展", "camera_motion": "pan_right"},
                 {"order": 2, "duration_ms": 3000, "narration_text": "结尾", "camera_motion": "fade"},
+            ],
+        },
+        "create_frames": {
+            "observation": "画面资产已创建。",
+            "frames": [
+                {"order": 0, "description": "开场画面，无人物纯背景或合成画面"},
+                {"order": 1, "description": "发展段落画面"},
+                {"order": 2, "description": "结尾画面"},
             ],
         },
         "persist_plan": {"observation": "计划稿已保存。"},

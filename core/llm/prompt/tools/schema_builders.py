@@ -226,12 +226,36 @@ def build_character_content_update_schema() -> dict[str, Any]:
     )
 
 
-def build_scene_content_schema() -> dict[str, Any]:
+def _scene_schema_properties() -> dict[str, Any]:
     props = _inject_image_variants(_model_properties(SceneContent))
+    _field_desc: dict[str, str] = {
+        "summary": "空镜背景板一句话摘要（仅环境，无人物）",
+        "description": (
+            "空镜背景板主视觉描写（≥80字）；仅无人环境：空间、光线、天气、材质、固定陈设。"
+            "禁止人物/动物/角色/叙事动作/独立道具主体"
+        ),
+        "prompt_hint": "光影、构图、镜头、景深；禁止人物/动物/动作相关词",
+        "key_objects": "环境固定陈设 only（墙/窗/天际线/地面等），非 prop 资产，非人物相关物",
+        "foreground": "前景环境元素 only（材质/地面/雾气等），无人物无道具主体",
+        "background": "远景环境 only，无人物剪影",
+    }
+    for key, desc in _field_desc.items():
+        if key not in props:
+            continue
+        field = dict(props[key]) if isinstance(props[key], dict) else {"type": "string"}
+        field["description"] = desc
+        props[key] = field
+    return props
+
+
+def build_scene_content_schema() -> dict[str, Any]:
     return _object_schema(
-        props,
+        _scene_schema_properties(),
         required=_required_image_text_fields(SceneTraits),
-        description="场景图文资产 content；无信息字段填「未指定」",
+        description=(
+            "空镜背景板（scene）content；仅无人环境，供 frame 图生图合成参考。"
+            "无信息字段填「未指定」；不要填写 image_variants"
+        ),
         additional_properties=True,
     )
 
@@ -239,7 +263,7 @@ def build_scene_content_schema() -> dict[str, Any]:
 def build_scene_content_update_schema() -> dict[str, Any]:
     return _build_image_text_content_update_schema(
         SceneContent,
-        description="场景 content 部分更新字段（合并到现有资产），至少提供一项",
+        description="空镜 content 部分更新字段（合并到现有资产），至少提供一项",
     )
 
 
@@ -323,6 +347,48 @@ def build_shots_array_schema() -> dict[str, Any]:
         "type": "array",
         "description": "镜头列表，对齐 VideoPlanShot",
         "items": build_video_plan_shot_schema(),
+    }
+
+
+def build_frame_item_schema() -> dict[str, Any]:
+    return _object_schema(
+        {
+            "shot_id": {"type": "string", "description": "关联 VideoPlanShot.id"},
+            "order": {"type": "integer", "description": "镜头序号（shot_id 缺失时备用）"},
+            "name": {"type": "string", "description": "画面资产名称"},
+            "summary": {"type": "string"},
+            "description": {"type": "string", "description": "画面构图与叙事说明"},
+            "composition_prompt": {"type": "string", "description": "图生图合成补充指令"},
+            "element_refs": {
+                "type": "object",
+                "description": "引用元素文字资产 ID",
+                "properties": {
+                    "scene": {"type": "array", "items": {"type": "string"}},
+                    "character": {"type": "array", "items": {"type": "string"}},
+                    "prop": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+            "variant_refs": {
+                "type": "object",
+                "description": "text_asset_id → variant_id",
+                "additionalProperties": {"type": "string"},
+            },
+            "reference_order": {
+                "type": "array",
+                "items": {"type": "string", "enum": ["scene", "character", "prop"]},
+                "description": "多参考图顺序，默认 scene→character→prop",
+            },
+        },
+        required=["description", "element_refs"],
+        additional_properties=True,
+    )
+
+
+def build_frames_array_schema() -> dict[str, Any]:
+    return {
+        "type": "array",
+        "description": "每镜头 1 个画面（frame）资产，element_refs 指向空镜/角色/物品",
+        "items": build_frame_item_schema(),
     }
 
 

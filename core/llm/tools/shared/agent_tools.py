@@ -16,6 +16,7 @@ ONE_TIME_COMPLETED_ACTIONS = frozenset(
         "plan_edit_timeline",
         "report_missing_assets",
         "create_shots",
+        "create_frames",
         "persist_plan",
         "compose_final",
         "synthesize",

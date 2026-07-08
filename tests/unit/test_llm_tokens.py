@@ -49,6 +49,24 @@ def test_normalize_api_usage_anthropic_fields():
     assert usage["total_tokens"] == 30
 
 
+def test_build_token_usage_meta_estimated_vs_actual():
+    req = LlmRequest(system="sys", messages=[chat_message("user", "hi")])
+    bd = estimate_request_breakdown(req, 8192)
+    estimated_meta = build_token_usage_meta(bd, estimated=True)
+    assert estimated_meta["estimated"] is True
+    assert estimated_meta["completion_tokens"] is None
+    assert estimated_meta["estimated_completion_tokens"] == 8192
+
+    actual_meta = build_token_usage_meta(
+        bd,
+        estimated=False,
+        actual_usage={"prompt_tokens": 100, "completion_tokens": 42, "total_tokens": 142},
+    )
+    assert actual_meta["estimated"] is False
+    assert actual_meta["completion_tokens"] == 42
+    assert actual_meta["actual_completion_tokens"] == 42
+
+
 def test_token_round_accumulator_groups_by_model_and_breakdown():
     acc = TokenRoundAccumulator("conv1", "p1", "s1")
     req = LlmRequest(system="s", messages=[chat_message("user", "u")])

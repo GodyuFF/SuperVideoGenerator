@@ -37,12 +37,22 @@ def test_compose_character_prompt_includes_traits_and_style():
 
 
 def test_compose_scene_empty_shot_no_people():
-    content = {"description": "清晨城市天际线，薄雾笼罩的高楼与河流。" * 4}
+    content = {
+        "description": "清晨城市天际线，薄雾笼罩的高楼与河流。" * 4,
+        "key_objects": "路灯、长椅",
+        "foreground": "湿润路面",
+        "background": "高楼天际线",
+    }
     prompt, negative = compose_image_prompt(TextAssetType.SCENE, content)
-    assert "no people" in prompt
-    assert "scenery only" in prompt
+    assert "environment background plate" in prompt
+    assert "matte backdrop" in prompt
+    assert "background layer only" in prompt
+    assert "environment fixed fixtures only" in prompt
+    assert "scenery only, no figures" in prompt
     assert "people" in negative
     assert "human" in negative
+    assert "pedestrian" in negative
+    assert "main subject" in negative
 
 
 def test_compose_prop_chroma_background():
@@ -58,8 +68,9 @@ def test_compose_variant_scene_no_people():
     prompt, negative = compose_variant_image_prompt(
         TextAssetType.SCENE, content, variant
     )
+    assert "empty background plate" in prompt
+    assert "no prop subjects" in prompt
     assert "no people" in prompt
-    assert "people" in negative
 
 
 def test_compose_variant_character_chroma():
@@ -77,7 +88,8 @@ def test_finalize_sets_prompt_version():
     assert content["image_prompt"]
     assert content["negative_prompt"]
     assert content["prompt_version"] == PROMPT_VERSION
-    assert "no people" in content["image_prompt"]
+    assert content["prompt_version"] == 2
+    assert "environment background plate" in content["image_prompt"]
 
 
 def test_finalize_respects_prompt_locked():

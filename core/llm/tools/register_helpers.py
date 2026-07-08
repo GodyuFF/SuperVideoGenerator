@@ -5,6 +5,7 @@ from __future__ import annotations
 from core.llm.tools.output_schemas import (
     asset_mutation_output_schema,
     build_edit_timeline_output_schema,
+    validate_edit_assets_output_schema,
     delete_asset_output_schema,
     edit_timeline_board_output_schema,
     generic_action_output_schema,
@@ -39,7 +40,7 @@ def output_schema_for(name: str) -> dict:
         return asset_mutation_output_schema()
     if name == "create_plot":
         return plot_content_output_schema()
-    if name in ("create_shots", "persist_plan"):
+    if name in ("create_shots", "create_frames", "persist_plan"):
         return storyboard_shots_output_schema()
     if name.startswith("create_"):
         return asset_mutation_output_schema()
@@ -52,7 +53,7 @@ def output_schema_for(name: str) -> dict:
     if name == "build_edit_timeline" or name == "plan_edit_timeline":
         return build_edit_timeline_output_schema()
     if name == "validate_edit_assets" or name == "report_missing_assets":
-        return build_edit_timeline_output_schema()
+        return validate_edit_assets_output_schema()
     if name == "get_edit_timeline":
         return edit_timeline_board_output_schema()
     if name == "read_webpage":

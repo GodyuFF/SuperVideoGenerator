@@ -129,9 +129,65 @@ def write_ass_file(
 
 
 def _ffmpeg_path_arg(path: Path) -> str:
-    """FFmpeg 滤镜参数用路径（Windows 反斜杠转义）。"""
+    """FFmpeg ass/subtitles 滤镜路径参数（Windows 盘符冒号转义，无 shell 引号）。
+
+    subprocess 列表传参时不应加单引号；引号会导致 FFmpeg 将路径误解析为 original_size 等选项。
+    """
     resolved = path.resolve().as_posix()
-    return resolved.replace(":", r"\:")
+    return resolved.replace("\\", "/").replace(":", r"\:")
+
+
+def build_ass_vf_filter(*, ass_path: Path, fonts_dir: Path | None = None) -> str:
+    """构建 ass 滤镜链字符串。"""
+    ass_arg = _ffmpeg_path_arg(ass_path)
+    if fonts_dir and fonts_dir.is_dir():
+        fonts_arg = _ffmpeg_path_arg(fonts_dir)
+        return f"ass={ass_arg}:fontsdir={fonts_arg}"
+    return f"ass={ass_arg}"
+
+
+def _escape_drawtext_text(text: str) -> str:
+    """drawtext 滤镜 text 参数转义。"""
+    raw = (text or "").strip().replace("\r\n", "\n").replace("\r", "\n")
+    parts = raw.split("\n")
+    escaped = []
+    for part in parts:
+        part = part.replace("\\", "\\\\").replace(":", r"\:").replace("'", r"\'")
+        escaped.append(part)
+    return r"\n".join(escaped)
+
+
+def build_drawtext_vf_filters(
+    clips: list[EditClip],
+    *,
+    width: int,
+    height: int,
+    font_name: str | None = None,
+) -> list[str]:
+    """将 subtitle clip 转为 drawtext 滤镜链（ASS 失败时的回退方案）。"""
+    if font_name is None:
+        font_name, _ = resolve_subtitle_font()
+    font_size = max(32, min(72, max(int(height), 1) // 18))
+    margin_v = max(40, max(int(height), 1) // 12)
+    y_expr = f"h-th-{margin_v}"
+    filters: list[str] = []
+    for clip in sorted(clips, key=lambda c: (c.start_ms, c.end_ms)):
+        text = _escape_drawtext_text(clip.label)
+        if not text:
+            continue
+        start_sec = max(0, clip.start_ms) / 1000.0
+        end_sec = max(clip.end_ms, clip.start_ms + 100) / 1000.0
+        filters.append(
+            "drawtext="
+            f"font='{font_name}':"
+            f"text='{text}':"
+            f"fontsize={font_size}:"
+            f"fontcolor=white:"
+            f"borderw=2:bordercolor=black:"
+            f"x=(w-text_w)/2:y={y_expr}:"
+            f"enable='between(t,{start_sec:.3f},{end_sec:.3f})'"
+        )
+    return filters
 
 
 def burn_subtitles(
@@ -142,32 +198,44 @@ def burn_subtitles(
     settings: ExportSettings,
     *,
     run_ffmpeg,
+    subtitle_clips: list[EditClip] | None = None,
 ) -> None:
-    """将 ASS 硬字幕烧录进视频轨（重编码）。"""
-    _, fonts_dir = resolve_subtitle_font()
-    ass_arg = _ffmpeg_path_arg(ass_path)
-    if fonts_dir and fonts_dir.is_dir():
-        fonts_arg = _ffmpeg_path_arg(fonts_dir)
-        vf = f"ass={ass_arg}:fontsdir={fonts_arg}"
-    else:
-        vf = f"ass={ass_arg}"
+    """将 ASS 硬字幕烧录进视频轨（重编码）；失败时可回退 drawtext。"""
+    font_name, fonts_dir = resolve_subtitle_font()
+    vf = build_ass_vf_filter(ass_path=ass_path, fonts_dir=fonts_dir)
 
-    cmd = [
-        ffmpeg,
-        "-y",
-        "-i",
-        str(video_in),
-        "-vf",
-        vf,
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-r",
-        str(settings.fps),
-        "-crf",
-        str(settings.crf),
-        "-an",
-        str(video_out),
-    ]
-    run_ffmpeg(cmd, label="字幕烧录")
+    def _run_with_vf(filter_chain: str, *, label: str) -> None:
+        cmd = [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(video_in),
+            "-vf",
+            filter_chain,
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-r",
+            str(settings.fps),
+            "-crf",
+            str(settings.crf),
+            "-an",
+            str(video_out),
+        ]
+        run_ffmpeg(cmd, label=label)
+
+    try:
+        _run_with_vf(vf, label="字幕烧录")
+    except Exception as ass_exc:
+        clips = subtitle_clips or []
+        draw_filters = build_drawtext_vf_filters(
+            clips,
+            width=settings.width,
+            height=settings.height,
+            font_name=font_name,
+        )
+        if not draw_filters:
+            raise ass_exc
+        draw_vf = ",".join(draw_filters)
+        _run_with_vf(draw_vf, label="字幕烧录(drawtext回退)")

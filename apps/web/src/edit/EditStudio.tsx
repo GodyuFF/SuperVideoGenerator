@@ -18,13 +18,7 @@ import { useEditTimeline } from "./useEditTimeline";
 
 const API = "/api";
 const MAX_VIDEO_LAYERS = 5;
-
-interface EditStudioProps {
-  projectId: string;
-  scriptId: string;
-  initialBoard?: EditTimelineData | null;
-  editable?: boolean;
-}
+const MAX_UNDO = 50;
 
 function boardToTimeline(board: Record<string, unknown> | null | undefined): EditTimelineData | null {
   if (!board) return null;
@@ -56,6 +50,18 @@ function ensureLayers(timeline: EditTimelineData): VideoLayer[] {
   ];
 }
 
+/** 深克隆 timeline（用于 undo 栈） */
+function cloneTimeline(t: EditTimelineData): EditTimelineData {
+  return JSON.parse(JSON.stringify(t));
+}
+
+interface EditStudioProps {
+  projectId: string;
+  scriptId: string;
+  initialBoard?: EditTimelineData | null;
+  editable?: boolean;
+}
+
 export function EditStudio({ projectId, scriptId, initialBoard, editable = true }: EditStudioProps) {
   const {
     timeline,
@@ -64,7 +70,10 @@ export function EditStudio({ projectId, scriptId, initialBoard, editable = true 
     error,
     saving,
     scheduleSave,
+    flushSave,
     exportVideo,
+    exportVideoNoSubtitles,
+    downloadExport,
     fetchTimeline,
   } = useEditTimeline(projectId, scriptId);
   const engineRef = useRef(new TimelinePlaybackEngine());
@@ -76,7 +85,50 @@ export function EditStudio({ projectId, scriptId, initialBoard, editable = true 
   const [mediaItems, setMediaItems] = useState<MediaBinItem[]>([]);
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState("");
+  const [exportProgress, setExportProgress] = useState<{ pct: number; msg: string } | null>(null);
+  const [exportUrl, setExportUrl] = useState<string | null>(null);
 
+  // ---- Undo/Redo ----
+  const undoStack = useRef<EditTimelineData[]>([]);
+  const redoStack = useRef<EditTimelineData[]>([]);
+  const pendingUndo = useRef<EditTimelineData | null>(null);
+  /** True while a clip is being dragged — suppress duplicate undo pushes */
+  const clipDragActive = useRef(false);
+  /** Snapshot captured at drag-start, pushed to undo on drag-end */
+  const dragBeforeSnapshot = useRef<EditTimelineData | null>(null);
+
+  const pushUndo = useCallback((t: EditTimelineData) => {
+    pendingUndo.current = cloneTimeline(t);
+  }, []);
+
+  const flushUndo = useCallback(() => {
+    if (!pendingUndo.current) return;
+    undoStack.current.push(pendingUndo.current);
+    if (undoStack.current.length > MAX_UNDO) undoStack.current.shift();
+    redoStack.current = [];
+    pendingUndo.current = null;
+  }, []);
+
+  function undo() {
+    if (undoStack.current.length === 0 || !timeline) return;
+    redoStack.current.push(cloneTimeline(timeline));
+    const prev = undoStack.current.pop()!;
+    // Strip revision so save uses current server revision from the ref
+    prev.revision = undefined;
+    setTimeline(prev);
+    scheduleSave(prev);
+  }
+
+  function redo() {
+    if (redoStack.current.length === 0 || !timeline) return;
+    undoStack.current.push(cloneTimeline(timeline));
+    const next = redoStack.current.pop()!;
+    next.revision = undefined;
+    setTimeline(next);
+    scheduleSave(next);
+  }
+
+  // ---- Init ----
   useEffect(() => {
     if (!timeline && initialBoard) {
       const converted = boardToTimeline(initialBoard as unknown as Record<string, unknown>);
@@ -122,13 +174,18 @@ export function EditStudio({ projectId, scriptId, initialBoard, editable = true 
       const flatVideo = layers.flatMap((l) =>
         (l.clips ?? []).map((c) => ({ ...c, layer_id: l.id, track: "video" as const }))
       );
-      scheduleSave({
+      const final: EditTimelineData = {
         ...next,
         video_layers: layers,
         tracks: { ...next.tracks, video: flatVideo },
-      });
+      };
+      if (!clipDragActive.current) {
+        pushUndo(final);
+        setTimeout(() => flushUndo(), 0);
+      }
+      scheduleSave(final);
     },
-    [scheduleSave]
+    [scheduleSave, pushUndo, flushUndo]
   );
 
   function updateClip(
@@ -214,11 +271,61 @@ export function EditStudio({ projectId, scriptId, initialBoard, editable = true 
     setSelectedLayerId(layerId);
   }
 
+  // ---- Keyboard shortcuts ----
   useEffect(() => {
     const canEditNow = editable && timeline?.editable !== false;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "k" || e.key === "K") {
-        if (!selectedClip?.id || selectedClip.track !== "video" || !canEditNow || !selectedLayerId) return;
+      // Don't handle shortcuts when typing in inputs
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      // Space: play/pause
+      if (e.key === " ") {
+        e.preventDefault();
+        const engine = engineRef.current;
+        if (engine.isPlaying()) engine.pause();
+        else engine.play();
+        return;
+      }
+
+      // Ctrl+Z: undo
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+
+      // Ctrl+Shift+Z or Ctrl+Y: redo
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+        e.preventDefault();
+        redo();
+        return;
+      }
+
+      // Ctrl+S: save
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        if (timeline) scheduleSave(timeline);
+        return;
+      }
+
+      // Home: jump to start
+      if (e.key === "Home") {
+        e.preventDefault();
+        engineRef.current.seek(0);
+        return;
+      }
+
+      // End: jump to end
+      if (e.key === "End") {
+        e.preventDefault();
+        engineRef.current.seek(timeline?.duration_ms ?? 0);
+        return;
+      }
+
+      // K: add keyframe at playhead
+      if ((e.key === "k" || e.key === "K") && canEditNow) {
+        if (!selectedClip?.id || selectedClip.track !== "video" || !selectedLayerId) return;
         const tr = { ...DEFAULT_TRANSFORM, ...selectedClip.transform };
         const { keyframes, index } = keyframeAtPlayhead(selectedClip, playheadMs, tr);
         updateClip("video_layer", selectedClip.id, { transform: { ...tr, keyframes } }, selectedLayerId);
@@ -226,8 +333,22 @@ export function EditStudio({ projectId, scriptId, initialBoard, editable = true 
         e.preventDefault();
         return;
       }
-      if (!selectedId || !selectedLayerId || e.key !== "Delete") return;
-      deleteClip(selectedLayerId, selectedId);
+
+      // Delete / Backspace: delete selected clip
+      if ((e.key === "Delete" || e.key === "Backspace") && canEditNow) {
+        if (!selectedId || !selectedLayerId) return;
+        deleteClip(selectedLayerId, selectedId);
+        e.preventDefault();
+        return;
+      }
+
+      // Arrow keys: nudge playhead
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        const step = e.ctrlKey ? 1000 : e.shiftKey ? 5000 : 100;
+        const dir = e.key === "ArrowRight" ? 1 : -1;
+        e.preventDefault();
+        engineRef.current.seek(Math.max(0, playheadMs + dir * step));
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -240,19 +361,48 @@ export function EditStudio({ projectId, scriptId, initialBoard, editable = true 
     selectedId,
     updateClip,
     deleteClip,
+    undo,
+    redo,
+    scheduleSave,
   ]);
 
   async function handleExport() {
     setExporting(true);
     setExportMsg("");
+    setExportProgress(null);
+    setExportUrl(null);
     try {
-      const url = await exportVideo();
-      setExportMsg(url ? `导出完成：${url}` : "导出完成");
+      const url = await exportVideo((pct, msg) => setExportProgress({ pct, msg }));
+      setExportUrl(url);
+      setExportMsg(url ? "导出完成！" : "导出完成");
     } catch (e) {
       setExportMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setExporting(false);
+      setExportProgress(null);
     }
+  }
+
+  async function handleExportNoSubtitles() {
+    setExporting(true);
+    setExportMsg("");
+    setExportProgress(null);
+    setExportUrl(null);
+    try {
+      const url = await exportVideoNoSubtitles((pct, msg) => setExportProgress({ pct, msg }));
+      setExportUrl(url);
+      setExportMsg(url ? "导出完成（无字幕）！" : "导出完成");
+    } catch (e) {
+      setExportMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+      setExportProgress(null);
+    }
+  }
+
+  async function handleDownload() {
+    if (!exportUrl) return;
+    await downloadExport(exportUrl);
   }
 
   if (loading && !timeline) {
@@ -282,12 +432,39 @@ export function EditStudio({ projectId, scriptId, initialBoard, editable = true 
   return (
     <div className="edit-studio">
       {error && <p className="board-error">{error}</p>}
-      {saving && <p className="muted">保存中…</p>}
+      <div className="edit-studio-toolbar">
+        {saving && <span className="muted">保存中…</span>}
+        <button
+          type="button"
+          className="btn-secondary btn-sm"
+          disabled={undoStack.current.length === 0}
+          onClick={undo}
+          title="撤销 (Ctrl+Z)"
+        >
+          ↩ 撤销
+        </button>
+        <button
+          type="button"
+          className="btn-secondary btn-sm"
+          disabled={redoStack.current.length === 0}
+          onClick={redo}
+          title="重做 (Ctrl+Y)"
+        >
+          ↪ 重做
+        </button>
+        <span className="edit-studio-shortcuts-hint">
+          快捷键：Space 播放/暂停 · Delete 删除 · Ctrl+Z 撤销 · Ctrl+S 保存 · Home/End 跳转首尾 · ←→ 微调播放头
+        </span>
+      </div>
       <PreviewPanel
         engine={engineRef.current}
         durationMs={timeline.duration_ms}
         exporting={exporting}
         onExport={handleExport}
+        onExportNoSubtitles={handleExportNoSubtitles}
+        exportProgress={exportProgress}
+        onDownloadExport={exportUrl ? handleDownload : undefined}
+        exportUrl={exportUrl}
         ffmpegAvailable={ffmpegAvailable}
         ffmpegHint={ffmpegHint}
         projectId={projectId}

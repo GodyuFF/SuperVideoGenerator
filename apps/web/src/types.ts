@@ -189,6 +189,7 @@ export interface ImageGenConfigSection {
   enabled: boolean;
   provider: string;
   provider_label: string;
+  available_providers: { id: string; label: string }[];
   model: string;
   base_url: string;
   default_size: string;
@@ -196,6 +197,21 @@ export interface ImageGenConfigSection {
   timeout_sec: number;
   has_api_key: boolean;
   active: boolean;
+  // SD 相关
+  sd_detected: boolean;
+  sd_current_model: string;
+  sd_models: string[];
+  sd_error: string;
+  sd_base_url: string;
+  sd_steps: number;
+  sd_cfg_scale: number;
+  sd_sampler: string;
+  sd_samplers: string[];
+  sd_negative_prompt: string;
+  // 百炼相关
+  bailian_workspace_id: string;
+  bailian_txt2img_model: string;
+  bailian_img2img_model: string;
 }
 
 /** 图片流水线策略（图文/漫画） */
@@ -293,6 +309,14 @@ export interface AiConfigPatch {
     base_url: string;
     default_size: string;
     timeout_sec: number;
+    sd_base_url: string;
+    sd_steps: number;
+    sd_cfg_scale: number;
+    sd_sampler: string;
+    sd_negative_prompt: string;
+    bailian_workspace_id: string;
+    bailian_txt2img_model: string;
+    bailian_img2img_model: string;
     pipeline: Partial<ImagePipelineConfig>;
   }>;
   video?: Partial<{

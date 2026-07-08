@@ -11,20 +11,36 @@ from core.models.image_text_asset import (
     get_base_variant,
     normalize_image_text_content,
     parse_image_variants,
+    trait_label,
     trait_label_zh,
     variants_to_dicts,
 )
 
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 
 _DEFAULT_NEGATIVE = (
     "low quality, blurry, watermark, text overlay, deformed, distorted, "
     "ugly, bad anatomy, extra limbs, cropped"
 )
 
+_SCENE_POSITIVE_PREFIX = (
+    "environment background plate, matte backdrop, empty location, no subjects, "
+    "no story action, no characters, no props as focal subjects, "
+    "background layer only, scenery only"
+)
+
 _SCENE_NEGATIVE = (
     "people, person, human, character, crowd, portrait, figure, "
-    "silhouette of person, pedestrians"
+    "silhouette of person, pedestrians, generated characters, props as subjects, "
+    "human silhouettes, green screen, chroma key residue, watermark, "
+    "animal, pet, face, hands, body, action scene, narrative scene, "
+    "main subject, product shot, handheld object, pedestrian, "
+    "vehicle interior with driver"
+)
+
+_FRAME_NEGATIVE = (
+    "green screen, chroma key, watermark, extra people, duplicate characters, "
+    "wrong scene layout, cropped subjects, text overlay"
 )
 
 _CHROMA_NEGATIVE = (
@@ -51,14 +67,40 @@ def _join_parts(parts: list[str]) -> str:
     return ", ".join(p for p in parts if p and p.strip())
 
 
-def _trait_lines(asset_type: Any, content: dict[str, Any]) -> list[str]:
+def _trait_lines(asset_type: Any, content: dict[str, Any], *, language: str = "zh") -> list[str]:
+    type_val = _type_val(asset_type)
+    if type_val == TextAssetType.SCENE.value:
+        return _scene_trait_lines(content, language=language)
     traits = extract_traits(asset_type, content)
     lines: list[str] = []
     for key, value in traits.items():
         val = str(value).strip()
         if not val or val == "未指定":
             continue
-        lines.append(f"{trait_label_zh(key)}: {val}")
+        lines.append(f"{trait_label(key, language)}: {val}")
+    return lines
+
+
+_SCENE_TRAIT_SUFFIX: dict[str, str] = {
+    "key_objects": "environment fixed fixtures only, not standalone prop assets",
+    "foreground": "scenery only, no figures",
+    "background": "scenery only, no figures",
+}
+
+
+def _scene_trait_lines(content: dict[str, Any], *, language: str = "zh") -> list[str]:
+    traits = extract_traits(TextAssetType.SCENE, content)
+    lines: list[str] = []
+    for key, value in traits.items():
+        val = str(value).strip()
+        if not val or val == "未指定":
+            continue
+        label = trait_label(key, language)
+        suffix = _SCENE_TRAIT_SUFFIX.get(key)
+        if suffix:
+            lines.append(f"{label} ({suffix}): {val}")
+        else:
+            lines.append(f"{label}: {val}")
     return lines
 
 
@@ -88,9 +130,10 @@ def compose_image_prompt(
     content: dict[str, Any],
     *,
     project_style: StyleConfig | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """从结构化 content 组装 base 主形象 (image_prompt, negative_prompt)。"""
-    return compose_base_image_prompt(asset_type, content, project_style=project_style)
+    return compose_base_image_prompt(asset_type, content, project_style=project_style, language=language)
 
 
 def compose_base_image_prompt(
@@ -98,8 +141,9 @@ def compose_base_image_prompt(
     content: dict[str, Any],
     *,
     project_style: StyleConfig | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
-    """设定描述 + traits → 主形象生图 prompt。"""
+    """设定描述 + traits → 主形象生图 prompt。language: 'zh' | 'en'。"""
     type_val = _type_val(asset_type)
     desc = str(content.get("description", "")).strip()
     parts: list[str] = []
@@ -108,10 +152,7 @@ def compose_base_image_prompt(
         parts.append("character portrait, full body or upper body")
         parts.append(_CHROMA_GREEN_BG)
     elif type_val == TextAssetType.SCENE.value:
-        parts.append(
-            "empty establishing shot, scenery only, no people, "
-            "no human figures, no characters"
-        )
+        parts.append(_SCENE_POSITIVE_PREFIX)
     elif type_val == TextAssetType.PROP.value:
         parts.append("object product shot, centered")
         parts.append(_CHROMA_GREEN_BG)
@@ -119,7 +160,7 @@ def compose_base_image_prompt(
     if desc:
         parts.append(desc)
 
-    trait_lines = _trait_lines(asset_type, content)
+    trait_lines = _trait_lines(asset_type, content, language=language)
     if trait_lines:
         parts.append("; ".join(trait_lines))
 
@@ -152,16 +193,85 @@ def compose_base_image_prompt(
     return image_prompt, negative
 
 
+def compose_frame_image_prompt(
+    content: dict[str, Any],
+    *,
+    store: Any | None = None,
+    project_style: StyleConfig | None = None,
+) -> tuple[str, str]:
+    """画面（frame）多参考图合成 prompt。"""
+    parts: list[str] = [
+        "composite cinematic frame, full scene composition",
+        "preserve scene layout and background from first reference image",
+    ]
+    summary = str(content.get("summary", "")).strip()
+    if summary:
+        parts.append(f"summary: {summary}")
+    desc = str(content.get("description", "")).strip()
+    if desc:
+        parts.append(desc)
+
+    element_refs = content.get("element_refs") or {}
+    variant_refs = content.get("variant_refs") or {}
+    order = content.get("reference_order") or ["scene", "character", "prop"]
+    if store is not None:
+        from core.store.memory import MemoryStore
+
+        assert isinstance(store, MemoryStore)
+        from core.models.image_text_asset import find_variant, normalize_image_text_content
+
+        for bucket in order:
+            if not isinstance(bucket, str):
+                continue
+            ids = element_refs.get(bucket) or []
+            if not isinstance(ids, list):
+                ids = [ids]
+            for tid in ids:
+                text = store.get_text_asset(str(tid))
+                if not text:
+                    continue
+                tc = normalize_image_text_content(text.type, text.content)
+                td = str(tc.get("description", "")).strip()[:200]
+                vid = str(variant_refs.get(str(tid), "")).strip()
+                label = ""
+                if vid:
+                    v = find_variant(tc, vid)
+                    if v:
+                        label = str(v.label or v.variant_prompt).strip()
+                if bucket == "scene":
+                    parts.append(f"background plate: {text.name}" + (f", {td}" if td else ""))
+                elif bucket == "character":
+                    extra = f", expression/pose: {label}" if label else ""
+                    parts.append(f"place character {text.name}: {td}{extra}")
+                elif bucket == "prop":
+                    parts.append(f"place prop {text.name}: {td}")
+
+    comp = str(content.get("composition_prompt", "")).strip()
+    if comp:
+        parts.append(comp)
+
+    if project_style:
+        parts.append(f"aspect ratio {project_style.aspect_ratio}")
+        mode_label = _STYLE_MODE_LABEL.get(project_style.mode.value, "")
+        if mode_label:
+            parts.append(mode_label)
+
+    image_prompt = _join_parts(parts)
+    negative = f"{_DEFAULT_NEGATIVE}, {_FRAME_NEGATIVE}"
+    return image_prompt, negative
+
+
 def compose_variant_image_prompt(
     asset_type: Any,
     content: dict[str, Any],
     variant: ImageVariant,
     *,
     project_style: StyleConfig | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """基于设定 + 变体描述组装衍生图 prompt（一致性约束）。"""
     base_prompt, negative = compose_base_image_prompt(
-        asset_type, content, project_style=project_style
+        asset_type, content, project_style=project_style, language=language
     )
     type_val = _type_val(asset_type)
     parts: list[str] = []
@@ -172,8 +282,8 @@ def compose_variant_image_prompt(
         parts.append(_CHROMA_GREEN_BG)
     elif type_val == TextAssetType.SCENE.value:
         parts.append(
-            "same scene setting as reference, consistent style and layout, "
-            "no people, scenery only"
+            "empty background plate, same layout and style as reference, "
+            "no people, no prop subjects, scenery only"
         )
     else:
         parts.append("same object as reference, consistent design")
@@ -210,6 +320,7 @@ def apply_composed_prompts(
     project_style: StyleConfig | None = None,
     preserve_prompt_lock: bool = True,
     force_recompose: bool = False,
+    language: str = "zh",
 ) -> dict[str, Any]:
     """写入 image_prompt / negative_prompt / prompt_version；尊重 prompt_locked。"""
     out = dict(content)
@@ -220,8 +331,20 @@ def apply_composed_prompts(
             out["prompt_version"] = PROMPT_VERSION
         return out
 
+    type_val = _type_val(asset_type)
+    if type_val == TextAssetType.FRAME.value:
+        image_prompt, negative = compose_frame_image_prompt(
+            out, project_style=project_style
+        )
+        out["image_prompt"] = image_prompt
+        if not locked or force_recompose:
+            if not str(out.get("negative_prompt", "")).strip() or force_recompose:
+                out["negative_prompt"] = negative
+        out["prompt_version"] = PROMPT_VERSION
+        return out
+
     image_prompt, negative = compose_base_image_prompt(
-        asset_type, out, project_style=project_style
+        asset_type, out, project_style=project_style, language=language
     )
     out["image_prompt"] = image_prompt
     if not locked or force_recompose:
@@ -243,7 +366,7 @@ def apply_composed_prompts(
                 updated.append(v)
             elif not v.prompt_locked or force_recompose:
                 vp, _ = compose_variant_image_prompt(
-                    asset_type, out, v, project_style=project_style
+                    asset_type, out, v, project_style=project_style, language=language
                 )
                 ref_id = v.reference_variant_id or (base.id if base else "")
                 updated.append(
@@ -269,6 +392,7 @@ def finalize_image_text_content(
     project_style: StyleConfig | None = None,
     preserve_prompt_lock: bool = True,
     force_recompose: bool = False,
+    language: str = "zh",
 ) -> dict[str, Any]:
     """规范化 content 并组装生图 prompt。"""
     content = normalize_image_text_content(asset_type, raw)
@@ -278,4 +402,5 @@ def finalize_image_text_content(
         project_style=project_style,
         preserve_prompt_lock=preserve_prompt_lock,
         force_recompose=force_recompose,
+        language=language,
     )

@@ -24,6 +24,7 @@ export function ImageTextAssetDetailModal({
   onEdit,
 }: ImageTextAssetDetailModalProps) {
   const images = assetImages(item);
+  const useCheckerboard = item.type === "character" || item.type === "prop";
   const desc =
     fieldFromItem(item, "description") || String(item.preview ?? "").trim();
   const summary = fieldFromItem(item, "summary");
@@ -163,7 +164,8 @@ export function ImageTextAssetDetailModal({
                       <AssetImagePreview
                         url={v.preview_url}
                         name={v.label}
-                        size="thumb"
+                        size="card"
+                        checkerboard={useCheckerboard}
                       />
                     )}
                   </li>
@@ -183,6 +185,7 @@ export function ImageTextAssetDetailModal({
                       url={img.url}
                       name={img.name}
                       size="detail"
+                      checkerboard={useCheckerboard}
                     />
                   ) : null
                 )}

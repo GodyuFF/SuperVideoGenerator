@@ -19,6 +19,7 @@ from core.models.entities import (
 from core.store.memory import MemoryStore
 from core.tts.subtitle import populate_legacy_submaker_with_full_text, subtitle_cues_from_submaker
 from edge_tts import SubMaker
+from tests.support.frame_fixtures import ensure_shot_frame_image
 
 
 def _store_with_audio_cues() -> MemoryStore:
@@ -54,6 +55,13 @@ def _store_with_audio_cues() -> MemoryStore:
         narration_text="第一句。第二句！",
         camera_motion="ken_burns_in",
         asset_refs={"character": [char.id]},
+    )
+    ensure_shot_frame_image(
+        store,
+        project_id=project.id,
+        script_id=script.id,
+        shot=shot,
+        image_url="https://images.test/t.png",
     )
     plan = VideoPlan(script_id=script.id, mode=VideoStyleMode.DYNAMIC_IMAGE, shots=[shot])
     store.set_video_plan(plan)

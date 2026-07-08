@@ -55,7 +55,7 @@ from core.store.persist import schedule_save
 
 logger = get_logger("core.agents.llm_action")
 
-_SHOT_REF_KEYS = frozenset({"image", "character", "scene", "prop"})
+_SHOT_REF_KEYS = frozenset({"image", "character", "scene", "prop", "frame"})
 
 
 def _ref_key_for_asset_id(store: MemoryStore, asset_id: str) -> str:
@@ -76,6 +76,8 @@ def _ref_key_for_asset_id(store: MemoryStore, asset_id: str) -> str:
         return "scene"
     if ref_str.startswith("prop_"):
         return "prop"
+    if ref_str.startswith("frame_"):
+        return "frame"
     return "image"
 
 
@@ -134,6 +136,96 @@ def parse_shots_from_data(
             )
         )
     return normalize_shot_orders(shots) if shots else []
+
+
+def _create_frame_assets_from_data(
+    store: MemoryStore,
+    ctx: AgentRunContext,
+    frames_data: list[Any],
+    pending_shots: list[VideoPlanShot],
+) -> tuple[list[TextAsset], list[VideoPlanShot]]:
+    from core.assets.service import finalize_text_asset_content_for_store
+    from core.llm.agent.script_assets import link_script_asset
+
+    script_id = ctx.script_id
+    project_id = str(ctx.work_context.get("project_id", ""))
+    if not project_id:
+        script = store.get_script(script_id)
+        project_id = script.project_id if script else ""
+
+    shots_map = {s.id: s.model_copy() for s in pending_shots}
+    shots_by_order = {s.order: s.id for s in pending_shots}
+    created: list[TextAsset] = []
+
+    for raw in frames_data:
+        if not isinstance(raw, dict):
+            continue
+        shot_id = str(raw.get("shot_id", "")).strip()
+        shot: VideoPlanShot | None = shots_map.get(shot_id) if shot_id else None
+        if shot is None and raw.get("order") is not None:
+            oid = shots_by_order.get(int(raw.get("order")))
+            if oid:
+                shot = shots_map.get(oid)
+        if shot is None:
+            continue
+
+        element_refs_raw = raw.get("element_refs") or {}
+        normalized_refs: dict[str, list[str]] = {}
+        if isinstance(element_refs_raw, dict):
+            for key in ("scene", "character", "prop"):
+                val = element_refs_raw.get(key) or []
+                ids = [str(v) for v in (val if isinstance(val, list) else [val]) if v]
+                if ids:
+                    normalized_refs[key] = ids
+
+        if not normalized_refs:
+            shot_refs = shot.asset_refs or {}
+            for key in ("scene", "character", "prop"):
+                ids = shot_refs.get(key) or []
+                if ids:
+                    normalized_refs[key] = [str(i) for i in ids]
+
+        variant_refs: dict[str, str] = {}
+        variant_refs_raw = raw.get("variant_refs")
+        if isinstance(variant_refs_raw, dict):
+            for k, v in variant_refs_raw.items():
+                if k and v:
+                    variant_refs[str(k)] = str(v)
+
+        content: dict[str, Any] = {
+            "description": str(raw.get("description", "")).strip(),
+            "summary": str(raw.get("summary", "")).strip(),
+            "element_refs": normalized_refs,
+            "variant_refs": variant_refs,
+            "shot_id": shot.id,
+            "composition_prompt": str(raw.get("composition_prompt", "")).strip(),
+            "reference_order": raw.get("reference_order")
+            or ["scene", "character", "prop"],
+        }
+        name = str(raw.get("name", "")).strip() or f"画面·镜{shot.order + 1}"
+        asset = TextAsset(
+            project_id=project_id,
+            script_id=script_id,
+            scope=AssetScope.SCRIPT_PRIVATE,
+            type=TextAssetType.FRAME,
+            name=name,
+            content=content,
+            source_script_id=script_id,
+            reuse_policy="private",
+        )
+        asset.content = finalize_text_asset_content_for_store(
+            store, asset, content, force_recompose=True
+        )
+        store.add_text_asset(asset)
+        link_script_asset(store, script_id, asset.id)
+        created.append(asset)
+
+        refs = dict(shot.asset_refs or {})
+        refs["frame"] = [asset.id]
+        shots_map[shot.id] = shot.model_copy(update={"asset_refs": refs})
+
+    updated = normalize_shot_orders([shots_map[s.id] for s in pending_shots if s.id in shots_map])
+    return created, updated
 
 
 def build_action_system_prompt(
@@ -214,28 +306,15 @@ def _maybe_apply_chroma_key_to_media(
     asset_type: Any,
 ) -> None:
     """character/prop 生图落盘后绿幕抠图 → 透明 PNG。"""
-    if asset_type is None:
-        return
-    type_val = asset_type.value if hasattr(asset_type, "value") else str(asset_type)
-    if type_val not in (TextAssetType.CHARACTER.value, TextAssetType.PROP.value):
-        return
+    from core.assets.chroma_key import apply_chroma_key_to_media
+    from core.logging.setup import log_stage
 
-    from core.assets.chroma_key import ChromaKeyError, apply_chroma_key_to_png
-    from core.store.media_storage import absolute_media_path
-    from core.store.project_paths import relative_media_path
-
-    local = absolute_media_path(media.url)
-    if local is None or not local.is_file():
-        media.metadata["chroma_key_applied"] = False
-        media.metadata["chroma_key_error"] = "本地媒体文件不可用"
-        return
-
-    try:
-        out = apply_chroma_key_to_png(local)
-        media.url = relative_media_path(project_id, script_id, out.name)
-        media.metadata["chroma_key_applied"] = True
-        media.metadata["background"] = "chroma_green"
-        media.metadata.pop("chroma_key_error", None)
+    if apply_chroma_key_to_media(
+        media,
+        project_id=project_id,
+        script_id=script_id,
+        asset_type=asset_type,
+    ):
         log_stage(
             logger,
             "image.chroma_key",
@@ -243,16 +322,17 @@ def _maybe_apply_chroma_key_to_media(
             media_id=media.id,
             path=media.url,
         )
-    except ChromaKeyError as e:
-        media.metadata["chroma_key_applied"] = False
-        media.metadata["chroma_key_error"] = str(e)
-        log_stage(
-            logger,
-            "image.chroma_key",
-            "绿幕抠图失败，保留原图",
-            media_id=media.id,
-            error=str(e),
-        )
+    elif asset_type is not None:
+        from core.assets.chroma_key import is_chroma_eligible_text_type
+
+        if is_chroma_eligible_text_type(asset_type):
+            log_stage(
+                logger,
+                "image.chroma_key",
+                "绿幕抠图失败，保留原图",
+                media_id=media.id,
+                error=media.metadata.get("chroma_key_error", ""),
+            )
 
 
 def persist_single_generated_image(
@@ -320,9 +400,13 @@ def persist_single_generated_image(
         script_id=script_id,
         asset_type=source_asset_type,
     )
+    schedule_save(store, immediate=True)
     if source_id_str:
         src = store.get_text_asset(source_id_str)
-        if src:
+        if src and src.type == TextAssetType.FRAME:
+            src.primary_media_id = media.id
+            store.update_text_asset(src)
+        elif src and is_image_text_asset(src.type):
             from core.models.image_text_asset import get_base_variant
 
             content = normalize_image_text_content(src.type, src.content)
@@ -673,9 +757,46 @@ def apply_action_result(
         shots = parse_shots_from_data(store, data.get("shots"))
         if not shots:
             raise ValueError("create_shots 未返回有效镜头列表")
+        by_type: dict[str, list[str]] = {}
+        for a in store.list_assets_for_script(script_id):
+            tv = a.type.value
+            if tv in ("character", "scene", "prop"):
+                by_type.setdefault(tv, []).append(a.id)
+        if by_type:
+            enriched: list[VideoPlanShot] = []
+            for shot in shots:
+                refs = dict(shot.asset_refs or {})
+                if not refs:
+                    for key in ("scene", "character", "prop"):
+                        ids = by_type.get(key, [])
+                        if ids:
+                            refs[key] = ids[:1]
+                enriched.append(shot.model_copy(update={"asset_refs": refs}))
+            shots = enriched
         ctx.work_context["_pending_shots"] = shots
         if not observation:
             observation = f"已设计 {len(shots)} 个镜头。"
+
+    elif action == "create_frames":
+        pending = list(ctx.work_context.get("_pending_shots", []))
+        if not pending:
+            vp = store.get_video_plan_for_script(script_id)
+            pending = list(vp.shots) if vp else []
+        frames_data = data.get("frames")
+        if not isinstance(frames_data, list) or not frames_data:
+            raise ValueError("create_frames 未返回有效画面列表")
+        created, updated_shots = _create_frame_assets_from_data(
+            store, ctx, frames_data, pending
+        )
+        if not created:
+            raise ValueError("create_frames 未能关联到有效镜头")
+        ctx.work_context["_pending_shots"] = updated_shots
+        for asset in created:
+            ctx.outputs.append(
+                StepOutput(kind="text", label=asset.name, asset_id=asset.id)
+            )
+        if not observation:
+            observation = f"已为 {len(created)} 个镜头创建画面资产。"
 
     elif action == "persist_plan":
         shots = list(ctx.work_context.get("_pending_shots", []))
@@ -929,6 +1050,7 @@ def apply_action_result(
                 export_name = export_filename_for_asset(fin_id)
                 url = export_api_path(project_id, script_id, export_name)
                 try:
+                    skip_subtitles = bool(data.get("skip_subtitles"))
                     ffmpeg_result = export_timeline_to_mp4(
                         store,
                         timeline,
@@ -937,6 +1059,7 @@ def apply_action_result(
                         script_id=script_id,
                         style_mode=style_mode,
                         manager=export_mgr,
+                        skip_subtitles=skip_subtitles,
                     )
                 except FfmpegExportError as exc:
                     import json
@@ -1102,6 +1225,7 @@ async def run_llm_action(
     immediate = action in (
         "compose_final",
         "create_shots",
+        "create_frames",
         "persist_plan",
         "plan_edit_timeline",
         "build_edit_timeline",

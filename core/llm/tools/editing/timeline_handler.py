@@ -28,13 +28,52 @@ def handle_load_edit_context(
     store: MemoryStore, ctx: AgentRunContext, args: dict[str, Any]
 ) -> ToolResult:
     del args
+    script_id = ctx.script_id
     try:
-        payload = build_edit_context_payload(store, ctx.script_id)
+        payload = build_edit_context_payload(store, script_id)
     except ValueError as exc:
         return ToolResult(observation=str(exc), structured={"error": str(exc)}, ok=False)
     ctx.work_context["edit_context"] = payload
-    structured = {"action": "load_edit_context", **payload}
-    obs = format_script_assets_payload(structured)
+
+    media_summary: dict[str, Any] = {}
+    media_breakdown: dict[str, int] = {}
+    for m in store.list_media_for_script(script_id):
+        media_breakdown[m.type.value] = media_breakdown.get(m.type.value, 0) + 1
+    for media_type in ("image", "audio", "video", "final"):
+        cnt = payload.get("media_counts", {}).get(media_type, 0)
+        if cnt:
+            media_summary[media_type] = cnt
+    if not media_summary:
+        media_summary = {"note": "暂无可访问媒体"}
+
+    summary = {
+        "script_id": script_id,
+        "has_video_plan": bool(payload.get("video_plan")),
+        "shot_count": payload.get("video_plan", {}).get("shot_count", 0) if payload.get("video_plan") else 0,
+        "plot_count": payload.get("plot_count", 0),
+        "linked_image_count": payload.get("linked_image_count", 0),
+        "has_edit_timeline": bool(payload.get("edit_timeline")),
+        "media_breakdown": media_breakdown,
+    }
+
+    structured = {
+        "action": "load_edit_context",
+        "script_id": script_id,
+        "script": payload.get("script", {}),
+        "video_plan": payload.get("video_plan"),
+        "edit_timeline": payload.get("edit_timeline"),
+        "shot_gaps": payload.get("shot_gaps", []),
+        "plots": payload.get("plots", []),
+        "plot_count": payload.get("plot_count", 0),
+        "assets_with_images": payload.get("assets_with_images", []),
+        "linked_image_count": payload.get("linked_image_count", 0),
+        "media": media_summary,
+        "summary": summary,
+    }
+    if payload.get("message"):
+        structured["message"] = payload["message"]
+
+    obs = json.dumps(structured, ensure_ascii=False, indent=2)
     return ToolResult(observation=obs, structured=structured)
 
 
@@ -58,6 +97,15 @@ def handle_plan_edit_timeline(
     if not mode:
         mode = "merge" if existing and existing.user_edited else "create"
 
+    skip_subtitle_enrich = bool(args.get("skip_subtitle_enrich"))
+    if (
+        not skip_subtitle_enrich
+        and mode == "replace"
+        and isinstance(llm_tracks, dict)
+        and llm_tracks.get("subtitle") == []
+    ):
+        skip_subtitle_enrich = True
+
     timeline = merge_timeline_with_fallback(
         store,
         script_id=script_id,
@@ -66,6 +114,7 @@ def handle_plan_edit_timeline(
         llm_video_layers=llm_video_layers if isinstance(llm_video_layers, list) else None,
         existing=existing,
         mode=mode,
+        skip_subtitle_enrich=skip_subtitle_enrich,
     )
     store.set_edit_timeline(timeline)
     ctx.outputs.append(

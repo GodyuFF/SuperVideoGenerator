@@ -1,5 +1,6 @@
 """统一 AI 配置 API：LLM / 图片 / 视频 / TTS。"""
 
+import asyncio
 import uuid
 from pathlib import Path
 from typing import Any
@@ -9,14 +10,17 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from apps.api.state import state
+from core.llm.ai_config_store import collect_persisted_config, save_ai_config
 from core.models.entities import ImageSourceMode
 from core.store.project_paths import DATA_ROOT
 from core.tts.engine import is_tts_available, synthesize_speech
 from core.tts.voices import get_all_voices
+from core.llm.tools.image.settings import get_image_gen_manager
 
 router = APIRouter(prefix="/api/ai")
 
 _PREVIEW_DIR = DATA_ROOT / "temp" / "tts_preview"
+_TEST_IMAGE_DIR = DATA_ROOT / "temp" / "test_images"
 
 
 class ImagePipelinePatch(BaseModel):
@@ -33,6 +37,7 @@ class LlmSectionPatch(BaseModel):
     api_key: str | None = Field(None, description="API Key，留空表示不修改")
     base_url: str | None = None
     use_llm_react: bool | None = None
+    show_react_details: bool | None = None
     temperature: float | None = None
     max_tokens: int | None = None
 
@@ -45,6 +50,14 @@ class ImageSectionPatch(BaseModel):
     base_url: str | None = None
     default_size: str | None = None
     timeout_sec: float | None = None
+    sd_base_url: str | None = None
+    sd_steps: int | None = None
+    sd_cfg_scale: float | None = None
+    sd_sampler: str | None = None
+    sd_negative_prompt: str | None = None
+    bailian_workspace_id: str | None = None
+    bailian_txt2img_model: str | None = None
+    bailian_img2img_model: str | None = None
     pipeline: ImagePipelinePatch | None = None
 
 
@@ -221,3 +234,106 @@ def get_tts_preview_file(filename: str):
     if not path.is_file():
         raise HTTPException(404, detail="试听文件不存在或已过期")
     return FileResponse(path, media_type="audio/mpeg", filename=safe)
+
+
+class TestImageRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=2000, description="生图提示词")
+
+
+@router.post("/image/test")
+async def test_image_generation(body: TestImageRequest):
+    """使用当前图片配置测试生成一张图片，返回临时图片 URL。
+
+    - 若 provider=local_sd：调用本地 SD txt2img
+    - 若 provider=agnes：调用 Agnes API txt2img
+    """
+    from core.llm.tools.image.agnes_client import (
+        AgnesImageGenerationError,
+        generate_text_to_image_async,
+    )
+    from core.llm.tools.image.sd_client import (
+        SdImageGenerationError,
+        sd_txt2img,
+    )
+    from core.llm.tools.image.settings import get_image_gen_settings
+
+    settings = get_image_gen_settings()
+    if not settings.enabled:
+        raise HTTPException(400, detail="图片生成未启用")
+
+    try:
+        if settings.provider == "local_sd":
+            # SD 生图时，在用户 prompt 前添加质量前缀，提升输出质量
+            sd_prompt = f"{body.prompt.strip()}, masterpiece, best quality, highly detailed"
+            image_url = await sd_txt2img(
+                sd_prompt,
+                settings=settings,
+                timeout=120.0,
+            )
+        elif settings.provider == "bailian":
+            from core.llm.tools.image.bailian_client import (
+                BailianImageGenerationError,
+                bailian_txt2img,
+            )
+            image_url = await bailian_txt2img(
+                body.prompt,
+                settings=settings,
+            )
+        else:
+            image_url = await generate_text_to_image_async(
+                body.prompt,
+                settings=settings,
+            )
+    except SdImageGenerationError as e:
+        raise HTTPException(502, detail=f"本地 SD 生图失败：{e}") from e
+    except AgnesImageGenerationError as e:
+        raise HTTPException(502, detail=f"Agnes 生图失败：{e}") from e
+    except BailianImageGenerationError as e:
+        raise HTTPException(502, detail=f"百炼生图失败：{e}") from e
+    except Exception as e:
+        raise HTTPException(502, detail=f"生图失败：{e}") from e
+
+    # 将 base64 data URL 保存到磁盘（如果是 data: URL）
+    import base64
+
+    _TEST_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}.png"
+    output_path = _TEST_IMAGE_DIR / filename
+
+    if image_url.startswith("data:"):
+        _, _, b64_part = image_url.partition("base64,")
+        if b64_part:
+            img_data = base64.b64decode(b64_part)
+            output_path.write_bytes(img_data)
+    else:
+        # 远程 URL，下载保存
+        import httpx
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(image_url)
+            resp.raise_for_status()
+            output_path.write_bytes(resp.content)
+
+    return {
+        "ok": True,
+        "url": f"/api/ai/image/test/{filename}",
+        "filename": filename,
+    }
+
+
+@router.get("/image/test/{filename}")
+def get_test_image_file(filename: str):
+    """读取测试生成图片。"""
+    safe = Path(filename).name
+    path = _TEST_IMAGE_DIR / safe
+    if not path.is_file():
+        raise HTTPException(404, detail="测试图片不存在或已过期")
+    return FileResponse(path, media_type="image/png", filename=safe)
+
+
+@router.post("/image/detect-sd")
+async def detect_sd():
+    """检测本地 SD WebUI 是否可用，返回模型列表。"""
+    mgr = get_image_gen_manager()
+    result = await mgr.detect_sd(force=True)
+    # 同步持久化配置中的 sd_detected 状态（不需要，仅内存缓存）
+    return {"ok": True, **result}

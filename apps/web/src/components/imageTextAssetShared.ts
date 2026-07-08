@@ -8,6 +8,7 @@ export const TYPE_LABEL: Record<string, string> = {
   character: "角色",
   prop: "物品",
   scene: "空镜",
+  frame: "画面",
 };
 
 export const TRAIT_LABEL: Record<string, string> = {

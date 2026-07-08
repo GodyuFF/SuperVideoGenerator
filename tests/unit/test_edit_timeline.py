@@ -25,6 +25,7 @@ from core.models.entities import (
 )
 from core.store.memory import MemoryStore
 from core.store.persist import load_store, save_store
+from tests.support.frame_fixtures import ensure_shot_frame_image
 from tests.support.image_text_fixtures import prop_content
 
 
@@ -55,18 +56,24 @@ def store_with_plan() -> MemoryStore:
     store.add_media_asset(media)
     char.primary_media_id = media.id
     store.update_text_asset(char)
+    shot = VideoPlanShot(
+        order=0,
+        duration_ms=5000,
+        narration_text="老虎在雪原上",
+        camera_motion="ken_burns_in",
+        asset_refs={"character": [char.id]},
+    )
+    ensure_shot_frame_image(
+        store,
+        project_id=project.id,
+        script_id=script.id,
+        shot=shot,
+        image_url="https://cdn.example.com/tiger.png",
+    )
     plan = VideoPlan(
         script_id=script.id,
         mode=VideoStyleMode.DYNAMIC_IMAGE,
-        shots=[
-            VideoPlanShot(
-                order=0,
-                duration_ms=5000,
-                narration_text="老虎在雪原上",
-                camera_motion="ken_burns_in",
-                asset_refs={"character": [char.id]},
-            )
-        ],
+        shots=[shot],
     )
     store.set_video_plan(plan)
     return store

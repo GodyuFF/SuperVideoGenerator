@@ -114,15 +114,15 @@ async def generate_text_to_image_async(
     return _extract_image_url(body)
 
 
-async def generate_image_with_reference_async(
+async def generate_images_with_references_async(
     prompt: str,
-    reference_url: str,
+    reference_urls: list[str],
     *,
     settings: ImageGenSettings | None = None,
     size: str | None = None,
     api_key: str | None = None,
 ) -> str:
-    """以 reference 图 + prompt 调用 Agnes 生图（图生图/一致性变体）。"""
+    """多参考图图生图（Agnes Image 2.1+，`extra_body.image: [url...]`）。"""
     s = settings or get_image_gen_settings()
     if not s.reference_enabled:
         raise AgnesImageGenerationError(
@@ -134,21 +134,20 @@ async def generate_image_with_reference_async(
             "未配置 Agnes 生图 API Key（SVG_IMAGE_GEN_API_KEY 或 AGNES_API_KEY）"
         )
     text = prompt.strip()
-    ref = reference_url.strip()
+    refs = [u.strip() for u in reference_urls if str(u).strip()]
     if not text:
         raise AgnesImageGenerationError("生图 prompt 不能为空")
-    if not ref:
-        raise AgnesImageGenerationError("reference 图片 URL 不能为空")
+    if not refs:
+        raise AgnesImageGenerationError("reference 图片 URL 列表不能为空")
 
-    model = (s.reference_model or s.model or DEFAULT_AGNES_IMAGE_MODEL).strip()
-    ref_field = (s.reference_image_field or "image_url").strip()
-    extra: dict[str, Any] = {"response_format": "url", ref_field: ref}
-
+    model = (
+        s.img2img_model or s.reference_model or s.model or DEFAULT_AGNES_IMAGE_MODEL
+    ).strip()
     payload: dict[str, Any] = {
         "model": model,
         "prompt": text,
         "size": size or s.default_size,
-        "extra_body": extra,
+        "extra_body": {"image": refs, "response_format": "url"},
     }
     headers = {
         "Authorization": f"Bearer {key}",
@@ -165,7 +164,7 @@ async def generate_image_with_reference_async(
         body = resp.text[:2000]
         parsed = parse_agnes_api_error_body(resp.status_code, body)
         raise AgnesImageGenerationError(
-            f"Agnes reference 生图 API 错误 {resp.status_code}: {parsed['message']}",
+            f"Agnes 多参考图生图 API 错误 {resp.status_code}: {parsed['message']}",
             http_status=resp.status_code,
             error_code=parsed["error_code"],
             error_type=parsed["error_type"],
@@ -180,6 +179,24 @@ async def generate_image_with_reference_async(
     if not isinstance(body, dict):
         raise AgnesImageGenerationError("Agnes 响应格式无效")
     return _extract_image_url(body)
+
+
+async def generate_image_with_reference_async(
+    prompt: str,
+    reference_url: str,
+    *,
+    settings: ImageGenSettings | None = None,
+    size: str | None = None,
+    api_key: str | None = None,
+) -> str:
+    """单张 reference 图生图（薄封装，统一走 `extra_body.image` 数组）。"""
+    return await generate_images_with_references_async(
+        prompt,
+        [reference_url],
+        settings=settings,
+        size=size,
+        api_key=api_key,
+    )
 
 
 def generate_text_to_image(

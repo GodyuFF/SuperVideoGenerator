@@ -58,6 +58,7 @@ export type BoardTabId =
   | "character"
   | "scene"
   | "prop"
+  | "frame"
   | "storyboard"
   | "edit"
   | "media"
@@ -68,6 +69,7 @@ export interface ScriptBoardMeta {
   character_count?: number;
   scene_count?: number;
   prop_count?: number;
+  frame_count?: number;
   shot_count?: number;
   media_count?: number;
   has_edit_timeline?: boolean;
@@ -81,6 +83,7 @@ export function visibleScriptTabs(meta: ScriptBoardMeta | null): BoardTabId[] {
   if ((meta.character_count ?? 0) > 0) tabs.push("character");
   if ((meta.scene_count ?? 0) > 0) tabs.push("scene");
   if ((meta.prop_count ?? 0) > 0) tabs.push("prop");
+  if ((meta.frame_count ?? 0) > 0) tabs.push("frame");
   if ((meta.shot_count ?? 0) > 0) tabs.push("storyboard");
   if (meta.has_edit_timeline) tabs.push("edit");
   if ((meta.media_count ?? 0) > 0) tabs.push("media");
@@ -96,6 +99,7 @@ export const BOARD_TABS: { id: BoardTabId; label: string; level: 1 | 2 }[] = [
   { id: "character", label: "角色", level: 2 },
   { id: "scene", label: "空镜", level: 2 },
   { id: "prop", label: "物品", level: 2 },
+  { id: "frame", label: "画面", level: 2 },
   { id: "storyboard", label: "分镜", level: 2 },
   { id: "edit", label: "剪辑", level: 2 },
   { id: "media", label: "媒体", level: 2 },

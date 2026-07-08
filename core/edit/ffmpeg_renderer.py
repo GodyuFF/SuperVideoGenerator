@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -31,6 +32,7 @@ from core.edit.timeline import (
 from core.edit.transform_interp import (
     ResolvedTransform,
     build_scaled_video_filter,
+    snap_even_dim,
     timeline_needs_composite_export,
     transform_to_overlay_pixels,
 )
@@ -106,9 +108,11 @@ def _run_ffmpeg(
 
 
 def _scale_pad_filter(width: int, height: int) -> str:
+    w = snap_even_dim(width)
+    h = snap_even_dim(height)
     return (
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black"
+        f"scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
+        f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black"
     )
 
 
@@ -607,6 +611,7 @@ def export_timeline_to_mp4(
     script_id: str,
     style_mode: VideoStyleMode = VideoStyleMode.DYNAMIC_IMAGE,
     manager: ExportConfigManager | None = None,
+    skip_subtitles: bool = False,
 ) -> FfmpegExportResult:
     """将 EditTimeline 导出为 MP4。"""
     check_cancelled(script_id)
@@ -622,7 +627,8 @@ def export_timeline_to_mp4(
     timeline = ensure_video_layers(timeline)
     plan = store.get_video_plan_for_script(script_id)
     timeline = enrich_timeline_audio_from_store(store, timeline, plan)
-    timeline = enrich_subtitles_from_audio(store, timeline, plan)
+    if not skip_subtitles:
+        timeline = enrich_subtitles_from_audio(store, timeline, plan)
     timeline = normalize_timeline_motions(timeline)
     validation = validate_edit_timeline(store, timeline)
     if not validation.ready:
@@ -741,7 +747,14 @@ def export_timeline_to_mp4(
             _concat_segments(ffmpeg, segment_files, video_only)
 
         subtitle_clips = list(timeline.tracks.get("subtitle", []))
-        if subtitle_clips:
+        burn_subtitles_enabled = not skip_subtitles and os.getenv(
+            "SVG_BURN_SUBTITLES", "1"
+        ).strip().lower() not in (
+            "0",
+            "false",
+            "no",
+        )
+        if subtitle_clips and burn_subtitles_enabled:
             ass_path = temp_dir / "subs.ass"
             if write_ass_file(subtitle_clips, ass_path, settings):
                 video_with_subs = temp_dir / "video_subs.mp4"
@@ -752,6 +765,7 @@ def export_timeline_to_mp4(
                     video_with_subs,
                     settings,
                     run_ffmpeg=_run_ffmpeg,
+                    subtitle_clips=subtitle_clips,
                 )
                 video_only = video_with_subs
 

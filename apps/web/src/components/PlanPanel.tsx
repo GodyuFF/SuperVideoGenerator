@@ -116,7 +116,7 @@ export function PlanPanel({
 
       {!hasSteps && !summary && (
         <p className="muted plan-empty-hint">
-          剧本 → 图片 → 分镜 → [视频] → 配音 → 剪辑
+          剧本 → 设定 → 分镜 → 图片 → [视频] → 配音 → 剪辑
         </p>
       )}
 

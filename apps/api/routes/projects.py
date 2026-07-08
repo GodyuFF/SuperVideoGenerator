@@ -231,7 +231,7 @@ def get_script(project_id: str, script_id: str):
 
 @router.get("/projects/{project_id}/scripts/{script_id}/assets")
 def list_assets(project_id: str, script_id: str, type: str | None = None):
-    """列出剧本相关资产（含共享池）；type 可过滤 character/prop/scene/plot/narration。"""
+    """列出剧本相关资产（含共享池）；type 可过滤 character/prop/scene/frame/plot/narration。"""
     script = state.store.get_script(script_id)
     if not script or script.project_id != project_id:
         raise HTTPException(404, "剧本不存在")
@@ -239,6 +239,29 @@ def list_assets(project_id: str, script_id: str, type: str | None = None):
     if type:
         assets = [a for a in assets if a.type.value == type]
     return [a.model_dump() for a in assets]
+
+
+@router.post("/projects/{project_id}/scripts/{script_id}/assets/reapply-chroma")
+def reapply_chroma_for_script_assets(
+    project_id: str,
+    script_id: str,
+    force: bool = False,
+):
+    """对 character/prop 关联图片重新绿幕抠图（修复未抠图的历史资产）。"""
+    script = state.store.get_script(script_id)
+    if not script or script.project_id != project_id:
+        raise HTTPException(404, "剧本不存在")
+    from core.assets.chroma_key import reapply_chroma_for_script
+    from core.store.persist import schedule_save
+
+    result = reapply_chroma_for_script(
+        state.store,
+        project_id=project_id,
+        script_id=script_id,
+        force=force,
+    )
+    schedule_save(state.store, immediate=True)
+    return result
 
 
 class PatchTextAssetRequest(BaseModel):

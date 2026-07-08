@@ -104,7 +104,13 @@ export function timelineToChatMessages(
           round,
           agentName: item.agent_name,
           displayName: item.display_name,
-          iterations: item.iterations,
+          iterations: (item.iterations || []).map((it) => {
+            const raw = it as unknown as Record<string, unknown>;
+            const ai =
+              normalizeActionInput(raw.action_input as Record<string, unknown> | undefined) ??
+              it.actionInput;
+            return { ...it, actionInput: ai };
+          }),
         });
         break;
       case "a2ui_confirmation":

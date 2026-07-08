@@ -311,6 +311,44 @@ def build_edit_timeline_output_schema() -> dict[str, Any]:
     )
 
 
+def validate_edit_assets_output_schema() -> dict[str, Any]:
+    """validate_edit_assets / report_missing_assets 输出 schema。"""
+    missing_item = _object_schema(
+        {
+            "category": {"type": "string"},
+            "clip_id": {"type": "string"},
+            "track": {"type": "string"},
+            "shot_id": {"type": "string"},
+            "text_asset_id": {"type": "string"},
+            "reason": {"type": "string"},
+            "suggested_upstream": {"type": "string"},
+        },
+        additional_properties=True,
+    )
+    resolved_clip = _object_schema(
+        {
+            "clip_id": {"type": "string"},
+            "track": {"type": "string"},
+            "media_id": {"type": "string"},
+            "media_type": {"type": "string"},
+            "url": {"type": "string"},
+            "link": {"type": "string"},
+            "is_accessible": {"type": "boolean"},
+        },
+        additional_properties=True,
+    )
+    return _object_schema(
+        {
+            "ready": {"type": "boolean"},
+            "missing_items": {"type": "array", "items": missing_item},
+            "resolved_clips": {"type": "array", "items": resolved_clip},
+            "summary": {"type": "object"},
+        },
+        required=["ready", "missing_items", "summary"],
+        additional_properties=True,
+    )
+
+
 def scan_text_assets_output_schema() -> dict[str, Any]:
     linked_media_item = _object_schema(
         {
@@ -362,14 +400,11 @@ def scan_text_assets_output_schema() -> dict[str, Any]:
             "name": {"type": "string"},
             "type": {
                 "type": "string",
-                "enum": ["character", "scene", "prop"],
+                "enum": ["character", "scene", "prop", "frame"],
             },
+            "summary": {"type": "string"},
+            "trait_summary": {"type": "string"},
             "linked": {"type": "boolean"},
-            "primary_media_id": {"type": ["string", "null"]},
-            "has_image_prompt": {"type": "boolean"},
-            "image_prompt_preview": {"type": "string"},
-            "linked_media_count": {"type": "integer"},
-            "linked_media": {"type": "array", "items": linked_media_item},
             "has_image": {"type": "boolean"},
             "image_status": {
                 "type": "string",
@@ -378,30 +413,33 @@ def scan_text_assets_output_schema() -> dict[str, Any]:
             "needs_generation": {"type": "boolean"},
             "source_mode": {"type": "string"},
             "linked_image_id": {"type": ["string", "null"]},
-            "sync_pending": {"type": "boolean"},
             "variants": {"type": "array", "items": variant_row},
             "pending_variant_count": {"type": "integer"},
+            "element_refs": {"type": "object"},
+            "variant_refs": {"type": "object"},
+            "references_ready": {"type": "boolean"},
+            "pending_reason": {"type": "string"},
+            "reference_media_ids": {"type": "array", "items": {"type": "string"}},
+            "shot_id": {"type": "string"},
+            "has_image_prompt": {"type": "boolean"},
+            "image_prompt_preview": {"type": "string"},
         },
         required=[
             "id",
             "name",
             "type",
+            "summary",
+            "trait_summary",
             "linked",
-            "primary_media_id",
-            "has_image_prompt",
-            "image_prompt_preview",
-            "linked_media_count",
-            "linked_media",
             "has_image",
             "image_status",
             "needs_generation",
             "source_mode",
             "linked_image_id",
-            "sync_pending",
             "variants",
             "pending_variant_count",
         ],
-        additional_properties=False,
+        additional_properties=True,
     )
     return _object_schema(
         {

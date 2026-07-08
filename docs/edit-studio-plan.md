@@ -65,7 +65,7 @@ LLM/分镜可能写入创意运镜名（如 `gentle_push_in`）。入库（`_par
 ### 画布缩放导出
 
 - `transform.width/height`：预览与 FFmpeg 导出一致（composite 或 `_render_clip_with_transform`）
-- Ken Burns：`motion != static` 触发 composite；边界每 250ms 采样（[`ken_burns_filter.py`](../core/edit/ken_burns_filter.py)）
+- Ken Burns：`motion != static` 触发 composite；边界每 250ms 采样（[`ken_burns_filter.py`](../core/edit/ken_burns_filter.py)）；导出时 `transform_to_overlay_pixels` 将 pad 目标规范为偶数，`scale` 滤镜带 `force_divisible_by=2`；`motion=static` 不应用 `motion_detail` 缩放
 - dynamic_image 模式默认走 `composite_slices` 导出
 
 ## 预览 URL 解析
@@ -126,7 +126,7 @@ Edit Studio 播放时，[`TimelineAudioSync`](../apps/web/src/edit/TimelineAudio
 | 关键帧 / Ken Burns | `collect_timeline_boundaries`（含 250ms Ken Burns 采样）；dynamic_image 默认 composite_slices |
 | 素材校验 | 导出前 `validate_edit_timeline`；缺图/配音时拒绝导出 |
 | audio 轨 | adelay + amix |
-| 字幕 | 预览 HTML overlay + 导出 ASS 硬字幕（[`subtitle_burn.py`](../core/edit/subtitle_burn.py)） |
+| 字幕 | 预览 HTML overlay + 导出 ASS 硬字幕（[`subtitle_burn.py`](../core/edit/subtitle_burn.py)）；Windows 路径 `\:` 转义（无 shell 引号）；ASS 失败时 drawtext 回退；`compose_final.skip_subtitles=true` 或 `SVG_BURN_SUBTITLES=0` 可跳过烧录 |
 
 ## FFmpeg 安装与配置
 

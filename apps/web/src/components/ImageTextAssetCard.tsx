@@ -123,6 +123,7 @@ export function ImageTextAssetCard({
                   url={img.url}
                   name={images.length > 2 ? undefined : img.name}
                   size="card"
+                  checkerboard={item.type === "character" || item.type === "prop"}
                 />
               ) : null
             )}

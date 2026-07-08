@@ -31,7 +31,7 @@ def test_pipeline_dynamic_image_and_comic_skip_video_gen():
     for mode in (VideoStyleMode.DYNAMIC_IMAGE, VideoStyleMode.DYNAMIC_COMIC):
         pipeline = pipeline_for_style(mode)
         assert "delegate_script_design" in pipeline
-        assert "delegate_image_gen" in pipeline
+        assert pipeline.index("delegate_storyboard") < pipeline.index("delegate_image_gen")
         assert "delegate_video_gen" not in pipeline
         assert pipeline[-2:] == ["delegate_tts_gen", "delegate_edit_compose"]
 

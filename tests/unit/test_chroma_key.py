@@ -16,7 +16,6 @@ def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
 
 
 def _write_green_with_red_square(path: Path, size: int = 32) -> None:
-    """生成纯绿底 + 中央红色方块 PNG（无 Pillow 依赖）。"""
     width = height = size
     raw_rows: list[bytes] = []
     for y in range(height):

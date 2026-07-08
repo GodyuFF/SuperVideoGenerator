@@ -1,6 +1,6 @@
 # SuperVideoGenerator 代码设计计划
 
-> 版本：v0.1 | 对应产品手册 v0.1 | 更新：2026-07-07（core 目录分层边界；history_summary 归位 llm/prompt）
+> 版本：v0.1 | 对应产品手册 v0.1 | 更新：2026-07-07（FFmpeg pad 偶数尺寸；static 忽略 motion_detail scale）
 
 ## 1. 目标
 
@@ -276,7 +276,8 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 ### 5.3.2 生图（Agnes AI）
 
 - 默认 [`Agnes AI API`](https://agnes-ai.com/zh-Hans/docs/overview)（OpenAI 兼容 `POST /v1/images/generations`）
-- 配置：`SVG_IMAGE_GEN_*` 或 `AGNES_API_KEY`（见 `.env.example`）；默认模型 `agnes-image-2.0-flash`，Base URL `https://apihub.agnes-ai.com/v1`；`max_concurrency` 默认 4
+- 配置：`SVG_IMAGE_GEN_*` 或 `AGNES_API_KEY`（见 `.env.example`）；默认模型 `agnes-image-2.1-flash`（图生图同模型，`img2img_model` 可覆盖），Base URL `https://apihub.agnes-ai.com/v1`；`max_concurrency` 默认 4
+- **文生图**：character/prop/scene；**图生图（2.1）**：`frame` 画面资产，`extra_body.image: [url...]` 多参考合成（scene 为首图）
 - 模块：`core/llm/tools/image/settings.py`、`agnes_client.py`（`generate_text_to_image_async` + **`generate_image_with_reference_async`**）、`variants.py`、`reference_url.py`、`generate.py`
 - **多图变体**：`TextAsset.content.image_variants[]`（base 设定主形象 + expression/pose/action 衍生）；`scan` 按变体输出 `variants[]`/`pending_variant_count`；`generate_images` 先 base 后 derivative（reference 生图）；`primary_media_id` 仅 base 更新
 - `generate_images` handler 并发调用 Agnes API，逐张落盘并通过 WebSocket `image_gen_progress` 推送进度；**单项 API 失败最多重试 3 次**，仍失败则 `ImageGenerationAbortError` 中止子 Agent 步骤；**全部失败项**结构化写入 `failure_analysis`（原因分类、API 说明、prompt 摘要），主编排 observation 供 super_video_master 分析是否需 `delegate_script_design` 修订提示词
@@ -301,7 +302,7 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 - **preview_url**：`timeline_board_items` 遍历 `video_layers` 经 `resolve_clip_media` 填充；见 [`docs/edit-studio-plan.md`](edit-studio-plan.md)
 - **能力单源**：[`core/edit/capabilities.json`](../core/edit/capabilities.json)；`GET /api/edit/capabilities` 合并 `ffmpeg_available` / `export_enabled` / `max_video_layers`
 - **Agent merge**：`plan_edit_timeline` 输出 `video_layers` + `transform`；`merge_agent_timeline` 按层/clip `edited_by` 保护（[`core/edit/timeline.py`](../core/edit/timeline.py)）
-- **transform 插值**：[`core/edit/transform_interp.py`](../core/edit/transform_interp.py)（`collect_timeline_boundaries`、`build_scaled_video_filter`）；前端 [`transformInterp.ts`](../apps/web/src/edit/transformInterp.ts)
+- **transform 插值**：[`core/edit/transform_interp.py`](../core/edit/transform_interp.py)（`collect_timeline_boundaries`、`build_scaled_video_filter`、`snap_even_dim`）；`build_scaled_video_filter` 对 pad 目标使用**偶数尺寸** + `force_divisible_by=2`，避免 Ken Burns 中间 scale 产生奇数高宽导致 FFmpeg pad 失败；`motion=static` 时忽略 `motion_detail` 的 scale 插值（与前端 `kenBurnsPreview.ts` 对齐）；前端 [`transformInterp.ts`](../apps/web/src/edit/transformInterp.ts)
 - **媒体路径**：[`core/edit/media_paths.py`](../core/edit/media_paths.py)、[`core/edit/export_paths.py`](../core/edit/export_paths.py)、[`core/edit/edit_capabilities.py`](../core/edit/edit_capabilities.py)
 - 规格：[`docs/edit-studio-plan.md`](edit-studio-plan.md)
 
@@ -325,8 +326,8 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 | 模块 | 职责 |
 |------|------|
 | `core/models/image_text_asset.py` | 图文资产 content + **`ImageVariant` / `image_variants[]`** |
-| `core/assets/image_prompt.py` | `compose_base_image_prompt` / `compose_variant_image_prompt`；scene 空镜（无人物）；character/prop 绿幕 prompt |
-| `core/assets/chroma_key.py` | `generate_images` 落盘后 character/prop FFmpeg colorkey → 透明 PNG |
+| `core/assets/image_prompt.py` | `compose_base_image_prompt` / `compose_variant_image_prompt`；scene 空镜背景板（`PROMPT_VERSION=2`，无人物/无 prop 主体）；character/prop 绿幕 prompt |
+| `core/assets/chroma_key.py` | `generate_images` 落盘后 character/prop FFmpeg colorkey → `{media_id}.png` 透明图；`POST .../assets/reapply-chroma` 修复历史资产 |
 | `core/assets/service.py` | 用户 PATCH 更新、`user_edited`、prompt 重算 |
 | `core/llm/tools/script/list.py` | `list_text_assets` 载荷：`types` 过滤、`include_content` 裁剪、`linked`/`counts_by_type`；observation 为完整 JSON |
 | `core/llm/tools/image/scan.py` | `scan_text_assets`：`variants[]`、`pending_variant_count`、变体级 `needs_generation` |

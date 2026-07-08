@@ -15,6 +15,7 @@ from core.store.memory import MemoryStore
 from core.store.persist import schedule_save
 
 handle_create_shots = make_write_handler("storyboard_agent", "create_shots")
+handle_create_frames = make_write_handler("storyboard_agent", "create_frames")
 handle_persist_plan = make_write_handler("storyboard_agent", "persist_plan")
 
 
@@ -119,6 +120,7 @@ def handle_get_edit_timeline(
 HANDLERS = {
     "load_context": handle_load_context_enriched,
     "create_shots": handle_create_shots,
+    "create_frames": handle_create_frames,
     "persist_plan": handle_persist_plan,
     "build_edit_timeline": handle_build_edit_timeline,
     "get_edit_timeline": handle_get_edit_timeline,

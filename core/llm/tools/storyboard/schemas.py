@@ -6,6 +6,7 @@ from typing import Any
 
 from core.llm.prompt.tools.schema_builders import (
     _OBSERVATION,
+    build_frames_array_schema,
     build_shots_array_schema,
 )
 from core.llm.tools.shared.input_common import READ_ONLY_QUERY_SCHEMA
@@ -30,6 +31,16 @@ STORYBOARD_SHOTS_SCHEMA: dict[str, Any] = {
     "additionalProperties": True,
 }
 
+STORYBOARD_FRAMES_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "observation": _OBSERVATION,
+        "frames": build_frames_array_schema(),
+    },
+    "required": ["observation", "frames"],
+    "additionalProperties": True,
+}
+
 PERSIST_PLAN_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -47,6 +58,7 @@ PERSIST_PLAN_SCHEMA: dict[str, Any] = {
 STORYBOARD_SCHEMAS: dict[str, dict[str, Any]] = {
     "load_context": STORYBOARD_LOAD_SCHEMA,
     "create_shots": STORYBOARD_SHOTS_SCHEMA,
+    "create_frames": STORYBOARD_FRAMES_SCHEMA,
     "persist_plan": PERSIST_PLAN_SCHEMA,
     "get_plan": READ_ONLY_QUERY_SCHEMA,
 }

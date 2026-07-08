@@ -8,6 +8,7 @@ const TYPE_LABEL: Record<string, string> = {
   character: "角色",
   scene: "空镜",
   prop: "物品",
+  frame: "画面",
 };
 
 interface CreateTextAssetDialogProps {

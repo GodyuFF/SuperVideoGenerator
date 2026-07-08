@@ -29,12 +29,17 @@ class AgentDefinition:
         return default_role_prompt(self.name)
 
 
-def _def(name: str, display_name: str) -> AgentDefinition:
+def _def(
+    name: str,
+    display_name: str,
+    *,
+    action_pipeline: list[str] | None = None,
+) -> AgentDefinition:
     tools = tuple(AGENT_TOOLS.get(name, []))
     return AgentDefinition(
         name=name,
         display_name=display_name,
-        action_pipeline=pipeline_actions(name),
+        action_pipeline=action_pipeline or pipeline_actions(name),
         ad_hoc_actions=ad_hoc_actions(name),
         read_actions=read_actions(name),
         tools=tools,
@@ -44,7 +49,16 @@ def _def(name: str, display_name: str) -> AgentDefinition:
 AGENT_DEFINITIONS: dict[str, AgentDefinition] = {
     "script_agent": _def("script_agent", "剧本 Agent"),
     "image_agent": _def("image_agent", "图片 Agent"),
-    "storyboard_agent": _def("storyboard_agent", "分镜 Agent"),
+    "storyboard_agent": _def(
+        "storyboard_agent",
+        "分镜 Agent",
+        action_pipeline=[
+            "load_context",
+            "create_shots",
+            "create_frames",
+            "persist_plan",
+        ],
+    ),
     "video_agent": _def("video_agent", "视频 Agent"),
     "tts_agent": _def("tts_agent", "配音 Agent"),
     "editing_agent": _def("editing_agent", "剪辑 Agent"),

@@ -4,8 +4,16 @@ import pytest
 
 from core.llm.agent.react_core import AgentRunContext
 from core.llm.tools.editing.context import build_edit_context_payload
-from core.llm.tools.editing.timeline_handler import handle_load_edit_context, handle_plan_edit_timeline
-from core.llm.tools.output_schemas import generic_action_output_schema, load_edit_context_output_schema
+from core.llm.tools.output_schemas import (
+    generic_action_output_schema,
+    load_edit_context_output_schema,
+    validate_edit_assets_output_schema,
+)
+from core.llm.tools.editing.timeline_handler import (
+    handle_load_edit_context,
+    handle_plan_edit_timeline,
+    handle_validate_edit_assets,
+)
 from core.llm.tools.register_helpers import output_schema_for
 from core.llm.tools.validators import validate_against_schema
 from core.models.entities import (
@@ -21,6 +29,7 @@ from core.models.entities import (
     VideoStyleMode,
 )
 from core.store.memory import MemoryStore
+from tests.support.frame_fixtures import ensure_shot_frame_image
 from tests.support.image_text_fixtures import prop_content
 
 
@@ -57,6 +66,13 @@ def editing_store() -> MemoryStore:
         narration_text="展示道具",
         camera_motion="ken_burns_in",
         asset_refs={"prop": [prop.id]},
+    )
+    ensure_shot_frame_image(
+        store,
+        project_id=project.id,
+        script_id=script.id,
+        shot=shot,
+        image_url="https://images.test/frame.png",
     )
     plan = VideoPlan(
         script_id=script.id,
@@ -383,3 +399,100 @@ def test_plan_edit_timeline_observation_lists_all_warnings(editing_store: Memory
     assert video_warnings
     for warning in video_warnings:
         assert warning in result.observation
+
+
+def test_validate_edit_assets_output_schema_matches_handler(editing_store: MemoryStore):
+    """validate_edit_assets 输出须通过专用 schema 校验。"""
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    project_id = editing_store._test_project_id  # type: ignore[attr-defined]
+    ctx = AgentRunContext(
+        task_brief="校验素材",
+        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        script_id=script_id,
+        step_id="edit_compose",
+        agent_name="editing_agent",
+        project_id=project_id,
+    )
+    handle_plan_edit_timeline(
+        editing_store,
+        ctx,
+        {
+            "observation": "规划",
+            "mode": "create",
+            "video_layers": [
+                {
+                    "id": "layer_main",
+                    "name": "主层",
+                    "z_index": 0,
+                    "clips": [
+                        {
+                            "id": "clip_v1",
+                            "start_ms": 0,
+                            "end_ms": 4000,
+                            "asset_ref": editing_store._test_media_id,  # type: ignore[attr-defined]
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    result = handle_validate_edit_assets(editing_store, ctx, {"observation": "校验"})
+    schema = validate_edit_assets_output_schema()
+    validate_against_schema(result.structured, schema, label="输出")
+    assert output_schema_for("validate_edit_assets") == schema
+
+
+def test_plan_edit_timeline_replace_empty_subtitle_skips_enrich(editing_store: MemoryStore):
+    """replace 模式显式空 subtitle 轨时不自动回填 TTS 字幕。"""
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    project_id = editing_store._test_project_id  # type: ignore[attr-defined]
+    ctx = AgentRunContext(
+        task_brief="规划无字幕轨",
+        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        script_id=script_id,
+        step_id="edit_compose",
+        agent_name="editing_agent",
+        project_id=project_id,
+    )
+    audio = MediaAsset(
+        project_id=editing_store._test_project_id,  # type: ignore[attr-defined]
+        script_id=script_id,
+        type=MediaAssetType.AUDIO,
+        name="tts",
+        url="https://audio.test/tts.mp3",
+        metadata={
+            "shot_id": editing_store._test_shot_id,  # type: ignore[attr-defined]
+            "duration_ms": 4000,
+            "subtitle_cues": [{"start_ms": 0, "end_ms": 1000, "text": "第一句"}],
+        },
+    )
+    editing_store.add_media_asset(audio)
+    result = handle_plan_edit_timeline(
+        editing_store,
+        ctx,
+        {
+            "observation": "无字幕轨",
+            "mode": "replace",
+            "tracks": {"audio": [], "subtitle": []},
+            "video_layers": [
+                {
+                    "id": "layer_main",
+                    "name": "主层",
+                    "z_index": 0,
+                    "clips": [
+                        {
+                            "id": "clip_v1",
+                            "start_ms": 0,
+                            "end_ms": 4000,
+                            "asset_ref": editing_store._test_media_id,  # type: ignore[attr-defined]
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    assert result.ok is True
+    timeline = editing_store.get_edit_timeline_for_script(script_id)
+    assert timeline is not None
+    assert timeline.tracks.get("subtitle") == []
+

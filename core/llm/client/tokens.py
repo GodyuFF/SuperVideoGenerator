@@ -181,10 +181,24 @@ def build_token_usage_meta(
         "prompt_tokens": breakdown.system_tokens
         + breakdown.tools_tokens
         + breakdown.messages_tokens,
-        "completion_tokens": breakdown.completion_budget_tokens,
-        "total_tokens": breakdown.total_estimated_tokens,
+        "estimated_completion_tokens": breakdown.completion_budget_tokens,
+        "total_estimated_tokens": breakdown.total_estimated_tokens,
         **breakdown.to_dict(),
     }
+    if estimated:
+        meta["completion_tokens"] = None
+        meta["total_tokens"] = meta["prompt_tokens"]
+    else:
+        meta["completion_tokens"] = (
+            actual_usage.get("completion_tokens")
+            if actual_usage
+            else breakdown.completion_budget_tokens
+        )
+        meta["total_tokens"] = (
+            actual_usage.get("total_tokens")
+            if actual_usage
+            else breakdown.total_estimated_tokens
+        )
     if actual_usage:
         meta["actual_usage"] = actual_usage
         meta["actual_prompt_tokens"] = actual_usage.get("prompt_tokens")

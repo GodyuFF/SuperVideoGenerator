@@ -43,6 +43,7 @@ export function AiSettingsPage({
   const [maxTokens, setMaxTokens] = useState(1024);
 
   const [imageEnabled, setImageEnabled] = useState(true);
+  const [imageProvider, setImageProvider] = useState("agnes");
   const [imageModel, setImageModel] = useState("");
   const [imageBaseUrl, setImageBaseUrl] = useState("");
   const [imageApiKey, setImageApiKey] = useState("");
@@ -52,6 +53,30 @@ export function AiSettingsPage({
   const [comicPreset, setComicPreset] = useState<"manga" | "webtoon" | "ink">("manga");
   const [imageBatchPending, setImageBatchPending] = useState(true);
   const [imageSearchFallback, setImageSearchFallback] = useState(true);
+
+  // SD fields
+  const [sdDetected, setSdDetected] = useState(false);
+  const [sdModels, setSdModels] = useState<string[]>([]);
+  const [sdCurrentModel, setSdCurrentModel] = useState("");
+  const [sdError, setSdError] = useState("");
+  const [sdBaseUrl, setSdBaseUrl] = useState("http://127.0.0.1:7860");
+  const [sdSteps, setSdSteps] = useState(20);
+  const [sdCfgScale, setSdCfgScale] = useState(7.0);
+  const [sdSampler, setSdSampler] = useState("Euler a");
+  const [sdSamplers, setSdSamplers] = useState<string[]>(["Euler a"]);
+  const [sdNegativePrompt, setSdNegativePrompt] = useState("");
+  const [sdDetecting, setSdDetecting] = useState(false);
+
+  // Bailian fields
+  const [bailianWorkspaceId, setBailianWorkspaceId] = useState("");
+  const [bailianTxt2imgModel, setBailianTxt2imgModel] = useState("wanx2.5-t2i-turbo");
+  const [bailianImg2imgModel, setBailianImg2imgModel] = useState("qwen-image-2.0-pro");
+
+  // Test image
+  const [testPrompt, setTestPrompt] = useState("");
+  const [testImageUrl, setTestImageUrl] = useState<string | null>(null);
+  const [testImageLoading, setTestImageLoading] = useState(false);
+  const [testImageError, setTestImageError] = useState<string | null>(null);
 
   const [videoEnabled, setVideoEnabled] = useState(false);
   const [videoProvider, setVideoProvider] = useState("agnes");
@@ -105,6 +130,7 @@ export function AiSettingsPage({
 
     const img = config.image;
     setImageEnabled(img.enabled);
+    setImageProvider(img.provider);
     setImageModel(img.model);
     setImageBaseUrl(img.base_url);
     setImageSize(img.default_size);
@@ -115,6 +141,21 @@ export function AiSettingsPage({
     setComicPreset(pipe.comic_preset);
     setImageBatchPending(pipe.batch_pending_assets);
     setImageSearchFallback(pipe.allow_search_fallback);
+    // SD fields
+    setSdDetected(img.sd_detected);
+    setSdModels(img.sd_models ?? []);
+    setSdCurrentModel(img.sd_current_model ?? "");
+    setSdError(img.sd_error ?? "");
+    setSdBaseUrl(img.sd_base_url ?? "http://127.0.0.1:7860");
+    setSdSteps(img.sd_steps ?? 20);
+    setSdCfgScale(img.sd_cfg_scale ?? 7.0);
+    setSdSampler(img.sd_sampler ?? "Euler a");
+    setSdSamplers(img.sd_samplers ?? ["Euler a"]);
+    setSdNegativePrompt(img.sd_negative_prompt ?? "");
+    // Bailian fields
+    setBailianWorkspaceId(img.bailian_workspace_id ?? "");
+    setBailianTxt2imgModel(img.bailian_txt2img_model ?? "wanx2.5-t2i-turbo");
+    setBailianImg2imgModel(img.bailian_img2img_model ?? "qwen-image-2.0-pro");
 
     const vid = config.video;
     setVideoEnabled(vid.enabled);
@@ -193,9 +234,18 @@ export function AiSettingsPage({
       },
       image: {
         enabled: imageEnabled,
+        provider: imageProvider,
         model: imageModel,
         base_url: imageBaseUrl || undefined,
         default_size: imageSize,
+        sd_base_url: sdBaseUrl || undefined,
+        sd_steps: sdSteps,
+        sd_cfg_scale: sdCfgScale,
+        sd_sampler: sdSampler || undefined,
+        sd_negative_prompt: sdNegativePrompt || undefined,
+        bailian_workspace_id: bailianWorkspaceId || undefined,
+        bailian_txt2img_model: bailianTxt2imgModel || undefined,
+        bailian_img2img_model: bailianImg2imgModel || undefined,
         pipeline: {
           source_mode: imageSourceDefault,
           image_text_preset: imageTextPreset,
@@ -285,6 +335,56 @@ export function AiSettingsPage({
   }
 
   const statusLabel = config?.llm.llm_active ? "LLM 已配置" : "LLM 未配置 Key";
+
+  // SD 检测
+  async function detectSd() {
+    setSdDetecting(true);
+    setSdError("");
+    try {
+      const r = await fetch("/api/ai/image/detect-sd", { method: "POST" });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: "检测失败" }));
+        throw new Error(typeof err.detail === "string" ? err.detail : "检测失败");
+      }
+      const data = await r.json();
+      setSdDetected(data.available);
+      setSdCurrentModel(data.current_model ?? "");
+      setSdModels(data.models ?? []);
+      if (!data.available) {
+        setSdError(data.error ?? "未检测到本地 SD");
+      }
+    } catch (e) {
+      setSdDetected(false);
+      setSdError((e as Error).message || "检测失败");
+    } finally {
+      setSdDetecting(false);
+    }
+  }
+
+  // 测试生图
+  async function testImageGen() {
+    if (!testPrompt.trim()) return;
+    setTestImageLoading(true);
+    setTestImageError(null);
+    setTestImageUrl(null);
+    try {
+      const r = await fetch("/api/ai/image/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: testPrompt.trim() }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: "测试生图失败" }));
+        throw new Error(typeof err.detail === "string" ? err.detail : "测试生图失败");
+      }
+      const data = await r.json();
+      setTestImageUrl(data.url as string);
+    } catch (e) {
+      setTestImageError((e as Error).message || "测试生图失败");
+    } finally {
+      setTestImageLoading(false);
+    }
+  }
 
   return (
     <div className="settings-page">
@@ -428,7 +528,7 @@ export function AiSettingsPage({
               {tab === "image" && (
                 <>
                   <p className="muted settings-intro">
-                    默认使用 Agnes AI 文生图（OpenAI 兼容）。下方「流水线策略」控制动态图文/漫画模式的搜图与生图行为。
+                    选择生图服务商：Agnes AI（远程）或本地 Stable Diffusion WebUI。本地 SD 不消耗 API 额度。
                   </p>
                   <label className="settings-field checkbox-row">
                     <input
@@ -438,40 +538,194 @@ export function AiSettingsPage({
                     />
                     <span>启用 AI 生图</span>
                   </label>
+
+                  {/* ---- 服务商选择 ---- */}
                   <label className="settings-field">
                     <span>服务商</span>
-                    <input type="text" value={config.image.provider_label} readOnly />
+                    <select
+                      value={imageProvider}
+                      onChange={(e) => setImageProvider(e.target.value)}
+                    >
+                      {(config.image.available_providers ?? []).map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
-                  <label className="settings-field">
-                    <span>模型</span>
-                    <input
-                      type="text"
-                      value={imageModel}
-                      onChange={(e) => setImageModel(e.target.value)}
-                      placeholder="agnes-image-2.0-flash"
-                    />
-                  </label>
-                  <label className="settings-field">
-                    <span>API Key</span>
-                    <input
-                      type="password"
-                      value={imageApiKey}
-                      onChange={(e) => setImageApiKey(e.target.value)}
-                      placeholder={
-                        config.image.has_api_key ? "已配置（留空不修改）" : "Agnes API Key"
-                      }
-                      autoComplete="off"
-                    />
-                  </label>
-                  <label className="settings-field">
-                    <span>Base URL</span>
-                    <input
-                      type="text"
-                      value={imageBaseUrl}
-                      onChange={(e) => setImageBaseUrl(e.target.value)}
-                      placeholder={config.image.base_url}
-                    />
-                  </label>
+
+                  {/* ---- 本地 SD 状态 + 检测 ---- */}
+                  {imageProvider === "local_sd" && (
+                    <div className={`sd-status ${sdDetected ? "sd-ready" : "sd-missing"}`}>
+                      {sdDetected ? (
+                        <p className="sd-status-ok">
+                          ✓ 本地 SD 已连接 — 当前模型：{sdCurrentModel || "未知"}
+                          {sdModels.length > 0 && (
+                            <span className="sd-model-count">（{sdModels.length} 个可用模型）</span>
+                          )}
+                        </p>
+                      ) : (
+                        <p className="sd-status-err">
+                          {sdError
+                            ? `✗ ${sdError}`
+                            : "未检测到本地 SD，请确保 Stable Diffusion WebUI 已启动"}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={sdDetecting}
+                        onClick={detectSd}
+                      >
+                        {sdDetecting ? "检测中…" : "重新检测"}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ---- Agnes 专属字段 ---- */}
+                  {imageProvider === "agnes" && (
+                    <>
+                      <label className="settings-field">
+                        <span>模型</span>
+                        <input
+                          type="text"
+                          value={imageModel}
+                          onChange={(e) => setImageModel(e.target.value)}
+                          placeholder="agnes-image-2.0-flash"
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>API Key</span>
+                        <input
+                          type="password"
+                          value={imageApiKey}
+                          onChange={(e) => setImageApiKey(e.target.value)}
+                          placeholder={
+                            config.image.has_api_key ? "已配置（留空不修改）" : "Agnes API Key"
+                          }
+                          autoComplete="off"
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>Base URL</span>
+                        <input
+                          type="text"
+                          value={imageBaseUrl}
+                          onChange={(e) => setImageBaseUrl(e.target.value)}
+                          placeholder={config.image.base_url}
+                        />
+                      </label>
+                    </>
+                  )}
+
+                  {/* ---- SD 专属字段 ---- */}
+                  {imageProvider === "local_sd" && (
+                    <>
+                      <label className="settings-field">
+                        <span>SD Base URL</span>
+                        <input
+                          type="text"
+                          value={sdBaseUrl}
+                          onChange={(e) => setSdBaseUrl(e.target.value)}
+                          placeholder="http://127.0.0.1:7860"
+                        />
+                      </label>
+                      <div className="settings-row">
+                        <label className="settings-field">
+                          <span>Steps（{sdSteps}）</span>
+                          <input
+                            type="range"
+                            min={1}
+                            max={50}
+                            value={sdSteps}
+                            onChange={(e) => setSdSteps(Number(e.target.value))}
+                          />
+                        </label>
+                        <label className="settings-field">
+                          <span>CFG Scale（{sdCfgScale.toFixed(1)}）</span>
+                          <input
+                            type="range"
+                            min={1}
+                            max={20}
+                            step={0.5}
+                            value={sdCfgScale}
+                            onChange={(e) => setSdCfgScale(Number(e.target.value))}
+                          />
+                        </label>
+                      </div>
+                      <label className="settings-field">
+                        <span>采样器</span>
+                        <select
+                          value={sdSampler}
+                          onChange={(e) => setSdSampler(e.target.value)}
+                        >
+                          {sdSamplers.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="settings-field">
+                        <span>Negative Prompt（可选）</span>
+                        <input
+                          type="text"
+                          value={sdNegativePrompt}
+                          onChange={(e) => setSdNegativePrompt(e.target.value)}
+                          placeholder="如：low quality, blurry, distorted"
+                        />
+                      </label>
+                    </>
+                  )}
+
+                  {/* ---- 百炼专属字段 ---- */}
+                  {imageProvider === "bailian" && (
+                    <>
+                      <label className="settings-field">
+                        <span>Workspace ID</span>
+                        <input
+                          type="text"
+                          value={bailianWorkspaceId}
+                          onChange={(e) => setBailianWorkspaceId(e.target.value)}
+                          placeholder="如：your-workspace-id"
+                        />
+                        <p className="field-hint" style={{ margin: "4px 0 0", fontSize: "0.75rem" }}>
+                          在百炼控制台 → 模型广场 → 模型详情页面 URL 中查看
+                        </p>
+                      </label>
+                      <label className="settings-field">
+                        <span>文生图模型 (Txt2img)</span>
+                        <input
+                          type="text"
+                          value={bailianTxt2imgModel}
+                          onChange={(e) => setBailianTxt2imgModel(e.target.value)}
+                          placeholder="wanx2.5-t2i-turbo"
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>图生图/编辑模型 (Img2img)</span>
+                        <input
+                          type="text"
+                          value={bailianImg2imgModel}
+                          onChange={(e) => setBailianImg2imgModel(e.target.value)}
+                          placeholder="qwen-image-2.0-pro"
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>API Key</span>
+                        <input
+                          type="password"
+                          value={imageApiKey}
+                          onChange={(e) => setImageApiKey(e.target.value)}
+                          placeholder={
+                            config.image.has_api_key ? "已配置（留空不修改）" : "DashScope API Key"
+                          }
+                          autoComplete="off"
+                        />
+                      </label>
+                    </>
+                  )}
+
                   <label className="settings-field">
                     <span>默认尺寸</span>
                     <select value={imageSize} onChange={(e) => setImageSize(e.target.value)}>
@@ -480,6 +734,39 @@ export function AiSettingsPage({
                       ))}
                     </select>
                   </label>
+
+                  {/* ---- 测试生图 ---- */}
+                  <div className="settings-field test-image-section">
+                    <span>测试生图</span>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <input
+                        type="text"
+                        value={testPrompt}
+                        onChange={(e) => setTestPrompt(e.target.value)}
+                        placeholder="输入测试 prompt…"
+                        style={{ flex: 1, minWidth: 200 }}
+                      />
+                      <button
+                        type="button"
+                        disabled={testImageLoading || !testPrompt.trim()}
+                        onClick={testImageGen}
+                      >
+                        {testImageLoading ? "生成中…" : "生成测试图"}
+                      </button>
+                    </div>
+                    {testImageError && (
+                      <p className="board-error" style={{ marginTop: 8 }}>{testImageError}</p>
+                    )}
+                    {testImageUrl && (
+                      <div style={{ marginTop: 8 }}>
+                        <img
+                          src={testImageUrl}
+                          alt="测试生成结果"
+                          style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 8, border: "1px solid #ccc" }}
+                        />
+                      </div>
+                    )}
+                  </div>
 
                   <h2 className="settings-section-title">流水线策略</h2>
                   <label className="settings-field">

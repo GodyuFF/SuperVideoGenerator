@@ -21,7 +21,7 @@ async def test_get_ai_config_sections():
         assert "fps" in data["export"]
         assert data["llm"]["provider"] == "deepseek"
         assert data["image"]["provider"] == "agnes"
-        assert data["image"]["model"] == "agnes-image-2.0-flash"
+        assert data["image"]["model"] == "agnes-image-2.1-flash"
         assert "pipeline" in data["image"]
         assert data["image"]["pipeline"]["source_mode"] == "generate"
 

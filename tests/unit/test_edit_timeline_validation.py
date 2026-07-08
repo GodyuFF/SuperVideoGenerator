@@ -27,6 +27,7 @@ from core.models.entities import (
     VideoStyleMode,
 )
 from core.store.memory import MemoryStore
+from tests.support.frame_fixtures import ensure_shot_frame_image
 
 
 @pytest.fixture
@@ -63,6 +64,13 @@ def store_with_plan() -> MemoryStore:
         camera_motion="ken_burns_in",
         asset_refs={"character": [char.id]},
     )
+    ensure_shot_frame_image(
+        store,
+        project_id=project.id,
+        script_id=script.id,
+        shot=shot,
+        image_url="https://images.test/tiger.png",
+    )
     plan = VideoPlan(
         script_id=script.id,
         mode=VideoStyleMode.DYNAMIC_IMAGE,
@@ -70,7 +78,10 @@ def store_with_plan() -> MemoryStore:
     )
     store.set_video_plan(plan)
     store._test_shot_id = shot.id  # type: ignore[attr-defined]
-    store._test_media_id = media.id  # type: ignore[attr-defined]
+    store._test_media_id = shot.asset_refs["frame"][0]  # frame text id; resolve uses frame media
+    frame_asset = store.get_text_asset(shot.asset_refs["frame"][0])
+    assert frame_asset and frame_asset.primary_media_id
+    store._test_media_id = frame_asset.primary_media_id  # type: ignore[attr-defined]
     store._test_script_id = script.id  # type: ignore[attr-defined]
     return store
 

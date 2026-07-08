@@ -1,4 +1,4 @@
-"""分镜 variant_refs / media_id 选图测试。"""
+"""分镜 variant_refs / frame 选图测试。"""
 
 from core.edit.timeline import resolve_shot_image_ref
 from core.models.entities import (
@@ -23,7 +23,7 @@ from core.store.memory import MemoryStore
 from tests.support.image_text_fixtures import character_content
 
 
-def test_resolve_shot_uses_variant_ref():
+def test_resolve_shot_uses_frame_not_character_variant():
     store = MemoryStore()
     project = Project(title="p")
     store.add_project(project)
@@ -64,17 +64,43 @@ def test_resolve_shot_uses_variant_ref():
     content = ensure_image_variants(content)
     base = get_base_variant(content)
     assert base
-    expr = [v for v in parse_image_variants(content) if v.kind == "expression"][0]
+    expr_v = [v for v in parse_image_variants(content) if v.kind == "expression"][0]
     content = update_variant_in_content(content, base.id, media_id=base_media.id)
-    content = update_variant_in_content(content, expr.id, media_id=expr_media.id)
+    content = update_variant_in_content(content, expr_v.id, media_id=expr_media.id)
     char.content = content
     char.primary_media_id = base_media.id
     store.update_text_asset(char)
 
+    frame = TextAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=TextAssetType.FRAME,
+        scope=AssetScope.SCRIPT_PRIVATE,
+        name="画面",
+        content={
+            "description": "角色愤怒表情的中景",
+            "element_refs": {"character": [char.id]},
+            "shot_id": "shot_1",
+        },
+        source_script_id=script.id,
+    )
+    store.add_text_asset(frame)
+    frame_media = MediaAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=MediaAssetType.IMAGE,
+        name="frame",
+        url="https://images.test/frame.png",
+        source_asset_id=frame.id,
+    )
+    store.add_media_asset(frame_media)
+    frame.primary_media_id = frame_media.id
+    store.update_text_asset(frame)
+
     shot = VideoPlanShot(
         narration_text="镜头",
-        asset_refs={"character": [char.id]},
-        variant_refs={char.id: expr.id},
+        asset_refs={"frame": [frame.id], "character": [char.id]},
+        variant_refs={char.id: expr_v.id},
     )
     mid = resolve_shot_image_ref(store, shot)
-    assert mid == expr_media.id
+    assert mid == frame_media.id

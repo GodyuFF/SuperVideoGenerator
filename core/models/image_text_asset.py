@@ -9,11 +9,12 @@ from core.models.entities import MediaAsset, TextAsset, TextAssetType, new_id
 
 
 class ImageTextAssetType(str, Enum):
-    """图文资产类型（角色、物品、场景）。"""
+    """图文资产类型（角色、物品、场景、画面）。"""
 
     CHARACTER = "character"
     PROP = "prop"
     SCENE = "scene"
+    FRAME = "frame"
 
 
 IMAGE_TEXT_ASSET_TYPES = frozenset(t.value for t in ImageTextAssetType)
@@ -160,10 +161,23 @@ class PropContent(ImageTextAssetContentBase):
     visual_details: str = ""
 
 
+class FrameContent(ImageTextAssetContentBase):
+    """分镜画面：多参考图合成，element_refs 指向空镜/角色/物品。"""
+
+    element_refs: dict[str, list[str]] = Field(default_factory=dict)
+    variant_refs: dict[str, str] = Field(default_factory=dict)
+    shot_id: str = ""
+    composition_prompt: str = ""
+    reference_order: list[str] = Field(
+        default_factory=lambda: ["scene", "character", "prop"]
+    )
+
+
 _CONTENT_MODEL: dict[str, type[BaseModel]] = {
     ImageTextAssetType.CHARACTER.value: CharacterContent,
     ImageTextAssetType.SCENE.value: SceneContent,
     ImageTextAssetType.PROP.value: PropContent,
+    ImageTextAssetType.FRAME.value: FrameContent,
 }
 
 _TRAIT_KEYS: dict[str, frozenset[str]] = {
@@ -215,6 +229,49 @@ _TRAIT_LABELS_ZH: dict[str, str] = {
     "visual_details": "视觉细节",
 }
 
+_TRAIT_LABELS_EN: dict[str, str] = {
+    "role": "role",
+    "personality": "personality",
+    "age_range": "age",
+    "gender": "gender",
+    "costume": "costume",
+    "distinctive_features": "distinctive features",
+    "ethnicity": "ethnicity",
+    "body_type": "body type",
+    "height": "height",
+    "build": "build",
+    "hair_style": "hair style",
+    "hair_color": "hair color",
+    "eye_color": "eye color",
+    "facial_features": "facial features",
+    "default_expression": "default expression",
+    "default_pose": "default pose",
+    "accessories": "accessories",
+    "location": "location",
+    "time_of_day": "time of day",
+    "weather": "weather",
+    "lighting": "lighting",
+    "mood": "mood",
+    "spatial_layout": "spatial layout",
+    "architecture_style": "architecture style",
+    "key_objects": "key objects",
+    "foreground": "foreground",
+    "background": "background",
+    "camera_angle": "camera angle",
+    "depth_of_field": "depth of field",
+    "color_tone": "color tone",
+    "category": "category",
+    "material": "material",
+    "size_scale": "size scale",
+    "usage": "usage",
+    "condition": "condition",
+    "shape": "shape",
+    "color": "color",
+    "texture": "texture",
+    "brand_style": "brand style",
+    "visual_details": "visual details",
+}
+
 
 def is_image_text_asset(asset_type: Any) -> bool:
     val = asset_type.value if hasattr(asset_type, "value") else str(asset_type)
@@ -228,6 +285,18 @@ def trait_keys_for_type(asset_type: Any) -> frozenset[str]:
 
 def trait_label_zh(key: str) -> str:
     return _TRAIT_LABELS_ZH.get(key, key)
+
+
+def trait_label_en(key: str) -> str:
+    """返回英文 trait 标签（用于 Stable Diffusion 等英文生图模型）。"""
+    return _TRAIT_LABELS_EN.get(key, key)
+
+
+def trait_label(key: str, language: str = "zh") -> str:
+    """根据语言返回 trait 标签。language: 'zh' | 'en'。"""
+    if language == "en":
+        return trait_label_en(key)
+    return trait_label_zh(key)
 
 
 def _legacy_description(raw: dict[str, Any]) -> str:
@@ -441,6 +510,12 @@ def normalize_image_text_content(asset_type: Any, raw: Any) -> dict[str, Any]:
 
     parsed = model_cls.model_validate(merged)
     result = parsed.model_dump()
+    if type_val == ImageTextAssetType.FRAME.value:
+        if not isinstance(result.get("element_refs"), dict):
+            result["element_refs"] = {}
+        if not result.get("reference_order"):
+            result["reference_order"] = ["scene", "character", "prop"]
+        return result
     if isinstance(raw.get("image_variants"), list):
         result = merge_incoming_variants(result, raw["image_variants"])
     return ensure_image_variants(result)

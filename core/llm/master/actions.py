@@ -195,8 +195,8 @@ def task_brief_for_step(step_type: str, style_mode: VideoStyleMode) -> str:
 def pipeline_for_style(style_mode: VideoStyleMode) -> list[str]:
     base = [
         "delegate_script_design",
-        "delegate_image_gen",
         "delegate_storyboard",
+        "delegate_image_gen",
     ]
     if style_mode == VideoStyleMode.AI_VIDEO:
         base.append("delegate_video_gen")

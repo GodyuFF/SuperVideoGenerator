@@ -17,10 +17,11 @@ _IMAGE_TEXT_VISUAL = frozenset(
         TextAssetType.CHARACTER.value,
         TextAssetType.SCENE.value,
         TextAssetType.PROP.value,
+        TextAssetType.FRAME.value,
     }
 )
 
-_UPSTREAM_FOR_EDIT = ("script_design", "image_gen", "storyboard", "tts_gen")
+_UPSTREAM_FOR_EDIT = ("script_design", "storyboard", "image_gen", "tts_gen")
 
 _RESUME_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"剪辑|合成|成片|edit_compose|compose", re.I), "edit_compose"),
@@ -54,6 +55,7 @@ def _has_script_design(store: MemoryStore, script_id: str) -> bool:
             TextAssetType.CHARACTER.value,
             TextAssetType.SCENE.value,
             TextAssetType.PROP.value,
+            TextAssetType.FRAME.value,
         ):
             return True
     return False
@@ -71,7 +73,15 @@ def _image_gen_complete(store: MemoryStore, script_id: str) -> bool:
     pending = int(scan.get("pending_count", 0))
     if pending > 0:
         return False
-    return any(a.get("has_image") and a.get("image_status") == "ready" for a in visual)
+    for asset in visual:
+        if asset.get("has_image") and asset.get("image_status") == "ready":
+            continue
+        if asset.get("type") == TextAssetType.FRAME.value and not asset.get(
+            "references_ready", False
+        ):
+            continue
+        return False
+    return True
 
 
 def _storyboard_complete(store: MemoryStore, script_id: str) -> bool:

@@ -20,6 +20,7 @@ from core.models.entities import (
     VideoStyleMode,
 )
 from core.store.memory import MemoryStore
+from tests.support.frame_fixtures import ensure_shot_frame_image
 from tests.support.image_text_fixtures import prop_content
 
 
@@ -61,6 +62,13 @@ def ready_for_edit_store() -> MemoryStore:
         narration_text="小猫吃鱼",
         camera_motion="ken_burns_in",
         asset_refs={"prop": [prop.id]},
+    )
+    ensure_shot_frame_image(
+        store,
+        project_id=project.id,
+        script_id=script.id,
+        shot=shot,
+        image_url="https://images.test/frame.png",
     )
     plan = VideoPlan(
         script_id=script.id,
@@ -106,3 +114,64 @@ def test_build_pipeline_progress_ready_for_edit(ready_for_edit_store: MemoryStor
     assert progress["ready_for_edit_compose"] is True
     assert progress["gaps"] == []
     assert "storyboard" in progress["inferred_completed_steps"]
+
+
+def test_image_gen_incomplete_when_frame_refs_ready_but_no_image():
+    """frame 参考图就绪但仍缺图时，image_gen 不应视为完成。"""
+    store = MemoryStore()
+    project = Project(title="frame 测试")
+    store.add_project(project)
+    script = Script(project_id=project.id, title="s1", duration_sec=30)
+    store.add_script(script)
+    prop = TextAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=TextAssetType.PROP,
+        scope=AssetScope.SCRIPT_PRIVATE,
+        name="鱼",
+        content=prop_content(summary="鱼"),
+    )
+    store.add_text_asset(prop)
+    media = MediaAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=MediaAssetType.IMAGE,
+        name="鱼图",
+        url="https://images.test/fish.png",
+        source_asset_id=prop.id,
+    )
+    store.add_media_asset(media)
+    prop.primary_media_id = media.id
+    store.update_text_asset(prop)
+    shot = VideoPlanShot(
+        order=0,
+        duration_ms=4000,
+        narration_text="镜头",
+        asset_refs={"prop": [prop.id]},
+    )
+    frame = TextAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=TextAssetType.FRAME,
+        scope=AssetScope.SCRIPT_PRIVATE,
+        name="画面",
+        content={
+            "description": "测试",
+            "element_refs": {"prop": [prop.id]},
+            "shot_id": shot.id,
+        },
+    )
+    store.add_text_asset(frame)
+    shot.asset_refs = {"prop": [prop.id], "frame": [frame.id]}
+    store.set_video_plan(
+        VideoPlan(
+            script_id=script.id,
+            mode=VideoStyleMode.DYNAMIC_IMAGE,
+            shots=[shot],
+        )
+    )
+    completed = infer_completed_step_types(
+        store, script.id, VideoStyleMode.DYNAMIC_IMAGE
+    )
+    assert "image_gen" not in completed
+

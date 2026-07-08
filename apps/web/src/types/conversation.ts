@@ -63,3 +63,15 @@ export interface ConversationMessageRecord {
   content: string;
   created_at: string;
 }
+
+/** 对话摘要列表项 */
+export interface ConversationSummary {
+  id: string;
+  title?: string;
+  created_at?: string;
+  updated_at?: string;
+  message_count?: number;
+  script_id?: string | null;
+  last_summary?: string;
+  last_round_token_usage?: { total_tokens?: number };
+}

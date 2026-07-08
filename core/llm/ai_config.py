@@ -134,6 +134,14 @@ class AiConfigManager:
                 base_url=image.get("base_url"),
                 default_size=image.get("default_size"),
                 timeout_sec=image.get("timeout_sec"),
+                sd_base_url=image.get("sd_base_url"),
+                sd_steps=image.get("sd_steps"),
+                sd_cfg_scale=image.get("sd_cfg_scale"),
+                sd_sampler=image.get("sd_sampler"),
+                sd_negative_prompt=image.get("sd_negative_prompt"),
+                bailian_workspace_id=image.get("bailian_workspace_id"),
+                bailian_txt2img_model=image.get("bailian_txt2img_model"),
+                bailian_img2img_model=image.get("bailian_img2img_model"),
             )
         if video:
             self._video.update(

@@ -49,7 +49,8 @@
 | action | logical_name | 类型 | 说明 | Handler |
 |--------|--------------|------|------|---------|
 | `load_context` | storyboard.load_context | write_pipeline | 加载剧本正文、plots、图文资产与已链接图片（观察结果含完整 JSON；输出 schema 含 `action`） | `storyboard/context.py` |
-| `create_shots` | storyboard.create_shots | write_pipeline | 设计镜头列表；`asset_refs` 使用 `image`/`character`/`scene`/`prop` 键（**禁止** `asset_id` 键） | `storyboard/handler.py` |
+| `create_shots` | storyboard.create_shots | write_pipeline | 设计镜头列表；`asset_refs` 使用 `image`/`character`/`scene`/`prop`/`frame` 键 | `storyboard/handler.py` |
+| `create_frames` | storyboard.create_frames | write_pipeline | 每镜头创建 `frame` 画面资产；`element_refs` 指向空镜/角色/物品 | `storyboard/handler.py` |
 | `persist_plan` | storyboard.persist_plan | write_pipeline | 保存视频计划稿（**不**自动生成 EditTimeline） | `storyboard/handler.py` |
 | `get_plan` | storyboard.get_plan | read | 读取当前视频计划稿 | `storyboard/handler.py` |
 
@@ -81,12 +82,12 @@
 | action | logical_name | 类型 | 说明 | Handler |
 |--------|--------------|------|------|---------|
 | `load_edit_context` | edit.load_edit_context | read | 聚合 VideoPlan 分镜、shots.resolved 素材、plots、assets_with_images、media 清单与 edit_timeline 摘要 | `editing/context.py` → `timeline_handler.py` |
-| `plan_edit_timeline` | edit.plan_edit_timeline | write_pipeline | 生成详细剪辑计划稿（三轨 + 运镜/转场/背景/source_refs） | `editing/timeline_handler.py` |
-| `validate_edit_assets` | edit.validate_edit_assets | read | 校验剪辑计划稿素材是否齐备 | `editing/timeline_handler.py` |
+| `plan_edit_timeline` | edit.plan_edit_timeline | write_pipeline | 生成详细剪辑计划稿（三轨 + 运镜/转场/背景/source_refs）；`skip_subtitle_enrich=true` 或 `replace`+空 `subtitle` 轨时跳过 TTS 字幕自动回填 | `editing/timeline_handler.py` |
+| `validate_edit_assets` | edit.validate_edit_assets | read | 校验剪辑计划稿素材是否齐备；输出 `{ready, missing_items, resolved_clips, summary}` | `editing/timeline_handler.py` |
 | `report_missing_assets` | edit.report_missing_assets | write_pipeline | 上报缺失素材（内部构造 `ReturnToMasterError`）供主编排重委派上游 | `editing/timeline_handler.py` |
 | `get_edit_timeline` | edit.get_edit_timeline | read | 读取剪辑计划稿 | `editing/timeline_handler.py` |
 | `gather_media` | edit.gather_media | write_pipeline | 收集 EditTimeline 引用的图片/视频/配音；observation 含 `missing_refs` | `editing/handler.py` → `llm_action.py` |
-| `compose_final` | edit.compose_final | write_pipeline | 校验素材就绪后 FFmpeg 合成成片（唯一导出路径） | `editing/handler.py` → `llm_action.py` |
+| `compose_final` | edit.compose_final | write_pipeline | 校验素材就绪后 FFmpeg 合成成片；`skip_subtitles=true` 导出纯画面+配音 | `editing/handler.py` → `llm_action.py` |
 | `list_final` | edit.list_final | read | 列出成片资产 | `shared/executor.py` |
 
 ---

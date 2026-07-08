@@ -44,7 +44,8 @@ def scene_content(**overrides: Any) -> dict[str, Any]:
     base = {
         "summary": "都市黄昏街道",
         "description": _pad_description(
-            "现代都市黄昏街道，霓虹初上，湿润路面反射灯光，行人稀疏，远处高楼轮廓清晰。"
+            "现代都市黄昏街道，霓虹初上，湿润路面反射灯光，两侧玻璃幕墙商铺，"
+            "远处高楼天际线轮廓清晰，空旷无人。"
         ),
         "prompt_hint": "广角镜头，黄金时刻光线",
         "visual_style": "赛博朋克写实",

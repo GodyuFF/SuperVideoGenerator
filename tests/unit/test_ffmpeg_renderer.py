@@ -137,7 +137,7 @@ def test_export_timeline_burns_subtitles(timeline_store):
         output_path.write_bytes(b"slice")
         return output_path
 
-    def fake_burn(_ffmpeg, video_in, _ass_path, video_out, _settings, *, run_ffmpeg):
+    def fake_burn(_ffmpeg, video_in, _ass_path, video_out, _settings, *, run_ffmpeg, **kwargs):
         video_out.parent.mkdir(parents=True, exist_ok=True)
         if video_in.is_file():
             shutil.copy(video_in, video_out)
@@ -169,6 +169,50 @@ def test_export_timeline_burns_subtitles(timeline_store):
             style_mode=VideoStyleMode.DYNAMIC_IMAGE,
         )
         burn.assert_called_once()
+
+
+def test_export_timeline_skip_subtitles(timeline_store):
+    """skip_subtitles=True 时不回填字幕轨、不调用 burn_subtitles。"""
+    script_id = timeline_store._test_script_id  # type: ignore[attr-defined]
+    project_id = timeline_store._test_project_id  # type: ignore[attr-defined]
+    plan = timeline_store.get_video_plan_for_script(script_id)
+    assert plan
+    timeline = compile_timeline_from_shots(
+        timeline_store,
+        script_id=script_id,
+        plan=plan,
+        tts_by_shot={plan.shots[0].id: timeline_store._test_audio_id},  # type: ignore[attr-defined]
+    )
+    timeline = timeline.model_copy(
+        update={"tracks": {**timeline.tracks, "subtitle": []}}
+    )
+    out = Path("fake_skip_subs.mp4")
+
+    def fake_render(**kwargs):
+        output_path = kwargs["output_path"]
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"seg")
+
+    with patch("core.edit.ffmpeg_renderer._run_ffmpeg"), patch(
+        "core.edit.ffmpeg_renderer.is_ffmpeg_available", return_value=True
+    ), patch("core.edit.ffmpeg_renderer.shutil.rmtree"), patch(
+        "core.edit.ffmpeg_renderer._render_image_segment", side_effect=fake_render
+    ), patch(
+        "core.edit.ffmpeg_renderer.burn_subtitles"
+    ) as burn, patch(
+        "core.edit.ffmpeg_renderer._mux_av"
+    ) as mux:
+        mux.side_effect = lambda *a, **k: out.write_bytes(b"fake")
+        export_timeline_to_mp4(
+            timeline_store,
+            timeline,
+            out,
+            project_id=project_id,
+            script_id=script_id,
+            style_mode=VideoStyleMode.DYNAMIC_IMAGE,
+            skip_subtitles=True,
+        )
+        burn.assert_not_called()
 
 
 def test_compose_timeline_plan_multi_layer_slices(timeline_store):
