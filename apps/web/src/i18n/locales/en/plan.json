@@ -1,0 +1,27 @@
+{
+  "title": "Execution plan",
+  "goalPrefix": "Goal: {{goal}}",
+  "defaultHint": "Steps run in pipeline order after you send a message",
+  "progressAria": "Plan progress",
+  "progressText": "{{done}}/{{total}} steps done · {{percent}}%",
+  "currentStatus": "Current status (AI)",
+  "remainingPlan": "Remaining plan",
+  "statusHistory": "Status history ({{count}})",
+  "pipelineHint": "Script → bible → storyboard → images → [video] → voice → edit",
+  "scriptStatus": {
+    "draft": "Draft",
+    "planned": "Planned",
+    "executing": "Executing",
+    "completed": "Completed",
+    "failed": "Failed"
+  },
+  "stepStatus": {
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "paused": "Paused",
+    "skipped": "Skipped",
+    "awaiting_confirmation": "Awaiting confirmation"
+  }
+}

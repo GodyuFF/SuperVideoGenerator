@@ -1,4 +1,4 @@
-"""Agent 可控剪辑工具处理实现 — OpenCut 集成。
+"""Agent 可控剪辑工具处理实现。
 
 每个 handler 接收:
 - store: MemoryStore
@@ -316,42 +316,126 @@ def handle_remove_clip(
 def handle_apply_effect(
     store: MemoryStore, ctx: AgentRunContext, args: dict[str, Any]
 ) -> ToolResult:
-    """应用视觉效果。"""
+    """应用视觉效果并持久化到时间轴。"""
+    script_id = _script_from_ctx(ctx)
+    project_id = _project_from_ctx(ctx)
     clip_id = str(args.get("clip_id", ""))
     effect_type = str(args.get("effect_type", ""))
     params = args.get("params") or {}
 
-    # 当前为过渡模式：记录操作，等待 OpenCut 编辑器侧实现
-    return ToolResult(
-        observation=f"特效「{effect_type}」已应用于片段 {clip_id}（参数：{json.dumps(params, ensure_ascii=False)}）",
-        structured={
-            "action": "apply_effect",
-            "clip_id": clip_id,
-            "effect_type": effect_type,
-            "params": params,
-            "note": "特效将在 OpenCut 编辑器中渲染",
-        },
-    )
+    timeline = store.get_edit_timeline_for_script(script_id)
+    if timeline is None:
+        return ToolResult(observation="尚无剪辑时间轴", ok=False)
+
+    patched = False
+    body: dict[str, Any] = {"video_layers": []}
+    for layer in timeline.video_layers:
+        layer_dict = {
+            "id": layer.id,
+            "name": layer.name,
+            "z_index": layer.z_index,
+            "clips": [],
+        }
+        for c in layer.clips:
+            clip_dict = {
+                "id": c.id,
+                "start_ms": c.start_ms,
+                "end_ms": c.end_ms,
+                "label": c.label,
+                "asset_ref": c.asset_ref,
+                "transform": c.transform,
+                "metadata": dict(c.metadata or {}),
+            }
+            if c.id == clip_id:
+                patched = True
+                meta = dict(clip_dict.get("metadata") or {})
+                meta["effect_type"] = effect_type
+                meta["effect_params"] = params
+                clip_dict["metadata"] = meta
+            layer_dict["clips"].append(clip_dict)
+        body["video_layers"].append(layer_dict)
+
+    if not patched:
+        return ToolResult(observation=f"未找到片段 {clip_id}", ok=False)
+
+    try:
+        view = patch_timeline(store, script_id=script_id, project_id=project_id, body=body)
+        schedule_save(store, immediate=True)
+        return ToolResult(
+            observation=f"特效「{effect_type}」已应用于片段 {clip_id}",
+            structured={
+                "action": "apply_effect",
+                "clip_id": clip_id,
+                "effect_type": effect_type,
+                "params": params,
+                "revision": view.get("revision"),
+            },
+        )
+    except Exception as e:
+        return ToolResult(observation=f"应用特效失败：{e}", ok=False)
 
 
 def handle_set_keyframe(
     store: MemoryStore, ctx: AgentRunContext, args: dict[str, Any]
 ) -> ToolResult:
-    """设置动画关键帧。"""
+    """设置动画关键帧并持久化到时间轴。"""
+    script_id = _script_from_ctx(ctx)
+    project_id = _project_from_ctx(ctx)
     clip_id = str(args.get("clip_id", ""))
     time_ms = int(args.get("time_ms", 0))
     props = args.get("properties") or {}
 
-    return ToolResult(
-        observation=f"已在片段 {clip_id} 的 {time_ms}ms 处设置关键帧：{json.dumps(props, ensure_ascii=False)}",
-        structured={
-            "action": "set_keyframe",
-            "clip_id": clip_id,
-            "time_ms": time_ms,
-            "properties": props,
-            "note": "关键帧将在 OpenCut 编辑器中渲染",
-        },
-    )
+    timeline = store.get_edit_timeline_for_script(script_id)
+    if timeline is None:
+        return ToolResult(observation="尚无剪辑时间轴", ok=False)
+
+    patched = False
+    body: dict[str, Any] = {"video_layers": []}
+    for layer in timeline.video_layers:
+        layer_dict = {
+            "id": layer.id,
+            "name": layer.name,
+            "z_index": layer.z_index,
+            "clips": [],
+        }
+        for c in layer.clips:
+            clip_dict = {
+                "id": c.id,
+                "start_ms": c.start_ms,
+                "end_ms": c.end_ms,
+                "label": c.label,
+                "asset_ref": c.asset_ref,
+                "transform": dict(c.transform or {}),
+                "metadata": c.metadata,
+            }
+            if c.id == clip_id:
+                patched = True
+                transform = dict(clip_dict.get("transform") or {})
+                keyframes = list(transform.get("keyframes") or [])
+                keyframes.append({"time_ms": time_ms, **props})
+                transform["keyframes"] = keyframes
+                clip_dict["transform"] = transform
+            layer_dict["clips"].append(clip_dict)
+        body["video_layers"].append(layer_dict)
+
+    if not patched:
+        return ToolResult(observation=f"未找到片段 {clip_id}", ok=False)
+
+    try:
+        view = patch_timeline(store, script_id=script_id, project_id=project_id, body=body)
+        schedule_save(store, immediate=True)
+        return ToolResult(
+            observation=f"已在片段 {clip_id} 的 {time_ms}ms 处设置关键帧",
+            structured={
+                "action": "set_keyframe",
+                "clip_id": clip_id,
+                "time_ms": time_ms,
+                "properties": props,
+                "revision": view.get("revision"),
+            },
+        )
+    except Exception as e:
+        return ToolResult(observation=f"设置关键帧失败：{e}", ok=False)
 
 
 def handle_export_timeline(

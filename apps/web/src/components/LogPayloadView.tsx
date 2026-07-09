@@ -3,6 +3,7 @@
  */
 
 import { useState, type ReactNode } from "react";
+import { useAppTranslation } from "../i18n/useAppTranslation";
 
 export interface TokenBreakdownItem {
   tokens?: number;
@@ -297,10 +298,11 @@ function ToolsView({ tools }: { tools: unknown[] }) {
             </pre>
           );
         }
-        const name = String(raw.name ?? raw.function?.name ?? "?");
+        const fn = isRecord(raw.function) ? raw.function : undefined;
+        const name = String(raw.name ?? fn?.name ?? "?");
         const kind = raw.kind ? String(raw.kind) : "function";
         const agentName = raw.agent_name ? String(raw.agent_name) : "";
-        const schema = raw.input_schema ?? raw.function?.parameters;
+        const schema = raw.input_schema ?? fn?.parameters;
         return (
           <div key={idx} className="log-tool-item">
             <div className="log-tool-header">
@@ -365,6 +367,7 @@ function PayloadSection({
   body: unknown;
   defaultFormatted?: boolean;
 }) {
+  const { t } = useAppTranslation("common");
   const [showRaw, setShowRaw] = useState(false);
   const rawText = formatJsonBody(body);
   if (!rawText) return null;
@@ -383,7 +386,7 @@ function PayloadSection({
             className="btn-secondary btn-sm log-view-toggle"
             onClick={() => setShowRaw((v) => !v)}
           >
-            {showRaw ? "格式化视图" : "原始 JSON"}
+            {showRaw ? t("view.formatted") : t("view.rawJson")}
           </button>
         )}
       </div>

@@ -1,0 +1,114 @@
+{
+
+  "editAssistant": "剪辑助手",
+
+  "scriptWorkbench": "剧本工作台",
+
+  "chatPanel": "对话",
+
+  "exportMp4": "导出 MP4",
+
+  "exporting": "导出中…",
+
+  "exportNoSubs": "导出（无字幕）",
+
+  "exportDone": "导出完成！",
+
+  "exportDoneShort": "导出完成",
+
+  "editStudio": "剪辑修改",
+
+  "previewPaused": "专业剪辑已打开，Tab 预览已暂停。",
+
+  "loadingPreview": "加载剪辑预览…",
+
+  "previewFailed": "剪辑预览加载失败：{{error}}",
+
+  "studioExportMp4": "导出 MP4 (FFmpeg)",
+
+  "studioExporting": "FFmpeg 导出中…",
+
+  "doneClose": "完成并关闭",
+
+  "retryLoad": "重试加载",
+
+  "loadingTimeline": "加载时间轴与素材…",
+
+  "noTimelineHint": "尚无剪辑时间轴。请先运行 editing_agent 的 plan_edit_timeline。",
+
+  "previewReadyHint": "时间轴就绪后将在此显示剪辑预览。",
+
+  "openStudioTitle": "打开专业剪辑工作室",
+
+  "previewLoadFailed": "剪辑预览加载失败：{{error}}",
+
+  "loadingEditPreview": "加载剪辑预览…",
+
+  "ffmpegHint": "未检测到 FFmpeg。请在后端目录执行 pip install -e . 安装内置 FFmpeg，或设置 SVG_FFMPEG_PATH / 系统 PATH（Windows: winget install ffmpeg）。",
+
+  "ffmpegHintShort": "未检测到 FFmpeg。请在后端目录执行 pip install -e . 安装内置 FFmpeg，或设置 SVG_FFMPEG_PATH。",
+
+  "proEditorTitle": "剪辑助手",
+
+  "moduleLoadFailed": "无法加载编辑器模块：{{error}}",
+
+  "loadingTimelineStudio": "正在加载剪辑时间轴…",
+
+  "loadingClassic": "正在加载剪辑工作室…",
+
+  "newTabTitle": "在系统浏览器新标签页打开此剪辑页",
+
+  "ffmpegExportTitle": "服务端 FFmpeg 成片导出",
+
+  "exportDoneFfmpeg": "FFmpeg 导出完成！",
+
+  "exportDoneFfmpegShort": "FFmpeg 导出完成",
+
+  "exportNlePremiere": "导出 PR 工程",
+
+  "exportNlePremiereHint": "导出 FCP7 XML 工程包，解压后在 Premiere Pro 中选择「文件 → 导入」导入 project.xml",
+
+  "exportNleDone": "PR 工程导出完成！",
+
+  "exportNleDoneShort": "PR 工程导出完成",
+
+  "exportNleExporting": "正在导出 PR 工程…",
+
+  "studioExportNlePremiere": "导出 PR 工程",
+
+  "mediaHydrationFailedAll": "视频媒体加载失败，无法预览。请检查网络后刷新重试。",
+
+  "mediaHydrationFailedPartial": "部分视频媒体加载失败，预览可能不完整。",
+
+  "cinemaMonitor": "监视器",
+
+  "cinemaExport": "导出",
+
+  "cinemaStudio": "工作室",
+
+  "classicStage": {
+
+    "module": "加载编辑器模块…",
+
+    "bridge": "同步项目数据…",
+
+    "wasm": "初始化 GPU 渲染…",
+
+    "project": "加载时间轴与素材…",
+
+    "ready": "就绪",
+
+    "error": "加载失败"
+
+  },
+
+  "proEditorFallback": "剪辑助手",
+
+  "classicLoadFailed": "剪辑工作室加载失败：{{error}}",
+
+  "classicLoadHint": "请确认后端 API 可用、浏览器支持 WebAssembly，并尝试使用 Chrome。",
+
+  "classicInitComponents": "初始化编辑器组件…"
+
+}
+

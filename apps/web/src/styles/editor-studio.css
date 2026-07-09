@@ -1,0 +1,273 @@
+/**
+ * 剪辑工作室深度视觉：影院监视器布局 + 双主题。
+ */
+
+/* ── 剪辑 Tab 影院布局 ── */
+.edit-cinema {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 0;
+  min-height: 420px;
+  height: 100%;
+  border: 1px solid var(--svf-frame);
+  border-radius: var(--svf-radius-lg);
+  background: var(--svf-surface);
+  overflow: hidden;
+  box-shadow: var(--svf-shadow-sm);
+}
+
+.board-content:has(.edit-cinema) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.edit-cinema-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.65rem 1rem;
+  background: var(--svf-surface-2);
+  border-bottom: 1px solid var(--svf-frame);
+}
+
+.edit-cinema-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.edit-cinema-group.svf-studio-chrome-group {
+  padding: 0.25rem 0.35rem;
+}
+
+.edit-cinema-group-label {
+  font-family: var(--svf-font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--svf-muted);
+  margin-right: 0.15rem;
+}
+
+.edit-cinema-divider {
+  width: 1px;
+  height: 1.5rem;
+  background: var(--svf-frame);
+  flex-shrink: 0;
+}
+
+.edit-cinema-timecode {
+  font-family: var(--svf-font-mono);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--svf-accent);
+  padding: 0.2rem 0.55rem;
+  background: var(--svf-accent-glow);
+  border: 1px solid color-mix(in srgb, var(--svf-accent) 25%, transparent);
+  border-radius: var(--svf-radius-sm);
+  min-width: 7.5rem;
+  text-align: center;
+}
+
+.edit-cinema-status {
+  flex-shrink: 0;
+}
+
+.edit-cinema-viewport {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+  background: var(--svf-void);
+  min-height: 0;
+}
+
+.edit-cinema-viewport-frame {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  border: 2px solid var(--svf-frame);
+  border-radius: var(--svf-radius);
+  overflow: hidden;
+  background: #000;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.45);
+}
+
+.edit-cinema-viewport-frame .panel {
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.edit-cinema-preview-state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  width: 100%;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.light .edit-cinema-viewport-frame {
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.12);
+}
+
+.edit-cinema-viewport-frame .opencut-preview-pane {
+  border: none;
+  border-radius: 0;
+  min-height: 0;
+  flex: 1;
+  background: transparent;
+}
+
+.edit-cinema-footer {
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--svf-frame);
+  background: var(--svf-surface-2);
+  font-size: 0.8125rem;
+}
+
+/* ── 专业剪辑全屏工作室 Chrome ── */
+.svf-studio-chrome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  padding: 0.6rem 1rem;
+  background: var(--svf-surface-2);
+  border-bottom: 1px solid var(--svf-frame);
+  flex-shrink: 0;
+}
+
+.svf-studio-chrome-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.svf-studio-chrome-rec {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--svf-accent);
+  box-shadow: 0 0 10px var(--svf-accent-glow);
+  flex-shrink: 0;
+  animation: svf-rec-pulse 1.4s ease-in-out infinite;
+}
+
+.svf-studio-chrome-brand h2 {
+  margin: 0;
+  font-family: var(--svf-font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.svf-studio-chrome-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.svf-studio-chrome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.svf-studio-chrome-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem;
+  border-radius: var(--svf-radius-sm);
+  background: var(--svf-surface-3);
+  border: 1px solid var(--svf-frame-soft);
+}
+
+.svf-studio-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--svf-void);
+}
+
+.editor-studio-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--svf-void);
+  color: var(--svf-text);
+}
+
+.editor-studio-page {
+  background: var(--svf-void);
+}
+
+.editor-studio-page-shell {
+  height: 100vh;
+}
+
+/* OpenCut Classic 根容器双主题 */
+.svf-opencut-theme {
+  color: var(--svf-text);
+  background: var(--svf-void);
+}
+
+.svf-opencut-theme.light {
+  color-scheme: light;
+}
+
+.svf-opencut-theme.dark {
+  color-scheme: dark;
+}
+
+/* 主题切换按钮 */
+.svf-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: auto;
+}
+
+.svf-theme-toggle-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.svf-theme-toggle-label {
+  font-size: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .svf-theme-toggle-label {
+    display: none;
+  }
+
+  .edit-cinema-divider {
+    display: none;
+  }
+
+  .edit-cinema-header {
+    gap: 0.4rem;
+  }
+}

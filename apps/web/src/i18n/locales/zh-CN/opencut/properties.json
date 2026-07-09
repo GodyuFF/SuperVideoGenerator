@@ -1,0 +1,96 @@
+{
+
+  "transform": "变换",
+
+  "blending": "混合",
+
+  "masks": "蒙版",
+
+  "effect": "特效",
+
+  "effects": "特效",
+
+  "speed": "速度",
+
+  "audio": "音频",
+
+  "text": "文字",
+
+  "graphic": "图形",
+
+  "noEffects": "无特效",
+
+  "openEffects": "打开特效",
+
+  "effectsFromAssets": "从素材面板为此图层添加特效。",
+
+  "noMasks": "无蒙版",
+
+  "addMask": "添加蒙版",
+
+  "oneMaskOnlyTooltip": "目前仅支持一个蒙版。如需更多，请复制片段并为每个副本应用不同蒙版。",
+
+  "addMaskHint": "添加蒙版以隐藏或显示图层的部分内容。",
+
+  "toggleMaskInversion": "切换 {{name}} 蒙版反转",
+
+  "removeMask": "移除 {{name}} 蒙版",
+
+  "position": "位置",
+
+  "size": "尺寸",
+
+  "height": "高度",
+
+  "width": "宽度",
+
+  "scale": "缩放",
+
+  "rotation": "旋转",
+
+  "feather": "羽化",
+
+  "stroke": "描边",
+
+  "content": "内容",
+
+  "font": "字体",
+
+  "spacing": "间距",
+
+  "letterSpacing": "字间距",
+
+  "lineHeight": "行高",
+
+  "toggleEffect": "切换 {{effect}}",
+
+  "removeEffect": "移除 {{effect}}",
+
+  "fontAll": "全部字体",
+
+  "fontMyFonts": "我的字体",
+
+  "fontFavorites": "收藏",
+
+  "fontSelect": "选择字体",
+
+  "fontSearchPlaceholder": "搜索{{tab}}…",
+
+  "fontLoading": "加载字体中…",
+
+  "fontLoadFailed": "字体预览加载失败。",
+
+  "fontNotFound": "未找到字体。",
+
+  "colorCustom": "自定义",
+
+  "colorSaved": "已保存",
+
+  "colorSelectMode": "选择模式",
+
+  "addGuideLine": "添加参考线",
+
+  "guideCustom": "自定义"
+
+}
+

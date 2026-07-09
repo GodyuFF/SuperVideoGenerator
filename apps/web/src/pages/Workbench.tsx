@@ -3,6 +3,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ChatMessageList } from "../components/ChatMessageList";
 import { ImageGenProgressModal, type ImageGenProgressItem } from "../components/ImageGenProgressModal";
 import { SkillPicker } from "../components/SkillPicker";
@@ -39,6 +40,8 @@ import {
   parseSkillCommand,
   type SkillOption,
 } from "../utils/skillCommand";
+import { AppTopBar } from "../components/layout/AppTopBar";
+import { AppNavTrail } from "../components/layout/AppNavTrail";
 
 const API = "/api";
 
@@ -79,6 +82,7 @@ export function Workbench({
   onBackHome,
   onNavigateToProject,
 }: WorkbenchProps) {
+  const { t } = useTranslation();
   const {
     projectId,
     scriptId,
@@ -99,6 +103,7 @@ export function Workbench({
   const isScriptMode = workspaceMode === "script" && !!scriptId;
   const showReactDetails = aiConfig?.llm.show_react_details ?? true;
   const [boardTab, setBoardTab] = useState<BoardTabId>("overview");
+  const isEditTab = isScriptMode && boardTab === "edit";
   const [activeScriptTitle, setActiveScriptTitle] = useState("");
   const { board, scriptMeta, loading: boardLoading, error: boardError, refresh: refreshBoard } =
     useBoardData(projectId, scriptId, boardTab, workspaceMode);
@@ -131,6 +136,10 @@ export function Workbench({
   const activeConversationIdRef = useRef(activeConversationId);
   activeConversationIdRef.current = activeConversationId;
   const streamMessageIds = useRef<Map<string, string>>(new Map());
+  const streamDeltaBuffer = useRef(
+    new Map<string, { messageId: string; streamKind: string; delta: string }>(),
+  );
+  const streamFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatRoundRef = useRef(0);
   const stepMasterIteration = useRef<Map<string, number>>(new Map());
   const stepMasterRound = useRef<Map<string, number>>(new Map());
@@ -220,6 +229,25 @@ export function Workbench({
     },
     []
   );
+
+  /** 批量刷新 LLM 流式 delta，降低 Agent 执行期 setState 频率。 */
+  const flushStreamDeltas = useCallback(() => {
+    streamFlushTimer.current = null;
+    streamDeltaBuffer.current.forEach(({ messageId, streamKind, delta }) => {
+      if (streamKind === "react_thought" && showReactDetails) {
+        updateMessage(messageId, (msg) => {
+          if (msg.kind !== "react_turn") return msg;
+          return { ...msg, thought: msg.thought + delta };
+        });
+      } else if (streamKind === "llm_summary") {
+        updateMessage(messageId, (msg) => {
+          if (msg.kind !== "assistant") return msg;
+          return { ...msg, text: msg.text + delta };
+        });
+      }
+    });
+    streamDeltaBuffer.current.clear();
+  }, [showReactDetails, updateMessage]);
 
   const upsertReactAction = useCallback(
     (
@@ -660,6 +688,8 @@ export function Workbench({
     lastEventIndex.current = events.length;
 
     newEvents.forEach((e) => {
+      window.dispatchEvent(new CustomEvent("svg:ws-event", { detail: e }));
+
       const eventConvId = e.conversation_id ? String(e.conversation_id) : null;
       if (
         eventConvId &&
@@ -698,25 +728,27 @@ export function Workbench({
       }
 
       if (e.type === "llm_stream_delta" && e.stream_id && e.delta) {
-        const messageId = streamMessageIds.current.get(String(e.stream_id));
+        const streamId = String(e.stream_id);
+        const messageId = streamMessageIds.current.get(streamId);
         if (!messageId) return;
         const delta = String(e.delta);
-
-        if (streamKind === "react_thought" && showReactDetails) {
-          updateMessage(messageId, (msg) => {
-            if (msg.kind !== "react_turn") return msg;
-            return { ...msg, thought: msg.thought + delta };
-          });
-        } else if (streamKind === "llm_summary") {
-          updateMessage(messageId, (msg) => {
-            if (msg.kind !== "assistant") return msg;
-            return { ...msg, text: msg.text + delta };
-          });
+        const prev = streamDeltaBuffer.current.get(streamId);
+        streamDeltaBuffer.current.set(streamId, {
+          messageId,
+          streamKind,
+          delta: (prev?.delta ?? "") + delta,
+        });
+        if (!streamFlushTimer.current) {
+          streamFlushTimer.current = setTimeout(flushStreamDeltas, 50);
         }
       }
 
       if (e.type === "llm_stream_end" && e.stream_id) {
         const streamId = String(e.stream_id);
+        if (streamFlushTimer.current) {
+          clearTimeout(streamFlushTimer.current);
+          flushStreamDeltas();
+        }
         const messageId = streamMessageIds.current.get(streamId);
         if (messageId) {
           if (streamKind === "react_thought" && showReactDetails) {
@@ -869,6 +901,11 @@ export function Workbench({
 
       if (e.type === "assets_changed") {
         refreshWorkspace();
+        if (projectId && scriptId) {
+          void import("../editor/agentBridge").then(({ reloadFromApi }) =>
+            reloadFromApi(projectId, scriptId),
+          );
+        }
       }
       if (e.type === "script_style_locked" && e.style_mode) {
         const mode = String(e.style_mode);
@@ -991,7 +1028,9 @@ export function Workbench({
     appendSystemMessage,
     showReactDetails,
     beginAborting,
-    clearAborting,
+    flushStreamDeltas,
+    projectId,
+    scriptId,
   ]);
 
   function promptConfigureAi() {
@@ -1182,14 +1221,14 @@ export function Workbench({
     }
   }
 
-  if (loading) return <div className="loading">加载中…</div>;
+  if (loading) return <div className="loading">{t("actions.loading", { ns: "common" })}</div>;
 
   if (initError) {
     return (
       <div className="loading">
         <p>初始化失败：{initError}</p>
         <p className="muted">请先启动后端：<code>uvicorn apps.api.main:app --port 8000</code></p>
-        <button type="button" onClick={() => bootstrap()}>重试</button>
+        <button type="button" onClick={() => bootstrap()}>{t("actions.retry", { ns: "common" })}</button>
       </div>
     );
   }
@@ -1205,106 +1244,97 @@ export function Workbench({
 
   return (
     <div className={`workbench ${isScriptMode ? "workbench--script" : "workbench--project"}`}>
-      <header className="top-bar">
-        <button type="button" className="btn-secondary btn-sm board-back-link" onClick={onBackHome}>
-          ← 项目列表
-        </button>
-        <h1>SuperVideoGenerator</h1>
-        <span className={`status-badge ${aiBadgeClass}`}>{aiBadgeText}</span>
-        {isScriptMode && (
+      <AppTopBar
+        lead={
+          <button type="button" className="btn-secondary btn-sm board-back-link" onClick={onBackHome}>
+            {t("backToProjectList", { ns: "nav" })}
+          </button>
+        }
+        center={
           <>
-            <span className="status-badge">{scriptStatus}</span>
-            {activeScriptTitle && (
-              <span className="status-badge muted-badge">{activeScriptTitle}</span>
-            )}
-            {styleLocked && (
-              <span className="status-badge style-locked">
-                风格：{styleModeLabel(styleMode)}（已锁定）
-              </span>
-            )}
-            {/* 显示 AI 配置中的图文子风格和漫画画风 */}
-            {isScriptMode && aiConfig?.image?.pipeline && (
+            <span className={`status-badge ${aiBadgeClass}`}>{aiBadgeText}</span>
+            {isScriptMode && (
               <>
-                <span className="status-badge muted-badge">
-                  图文：{imageTextPresetLabel(aiConfig.image.pipeline.image_text_preset)}
-                </span>
-                <span className="status-badge muted-badge">
-                  漫画：{comicPresetLabel(aiConfig.image.pipeline.comic_preset)}
-                </span>
+                <span className="status-badge">{scriptStatus}</span>
+                {activeScriptTitle && (
+                  <span className="status-badge muted-badge">{activeScriptTitle}</span>
+                )}
+                {styleLocked && (
+                  <span className="status-badge style-locked">
+                    风格：{styleModeLabel(styleMode)}（已锁定）
+                  </span>
+                )}
+                {isScriptMode && aiConfig?.image?.pipeline && (
+                  <>
+                    <span className="status-badge muted-badge">
+                      图文：{imageTextPresetLabel(aiConfig.image.pipeline.image_text_preset)}
+                    </span>
+                    <span className="status-badge muted-badge">
+                      漫画：{comicPresetLabel(aiConfig.image.pipeline.comic_preset)}
+                    </span>
+                  </>
+                )}
+                {awaitingConfirmation && (
+                  <span className="status-badge awaiting">等待您确认剧本结构…</span>
+                )}
+                {(isRunning || isAborting) && !awaitingConfirmation && (
+                  <>
+                    <span className="status-badge running">
+                      {isAborting
+                        ? `${MASTER_AGENT_NAME} 中止中…`
+                        : `${MASTER_AGENT_NAME} 执行中…`}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-secondary btn-sm plan-abort-btn"
+                      onClick={() => void abortExecution()}
+                      disabled={isAborting}
+                    >
+                      {isAborting
+                        ? t("actions.aborting", { ns: "common" })
+                        : t("abortExecution", { ns: "nav" })}
+                    </button>
+                  </>
+                )}
               </>
             )}
-            {awaitingConfirmation && (
-              <span className="status-badge awaiting">等待您确认剧本结构…</span>
-            )}
-            {(isRunning || isAborting) && !awaitingConfirmation && (
-              <>
-                <span className="status-badge running">
-                  {isAborting
-                    ? `${MASTER_AGENT_NAME} 中止中…`
-                    : `${MASTER_AGENT_NAME} 执行中…`}
-                </span>
-                <button
-                  type="button"
-                  className="btn-secondary btn-sm plan-abort-btn"
-                  onClick={() => void abortExecution()}
-                  disabled={isAborting}
-                >
-                  {isAborting ? "中止中…" : "中止执行"}
-                </button>
-              </>
-            )}
+            <ProjectSwitcher
+              projectId={projectId}
+              scriptId={scriptId}
+              onSwitchProject={(pid) => {
+                onNavigateToProject(pid, null);
+                exitToProject(pid);
+                setBoardTab("overview");
+                setMessages([]);
+                setActiveConversationId(null);
+                setPlanView(emptyPlanView());
+                setIsRunning(false);
+                setActiveScriptTitle("");
+              }}
+              onEnterScript={(pid, sid, meta) => {
+                if (pid === projectId && sid === scriptId && workspaceMode === "script") {
+                  return;
+                }
+                enterScript(pid, sid, meta);
+                onNavigateToProject(pid, sid);
+                setBoardTab("script_details");
+              }}
+              onCreateNew={async () => {
+                const pid = await createNewProject();
+                if (pid) onNavigateToProject(pid);
+              }}
+              disabled={inputBlocked}
+            />
           </>
-        )}
-        <ProjectSwitcher
-          projectId={projectId}
-          scriptId={scriptId}
-          onSwitchProject={(pid) => {
-            onNavigateToProject(pid, null);
-            exitToProject(pid);
-            setBoardTab("overview");
-            setMessages([]);
-            setActiveConversationId(null);
-            setPlanView(emptyPlanView());
-            setIsRunning(false);
-            setActiveScriptTitle("");
-          }}
-          onEnterScript={(pid, sid, meta) => {
-            if (pid === projectId && sid === scriptId && workspaceMode === "script") {
-              return;
-            }
-            enterScript(pid, sid, meta);
-            onNavigateToProject(pid, sid);
-            setBoardTab("script_details");
-          }}
-          onCreateNew={async () => {
-            const pid = await createNewProject();
-            if (pid) onNavigateToProject(pid);
-          }}
-          disabled={inputBlocked}
-        />
-        <div className="top-bar-spacer" />
-        <button
-          type="button"
-          className="btn-secondary btn-config"
-          onClick={onOpenAgents}
-        >
-          Agent 配置
-        </button>
-        <button
-          type="button"
-          className="btn-secondary btn-config"
-          onClick={onOpenLogs}
-        >
-          查看日志
-        </button>
-        <button
-          type="button"
-          className="btn-secondary btn-config"
-          onClick={onOpenSettings}
-        >
-          AI 配置
-        </button>
-      </header>
+        }
+        trail={
+          <AppNavTrail
+            onOpenAgents={onOpenAgents}
+            onOpenLogs={onOpenLogs}
+            onOpenSettings={onOpenSettings}
+          />
+        }
+      />
 
       {needsAiConfig && !llmLoading && (
         <div className="ai-config-banner">
@@ -1312,7 +1342,7 @@ export function Workbench({
             尚未配置 AI 模型与 API Key，无法使用 ReAct 智能编排。
             请填写 API Key 后点击<strong>「保存配置」</strong>或<strong>「保存并返回对话」</strong>。
           </p>
-          <button type="button" onClick={onOpenSettings}>去配置 AI</button>
+          <button type="button" onClick={onOpenSettings}>{t("configureAi", { ns: "nav" })}</button>
         </div>
       )}
 
@@ -1325,7 +1355,7 @@ export function Workbench({
       <div className="main-split">
         {isScriptMode && (
         <aside className="chat-panel">
-          <h2>对话</h2>
+          <h2>{isEditTab ? t("editAssistant", { ns: "editor" }) : t("chatPanel", { ns: "editor" })}</h2>
           <div className="conversation-toolbar">
             <button
               type="button"
@@ -1333,7 +1363,7 @@ export function Workbench({
               disabled={inputBlocked || !projectId || !scriptId}
               onClick={() => void startNewConversation()}
             >
-              新对话
+              {t("newConversation", { ns: "nav" })}
             </button>
           </div>
           {conversationList.length > 0 && (
@@ -1468,12 +1498,12 @@ export function Workbench({
               }
             >
               {awaitingConfirmation
-                ? "等待确认…"
+                ? t("waitingConfirm", { ns: "chat" })
                 : (isRunning || scriptStatus === "executing")
-                  ? "中止执行"
+                  ? t("abortExecution", { ns: "chat" })
                   : needsAiConfig
-                    ? "配置 AI"
-                    : "发送"}
+                    ? t("configureAiFirst", { ns: "chat" })
+                    : t("send", { ns: "chat" })}
             </button>
           </div>
           {skillPickerOpen && (
@@ -1489,8 +1519,10 @@ export function Workbench({
         )}
 
         <main className="script-panel">
-          <h2>{isScriptMode ? "剧本工作台" : "项目看板"}</h2>
-          {isScriptMode && (
+          {!isEditTab && (
+            <h2>{isScriptMode ? t("scriptWorkbench", { ns: "editor" }) : t("tabs.overview", { ns: "board" })}</h2>
+          )}
+          {isScriptMode && !isEditTab && (
             <PlanPanel
               plan={planView}
               scriptStatus={scriptStatus}

@@ -1,6 +1,6 @@
 # SuperVideoGenerator 代码设计计划
 
-> 版本：v0.1 | 对应产品手册 v0.1 | 更新：2026-07-07（FFmpeg pad 偶数尺寸；static 忽略 motion_detail scale）
+> 版本：v0.1 | 对应产品手册 v0.1 | 更新：2026-07-09（前端 i18n 双语化）
 
 ## 1. 目标
 
@@ -44,6 +44,7 @@ SuperVideoGenerator/
 ├── apps/
 │   ├── api/                    # FastAPI + WebSocket
 │   └── web/                    # Vite + React + A2UI 组件
+│       └── src/i18n/           # i18next 配置与 locales（见 docs/i18n.md）
 ├── tests/
 │   ├── unit/                   # 核心逻辑
 │   └── api/                    # HTTP/WebSocket
@@ -67,6 +68,15 @@ SuperVideoGenerator/
 - **`core/models` 与 `core/llm/model` 不合并**：前者是业务领域类型，后者是 LLM 请求/消息协议；依赖方向为 `llm → models`，不可反向。
 - **提示词单源**：`load_text()` 根目录为 `core/llm/prompt/`；规则类 `.md` 放在 `core/llm/prompt/rules/`（含 `history_summary.md`）。
 - **守卫**：`tests/unit/test_core_layout.py` 断言废弃顶层目录不存在；`.cursor/rules/core-layer-boundaries.mdc` 约束 AI 编辑。
+
+### 2.2 前端国际化（`apps/web/src/i18n/`）
+
+- **库**：i18next + react-i18next；入口 `config.ts` 注册 SVF 与 OpenCut 命名空间
+- **Provider**：`LocaleProvider` 包裹 `App.tsx`；语言键 `svg.locale`（`zh-CN` | `en`）
+- **SVF Hook**：`useAppTranslation.ts`；页面使用 `useTranslation('nav')` 等
+- **OpenCut Hook**：`editor/opencut/i18n/useOpencutT.ts`；注册表通过 `labelKey` + `translateRegistryLabel.ts`
+- **文案文件**：`locales/{zh-CN,en}/` 下 JSON；OpenCut 独立子目录 `opencut/`
+- **详细约定与验收**：[`docs/i18n.md`](i18n.md)
 
 ## 3. Token 预估、finish_reason 与对话压缩
 
@@ -265,7 +275,7 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 | `spec.py` / `result.py` / `validators.py` | ToolSpec、ToolResult、jsonschema 校验 |
 | `output_schemas.py` | 各 tool 的 output JSON Schema builder |
 | `script/handler.py` + `script/schemas.py` | script_agent CRUD + `list_text_assets` |
-| `image/` … `editing/` | 各域 handler；`image/scan.py`、`image/generate.py`（Agnes 生图）、`image/search_sync.py`；`core/edit/` 剪辑时间轴与 `asset_resolver.py` 素材校验 |
+| `image/` … `editing/` | 各域 handler；`image/scan.py`、`image/generate.py`（Agnes 生图）、`image/search_sync.py`；`core/edit/` 剪辑时间轴、`shot_timing.py`（分镜镜级/句级时间）、`timeline_analysis.py`（时间段分析）与 `asset_resolver.py` 素材校验 |
 | `shared/agent_tools.py` | `AGENT_TOOLS` 懒加载（Registry 兼容层） |
 | [`docs/tools-reference.md`](tools-reference.md) | 全 Agent action 用途与 handler 路径总览 |
 | `web_search/` | DuckDuckGo / Tavily；**暂未**注册到 agent bootstrap |
@@ -297,12 +307,13 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 ### 5.3.4 剪辑成片（FFmpeg + Edit Studio）
 
 - **默认导出**：[`core/edit/ffmpeg_renderer.py`](../core/edit/ffmpeg_renderer.py) + [`core/edit/export_settings.py`](../core/edit/export_settings.py)；多层同时段走 `composite_slices` + FFmpeg `overlay`；[`core/tts/ffmpeg_util.py`](../core/tts/ffmpeg_util.py) 统一路径探测（系统 PATH → Windows 常见路径 → **imageio-ffmpeg 内置**）与 `is_ffmpeg_available`
-- **Edit Studio**：[`apps/web/src/edit/EditStudio.tsx`](../apps/web/src/edit/EditStudio.tsx) 多视频图层轨 + 时间条关键帧标记 + 画布 TransformOverlay 大小编辑 + 动画预设；PATCH [`apps/api/routes/edit_timeline.py`](../apps/api/routes/edit_timeline.py) 支持 `video_layers`
+- **NLE 工程导出**：[`core/edit/nle_export/`](../core/edit/nle_export/) 将 `EditTimeline` 转为 FCP7 XMEML v5 + 素材 ZIP（`nle_premiere_*.zip`）；`POST .../export-nle` 异步 job；**不依赖 FFmpeg**；`GET /api/edit/capabilities` 返回 `nle_export_enabled` / `nle_export_formats: ["premiere"]`
+- **Edit Studio（OpenCut Classic 融合，2026-07-09）**：[`EditTabSimpleView.tsx`](../apps/web/src/editor/EditTabSimpleView.tsx) 预加载 + [`EditorStudioModal.tsx`](../apps/web/src/editor/EditorStudioModal.tsx) 全屏 Classic（无回退）+ [`apps/web/src/editor/opencut/SvfClassicEditor*`](../apps/web/src/editor/opencut/) + [`adapter/SvfMediaBridge.ts`](../apps/web/src/editor/adapter/SvfMediaBridge.ts)；PATCH 支持 `video_layers` 与 `metadata.classic_project`；用户可见名称为「剪辑助手」
 - **中止执行**：`POST .../chat/abort` + [`core/execution/cancel.py`](../core/execution/cancel.py)（`check_cancelled` / `wait_or_cancel` / `gather_with_cancel`）；取消标记在 **主编排 ReAct 循环头、LLM SSE 流、子 Agent decide/act、批量生图/TTS、FFmpeg 分段导出** 等多点协作检查；前端 `execution_abort_requested` 即时进入「中止中…」，收到 `execution_aborted` 后恢复 idle
 - **preview_url**：`timeline_board_items` 遍历 `video_layers` 经 `resolve_clip_media` 填充；见 [`docs/edit-studio-plan.md`](edit-studio-plan.md)
-- **能力单源**：[`core/edit/capabilities.json`](../core/edit/capabilities.json)；`GET /api/edit/capabilities` 合并 `ffmpeg_available` / `export_enabled` / `max_video_layers`
+- **能力单源**：[`core/edit/capabilities.json`](../core/edit/capabilities.json)；`GET /api/edit/capabilities` 合并 `ffmpeg_available` / `export_enabled` / `nle_export_enabled` / `max_video_layers`
 - **Agent merge**：`plan_edit_timeline` 输出 `video_layers` + `transform`；`merge_agent_timeline` 按层/clip `edited_by` 保护（[`core/edit/timeline.py`](../core/edit/timeline.py)）
-- **transform 插值**：[`core/edit/transform_interp.py`](../core/edit/transform_interp.py)（`collect_timeline_boundaries`、`build_scaled_video_filter`、`snap_even_dim`）；`build_scaled_video_filter` 对 pad 目标使用**偶数尺寸** + `force_divisible_by=2`，避免 Ken Burns 中间 scale 产生奇数高宽导致 FFmpeg pad 失败；`motion=static` 时忽略 `motion_detail` 的 scale 插值（与前端 `kenBurnsPreview.ts` 对齐）；前端 [`transformInterp.ts`](../apps/web/src/edit/transformInterp.ts)
+- **transform 插值**：[`core/edit/transform_interp.py`](../core/edit/transform_interp.py)（`collect_timeline_boundaries`、`build_scaled_video_filter`、`snap_even_dim`）；`build_scaled_video_filter` 对 pad 目标使用**偶数尺寸** + `force_divisible_by=2`，避免 Ken Burns 中间 scale 产生奇数高宽导致 FFmpeg pad 失败；`motion=static` 时忽略 `motion_detail` 的 scale 插值；前端预览与导出均经 OpenCut `buildScene` / opencut-wasm 对齐。
 - **媒体路径**：[`core/edit/media_paths.py`](../core/edit/media_paths.py)、[`core/edit/export_paths.py`](../core/edit/export_paths.py)、[`core/edit/edit_capabilities.py`](../core/edit/edit_capabilities.py)
 - 规格：[`docs/edit-studio-plan.md`](edit-studio-plan.md)
 
@@ -319,7 +330,7 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 | `source_refs` | 关联 shot_id、text_asset_ids、media_ids |
 | 校验 | [`core/edit/asset_resolver.py`](../core/edit/asset_resolver.py)：`validate_edit_timeline` → `MissingItem.suggested_upstream`；**导出前强制校验**，缺素材时 `FfmpegExportError`（composite 路径不再静默黑屏） |
 
-**editing_agent 流水线**（TTS 之后）：`load_edit_context` → `plan_edit_timeline` → `validate_edit_assets` →（缺失）`report_missing_assets` /（就绪）`gather_media` → `compose_final`。storyboard 仅产出 VideoPlan。
+**editing_agent 流水线**（TTS 之后）：`load_edit_context` → `plan_edit_timeline` → `validate_edit_assets` →（缺失）`report_missing_assets` /（就绪）`gather_media` → `compose_final`。用户询问某段时间剪辑结构时可用 `analyze_edit_timeline`（`core/edit/timeline_analysis.py`）。storyboard 仅产出 VideoPlan。
 
 ### 5.4 图文资产（character / prop / scene）
 

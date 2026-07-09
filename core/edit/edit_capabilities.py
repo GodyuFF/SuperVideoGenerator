@@ -43,6 +43,8 @@ def load_edit_capabilities() -> dict[str, Any]:
     caps = dict(load_edit_capability_defs())
     caps.update(get_export_manager().get_public_config())
     caps["max_video_layers"] = MAX_VIDEO_LAYERS
+    caps["nle_export_enabled"] = True
+    caps["nle_export_formats"] = ["premiere"]
     return caps
 
 

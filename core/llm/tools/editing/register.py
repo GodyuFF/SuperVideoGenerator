@@ -36,12 +36,18 @@ _EDITING_META: dict[str, tuple[str, str, str, str]] = {
         "edit.get_edit_timeline",
         "读取剪辑计划稿",
     ),
+    "analyze_edit_timeline": (
+        "editing_agent",
+        "read",
+        "edit.analyze_edit_timeline",
+        "按时间窗分析剪辑结构、空白、重叠与优化建议",
+    ),
     "gather_media": ("editing_agent", "write_pipeline", "edit.gather_media", "收集图片/视频/配音素材"),
     "compose_final": ("editing_agent", "write_pipeline", "edit.compose_final", "合成最终成片"),
     "list_final": ("editing_agent", "read", "edit.list_final", "列出成片资产"),
 }
 
-# OpenCut Agent 可控工具
+# Agent 可控剪辑工具
 _OPEN_CUT_META: dict[str, tuple[str, str, str, str]] = {
     "add_clip": ("editing_agent", "write_ad_hoc", "edit.add_clip", "添加媒体片段到时间轴"),
     "update_clip": ("editing_agent", "write_ad_hoc", "edit.update_clip", "修改片段属性（位置、时长、变换）"),

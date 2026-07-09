@@ -569,6 +569,10 @@ def compile_timeline_from_shots(
         video_label = f"镜{shot.order + 1} · {shot.camera_motion}"
         if shot.narration_text:
             video_label += f" · {shot.narration_text[:40]}"
+        shot_source_refs = EditClipSourceRefs(
+            shot_id=shot.id,
+            video_plan_shot_order=shot.order,
+        )
         video_clips.append(
             EditClip(
                 track="video",
@@ -578,6 +582,7 @@ def compile_timeline_from_shots(
                 asset_ref=image_id,
                 motion=resolve_motion(shot.camera_motion or "ken_burns_in"),
                 transform=default_clip_transform(),
+                source_refs=shot_source_refs,
                 metadata={"shot_id": shot.id, "order": shot.order},
             )
         )
@@ -1056,6 +1061,7 @@ def timeline_board_items(
         "user_edited": timeline.user_edited,
         "last_edited_by": timeline.last_edited_by,
         "updated_at": timeline.updated_at,
+        "metadata": dict(timeline.metadata or {}),
         "tracks": tracks_out,
         "video_layers": video_layers_out,
     }

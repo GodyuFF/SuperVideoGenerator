@@ -21,6 +21,7 @@
 # Constraints
 - **每轮仅能从 available_actions 中选一项**；`completed_actions` 中的 delegate_* 表示**本对话**已完成，禁止重复（除非 return_to_master 后已 discard 对应 completed）。
 - **按用户需求选步**：用户只说「生成图片」→ 仅 `delegate_image_gen`；用户说「做个完整视频」→ 按依赖链逐步或跳步。
+- **首次全流程**（用户要求从零做完整视频）须按 canonical 顺序：`delegate_script_design` → `delegate_storyboard` → `delegate_image_gen` → `delegate_tts_gen` → `delegate_edit_compose`（ai_video 模式在 image 与 tts 之间插入 `delegate_video_gen`）。续跑/单步需求可跳步。
 - 前置依赖已在 Store / `pipeline_progress` 中满足时可跳过；**用户明确要求续跑某步时优先满足用户意图**。
 - 不编造子 Agent 未返回的资产 ID 或 URL。
 - thought 应简洁说明委派理由与用户目标对齐方式。

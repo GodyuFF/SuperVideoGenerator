@@ -3,12 +3,15 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   createProject,
   deleteProjectsBatchApi,
   fetchProjectList,
   type ProjectListItem,
 } from "../hooks/useApi";
+import { AppShell } from "../components/layout/AppShell";
+import { AppNavTrail } from "../components/layout/AppNavTrail";
 
 interface ProjectHomePageProps {
   onOpenProject: (projectId: string) => void;
@@ -30,6 +33,7 @@ export function ProjectHomePage({
   onOpenAgents,
   onOpenLogs,
 }: ProjectHomePageProps) {
+  const { t } = useTranslation();
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -109,25 +113,28 @@ export function ProjectHomePage({
   };
 
   return (
-    <div className="project-home">
-      <header className="top-bar">
-        <h1>SuperVideoGenerator</h1>
-        <span className="status-badge muted-badge">项目列表</span>
-        <div className="top-bar-spacer" />
-        <button type="button" className="btn-secondary btn-config" onClick={onOpenAgents}>
-          Agent 配置
-        </button>
-        <button type="button" className="btn-secondary btn-config" onClick={onOpenLogs}>
-          查看日志
-        </button>
-        <button type="button" className="btn-secondary btn-config" onClick={onOpenSettings}>
-          AI 配置
-        </button>
-      </header>
+    <AppShell
+      pageClass="project-home"
+      mainClass="project-home-main"
+      badge={<span className="status-badge muted-badge">{t("projectList", { ns: "nav" })}</span>}
+      trail={
+        <AppNavTrail
+          onOpenAgents={onOpenAgents}
+          onOpenLogs={onOpenLogs}
+          onOpenSettings={onOpenSettings}
+        />
+      }
+    >
+      <section className="svf-hero" aria-label="产品介绍">
+        <p className="svf-hero-eyebrow">AI 视频创作工作台</p>
+        <h2 className="svf-hero-title">从剧本到成片，一条对话流水线</h2>
+        <p className="svf-hero-desc">
+          用自然语言驱动多 Agent 协作：写剧本、建分镜、生图配音、剪辑导出。每个项目独立管理，资产可复用。
+        </p>
+      </section>
 
-      <main className="project-home-main">
-        <div className="project-home-toolbar">
-          <h2>我的项目</h2>
+      <div className="project-home-toolbar">
+          <h2>{t("myProjects", { ns: "nav" })}</h2>
           <div className="project-home-actions">
             <button
               type="button"
@@ -136,8 +143,8 @@ export function ProjectHomePage({
               onClick={toggleSelectAll}
             >
               {selected.size === projects.length && projects.length > 0
-                ? "取消全选"
-                : "全选"}
+                ? t("actions.deselectAll", { ns: "common" })
+                : t("actions.selectAll", { ns: "common" })}
             </button>
             <button
               type="button"
@@ -145,7 +152,9 @@ export function ProjectHomePage({
               disabled={deleting || selected.size === 0}
               onClick={() => void handleBatchDelete()}
             >
-              {deleting ? "删除中…" : `删除选中 (${selected.size})`}
+              {deleting
+                ? t("actions.deleting", { ns: "common" })
+                : t("deleteSelected", { ns: "nav", count: selected.size })}
             </button>
             <button
               type="button"
@@ -153,7 +162,7 @@ export function ProjectHomePage({
               disabled={creating}
               onClick={() => void handleCreate()}
             >
-              {creating ? "创建中…" : "＋ 新建项目"}
+              {creating ? t("actions.creating", { ns: "common" }) : t("newProject", { ns: "nav" })}
             </button>
           </div>
         </div>
@@ -166,7 +175,7 @@ export function ProjectHomePage({
           <div className="project-home-empty">
             <p className="muted">暂无项目，点击「新建项目」开始创作。</p>
             <button type="button" className="btn-primary" onClick={() => void handleCreate()}>
-              ＋ 新建项目
+              {t("newProject", { ns: "nav" })}
             </button>
           </div>
         ) : (
@@ -193,13 +202,12 @@ export function ProjectHomePage({
                   <p className="muted project-home-meta">
                     创建于 {formatDate(project.created_at)}
                   </p>
-                  <span className="project-home-open">进入项目 →</span>
+                  <span className="project-home-open">{t("enterProject", { ns: "nav" })}</span>
                 </button>
               </article>
             ))}
           </div>
         )}
-      </main>
-    </div>
+    </AppShell>
   );
 }

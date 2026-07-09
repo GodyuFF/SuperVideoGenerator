@@ -1,6 +1,6 @@
-"""编辑会话 API：Agent ↔ OpenCut Editor 数据桥。
+"""编辑会话 API：Agent ↔ 编辑器数据桥。
 
-提供 Agent 工具与 OpenCut 编辑器之间的数据通道：
+提供 Agent 工具与编辑器之间的数据通道：
 - GET  获取编辑会话状态（时间轴、媒体资产）
 - PATCH Agent 更新编辑状态（添加片段、调整参数等）
 - POST  触发导出
@@ -37,7 +37,7 @@ class EditSessionPatch(BaseModel):
 
 
 def _build_media_items(store: MemoryStore, script_id: str) -> list[dict[str, Any]]:
-    """构建媒体资产列表（供 OpenCut 编辑器使用）。"""
+    """构建媒体资产列表（供编辑器使用）。"""
     items: list[dict[str, Any]] = []
     for media in store.list_media_for_script(script_id):
         access = resolve_media_access(media.url)
@@ -262,7 +262,7 @@ def get_edit_export_status(project_id: str, script_id: str, job_id: str):
 
 @router.get("/projects/{project_id}/scripts/{script_id}/media")
 def get_script_media(project_id: str, script_id: str):
-    """获取剧本关联的媒体资产列表（供 OpenCut 媒体库使用）。"""
+    """获取剧本关联的媒体资产列表（供编辑器媒体库使用）。"""
     script = state.store.get_script(script_id)
     if not script or script.project_id != project_id:
         raise HTTPException(404, "剧本不存在")

@@ -43,14 +43,14 @@ STEP_META: dict[str, dict[str, str]] = {
         "title": "图片素材生成",
         "description": _step_description("image_agent"),
         "agent": "image_agent",
-        "depends_on": "文字资产",
+        "depends_on": "分镜 frame 文字资产、角色/道具/场景",
         "produces": "配图 MediaAsset",
     },
     "storyboard": {
         "title": "分镜与视频计划稿",
         "description": _step_description("storyboard_agent"),
         "agent": "storyboard_agent",
-        "depends_on": "剧本、推荐已有配图",
+        "depends_on": "剧本（create_frames 创建画面文字资产）",
         "produces": "VideoPlan",
     },
     "video_gen": {
@@ -87,8 +87,8 @@ _TASK_BRIEFS_DEFAULT: dict[str, str] = {
         "根据主编排下发的创意摘要，生成完整剧本 Markdown 与文字资产"
         "（剧情段落、人物、道具、场景）。"
     ),
-    "image_gen": "根据已生成的文字资产（人物、道具、场景）批量生成或搜索对应图片素材。",
-    "storyboard": "基于剧本与图片素材生成分镜列表与视频计划稿（镜头、运镜、旁白）。",
+    "image_gen": "根据分镜创建的 frame 文字资产及角色/道具/场景批量生成或搜索对应图片素材。",
+    "storyboard": "基于剧本生成分镜列表与视频计划稿（镜头、运镜、旁白）；create_frames 创建画面文字资产。",
     "video_gen": "按视频计划稿中的镜头顺序生成 AI 视频片段。",
     "tts_gen": "为分镜旁白文案生成配音音频文件。",
     "edit_compose": "将图片/视频片段与配音合成为最终成片。",
@@ -101,12 +101,12 @@ _STYLE_TASK_BRIEFS: dict[VideoStyleMode, dict[str, str]] = {
             "面向科普/汇报/讲解类视频，文案清晰、结构分段。"
         ),
         "image_gen": (
-            "【动态图文】为缺图的角色、道具、场景文字资产批量生成或搜索配图；"
+            "【动态图文】为缺图的角色、道具、场景及 frame 画面文字资产批量生成或搜索配图；"
             "构图适合 Ken Burns 运镜，留出主体安全区。"
         ),
         "storyboard": (
             "【动态图文】生成分镜与视频计划稿：镜头时长、运镜、旁白文案；"
-            "以静态图+运镜为主，无需 AI 视频片段。"
+            "create_frames 创建画面文字资产；以静态图+运镜为主，无需 AI 视频片段。"
         ),
         "edit_compose": "【动态图文】将图片运镜片段与配音合成为讲解类成片。",
     },

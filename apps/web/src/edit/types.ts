@@ -62,6 +62,7 @@ export interface EditTimelineData {
   editable?: boolean;
   tracks: Record<TrackKind, TrackClip[]>;
   video_layers?: VideoLayer[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface EditCapabilities {
@@ -75,6 +76,8 @@ export interface EditCapabilities {
   export_enabled?: boolean;
   ffmpeg_path?: string;
   max_video_layers?: number;
+  nle_export_enabled?: boolean;
+  nle_export_formats?: string[];
 }
 
 export interface MediaBinItem {
@@ -84,6 +87,8 @@ export interface MediaBinItem {
   url?: string;
   link?: string;
   duration_ms?: number;
+  /** 来源文字资产 ID（用于 mediaId 别名解析）。 */
+  source_asset_id?: string;
 }
 
 export const DEFAULT_TRANSFORM: ClipTransform = {

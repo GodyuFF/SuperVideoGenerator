@@ -123,6 +123,11 @@ def patch_timeline(
         except (TypeError, ValueError):
             pass
 
+    if "metadata" in body and isinstance(body["metadata"], dict):
+        merged = dict(timeline.metadata or {})
+        merged.update(body["metadata"])
+        timeline.metadata = merged
+
     if timeline.duration_ms <= 0:
         timeline.duration_ms = timeline_duration_ms(timeline)
 

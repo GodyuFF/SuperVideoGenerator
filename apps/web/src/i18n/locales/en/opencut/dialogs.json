@@ -1,0 +1,226 @@
+{
+
+  "menu": "Menu",
+
+  "shortcuts": "Shortcuts",
+
+  "doneClose": "Done and close",
+
+  "done": "Done",
+
+  "scenes": "Scenes",
+
+  "select": "Select",
+
+  "cancel": "Cancel",
+
+  "delete": "Delete",
+
+  "finish": "Finish",
+
+  "deleteScenes": "Delete scenes",
+
+  "rename": "Rename",
+
+  "deleteProject": "Delete project",
+
+  "exit": "Exit",
+
+  "mobileGateTitle": "Use a desktop browser",
+
+  "mobileGateBody": "The OpenCut editor needs a larger screen. Please use a desktop device.",
+
+  "onboardingSkip": "Skip",
+
+  "onboardingNext": "Next",
+
+  "onboardingDone": "Done",
+
+  "onboardingWelcome": "Welcome to OpenCut",
+
+  "onboardingTitle0": "Welcome to OpenCut Beta! 🎉",
+
+  "onboardingTitle1": "⚠️ This is a super early beta!",
+
+  "onboardingTitle2": "🦋 Have fun testing!",
+
+  "onboardingDefaultTitle": "OpenCut Onboarding",
+
+  "onboardingDesc0": "You're among the first to try OpenCut - the fully open source CapCut alternative.",
+
+  "onboardingDesc1a": "There's still a ton of things to do to make this editor amazing.",
+
+  "onboardingDesc1b": "A lot of features are still missing. We're working hard to build them out!",
+
+  "onboardingDesc1c": "If you're curious, check out our roadmap [here](https://opencut.app/roadmap)",
+
+  "onboardingDesc2": "Join our [Discord]({{discordUrl}}), chat with cool people and share feedback to help make OpenCut the best editor ever.",
+
+  "scenesTitle": "Scenes",
+
+  "selectScenesTitle": "Select scenes ({{count}})",
+
+  "selectScenesDescription": "Select scenes to delete",
+
+  "scenesDescription": "Switch between scenes in your project",
+
+  "noScenesAvailable": "No scenes available",
+
+  "deleteCount": "Delete ({{count}})",
+
+  "deleteScenesTitle": "Delete Scenes",
+
+  "deleteScenesConfirm_one": "Are you sure you want to delete {{count}} scene? This action cannot be undone.",
+
+  "deleteScenesConfirm_other": "Are you sure you want to delete {{count}} scenes? This action cannot be undone.",
+
+  "failedDeleteScene": "Failed to delete scene",
+
+  "storagePersist": "Persistent storage",
+
+  "storageDismiss": "Dismiss",
+
+  "loadingProject": "Loading project...",
+
+  "loadingEmbedded": "Loading timeline and assets…",
+
+  "exitingProject": "Exiting project...",
+
+  "failedCreateProject": "Failed to create project",
+
+  "projectNotFound": "Project not found. Please try reloading.",
+
+  "failedLoadProject": "Failed to load project",
+
+  "embeddedRetryHint": "Ensure the backend API is running (dev.bat or uvicorn) and refresh the page.",
+
+  "retryLoad": "Retry",
+
+  "close": "Close",
+
+  "mobileGateGoBack": "Go back",
+
+  "mobileGateTitleDetailed": "Desktop only (for now)",
+
+  "mobileGateBodyDetailed": "OpenCut isn't optimized for mobile or iPad yet. Things will break and the layout will be a mess. Come back on a desktop for the real experience.",
+
+  "mobileTakeLookAnyway": "Take a look anyway",
+
+  "renameProject": "Rename project",
+
+  "newName": "New name",
+
+  "enterNewName": "Enter a new name",
+
+  "deleteProjectTitle": "Delete '{{name}}'?",
+
+  "deleteProjectsTitle": "Delete {{count}} projects?",
+
+  "warning": "Warning",
+
+  "deleteProjectWarningSingle": "This will permanently delete \"{{name}}\" and all associated files.",
+
+  "deleteProjectWarningMultiple": "This will permanently delete {{count}} projects and all associated files.",
+
+  "typeDeleteConfirm": "Type \"DELETE\" to confirm",
+
+  "deleteConfirmPlaceholder": "DELETE",
+
+  "duration": "Duration",
+
+  "created": "Created",
+
+  "modified": "Modified",
+
+  "projectId": "Project ID",
+
+  "exitProject": "Exit project",
+
+  "discord": "Discord",
+
+  "failedRenameProject": "Failed to rename project",
+
+  "pleaseTryAgain": "Please try again",
+
+  "failedDeleteProject": "Failed to delete project",
+
+  "projectThumbnailAlt": "Project thumbnail",
+
+  "storageDontLoseTitle": "Don't lose your projects",
+
+  "storageDontLoseBody1": "Your browser can automatically delete your projects when storage runs low.",
+
+  "storageDontLoseBody2": "Allow OpenCut to protect them?",
+
+  "storageNotNow": "Not now",
+
+  "storageAllow": "Allow",
+
+  "changelogDismiss": "Dismiss",
+
+  "seeFullChangelog": "See full changelog",
+
+  "copyAsMarkdown": "Copy markdown",
+
+  "copyAsMarkdownTitle": "Copy as markdown",
+
+  "copied": "Copied!",
+
+  "classicLoadFailed": "Editor failed to load: {{message}}",
+
+  "classicRetryHint": "Please retry; if the problem persists refresh the page and confirm your browser supports WebAssembly.",
+
+  "classicEditorLoadFailed": "Classic editor failed to load: {{error}}",
+
+  "loadStageModule": "Loading editor module…",
+
+  "loadStageBridge": "Syncing project data…",
+
+  "loadStageWasm": "Initializing GPU renderer…",
+
+  "loadStageProject": "Loading timeline and assets…",
+
+  "loadStageReady": "Ready",
+
+  "loadStageError": "Failed to load",
+
+  "initEditorComponents": "Initializing editor components…",
+
+  "editShortcutRecording": "Press any key combination...",
+
+  "editShortcutClick": "Click to edit shortcut",
+
+  "migrationUpdatingProject": "Updating project",
+
+  "migrationUpdatingProjects": "Updating projects",
+
+  "migrationUpgradingSingle": "Upgrading \"{{name}}\" from v{{from}} to v{{to}}",
+
+  "migrationUpgradingMultiple": "Upgrading projects from v{{from}} to v{{to}}",
+
+  "collapseSection": "Collapse section",
+
+  "expandSection": "Expand section",
+
+  "graphPresets": "Presets",
+
+  "graphSaved": "Saved",
+
+  "graphSavePreset": "Save",
+
+  "graphExpand": "Expand",
+
+  "defaultText": "Default text",
+
+  "clearInput": "Clear input",
+
+  "hidePassword": "Hide password",
+
+  "showPassword": "Show password",
+
+  "allFonts": "All fonts",
+
+  "myFonts": "My fonts"
+
+}
+

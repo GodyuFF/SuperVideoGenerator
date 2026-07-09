@@ -1,0 +1,23 @@
+{
+  "roadmap": "Roadmap",
+  "contributors": "Contributors",
+  "sponsors": "Sponsors",
+  "blog": "Blog",
+  "signIn": "Sign in",
+  "getStarted": "Get started",
+  "projects": "Projects",
+  "copySvg": "Copy SVG",
+  "downloadSvg": "Download SVG",
+  "brandAssets": "Brand assets",
+  "closeMenu": "Close menu",
+  "logoAlt": "OpenCut Logo",
+  "heroTitle": "Open source video editor",
+  "heroTitleLine1": "The open source",
+  "heroTitleLine2": "Video editor",
+  "heroSubtitle": "A simple but powerful video editor that gets the job done. Works on any platform.",
+  "tryEarlyBeta": "Try early beta",
+  "heroBackgroundAlt": "OpenCut video editor landing page background",
+  "heroCta": "Get started",
+  "startContributing": "Start contributing",
+  "reportIssues": "Report issues"
+}

@@ -1,0 +1,198 @@
+{
+
+  "tabs": {
+
+    "media": "Media",
+
+    "sounds": "Sounds",
+
+    "text": "Text",
+
+    "stickers": "Stickers",
+
+    "effects": "Effects",
+
+    "transitions": "Transitions",
+
+    "captions": "Captions",
+
+    "adjustment": "Adjustment",
+
+    "settings": "Settings"
+
+  },
+
+  "title": "Assets",
+
+  "delete": "Delete",
+
+  "deleteCountItems": "Delete {{count}} items",
+
+  "exportClips": "Export clips",
+
+  "gridView": "Grid view",
+
+  "listView": "List view",
+
+  "switchToListView": "Switch to list view",
+
+  "switchToGridView": "Switch to grid view",
+
+  "sortName": "Name",
+
+  "sortType": "Type",
+
+  "sortDuration": "Duration",
+
+  "sortSize": "File size",
+
+  "sortBy": "Sort by {{key}} ({{order}})",
+
+  "ascending": "ascending",
+
+  "descending": "descending",
+
+  "import": "Import",
+
+  "dragHint": "Drop files here or click to import",
+
+  "noActiveProject": "No active project",
+
+  "typeVideo": "Video",
+
+  "typeAudio": "Audio",
+
+  "typeUnknown": "Unknown",
+
+  "searchSounds": "Search sound effects",
+
+  "soundEffects": "Sound effects",
+
+  "saved": "Saved",
+
+  "commercialOnly": "Show only commercially licensed",
+
+  "commercialOnlyHint": "Only showing sounds licensed for commercial use",
+
+  "allSoundsHint": "Showing all sounds regardless of license",
+
+  "loadingSounds": "Loading sounds...",
+
+  "searching": "Searching...",
+
+  "noSoundsFound": "No sounds found",
+
+  "noSoundsAvailable": "No sounds available",
+
+  "loadingMoreSounds": "Loading more sounds...",
+
+  "loadingSavedSounds": "Loading saved sounds...",
+
+  "errorPrefix": "Error: {{message}}",
+
+  "noSavedSounds": "No saved sounds",
+
+  "saveSoundHint": "Click the heart icon on any sound to save it here",
+
+  "savedCount_one": "{{count}} saved sound",
+
+  "savedCount_other": "{{count}} saved sounds",
+
+  "clearAll": "Clear all",
+
+  "clearAllSavedTitle": "Clear all saved sounds?",
+
+  "clearAllSavedDesc": "This will permanently remove all {{count}} saved sounds from your collection. This action cannot be undone.",
+
+  "clearAllSounds": "Clear all sounds",
+
+  "addToTimeline": "Add to timeline",
+
+  "saveSound": "Save sound",
+
+  "removeFromSaved": "Remove from saved",
+
+  "clearSaved": "Clear saved",
+
+  "searchPlaceholder": "Search...",
+
+  "noStickersFound": "No stickers found",
+
+  "resultsCount": "{{count}} results",
+
+  "noStickersForQuery": "No stickers found for \"{{query}}\"",
+
+  "noStickersAvailable": "No stickers available yet.",
+
+  "noStickersInCategory": "No stickers available in {{category}} yet.",
+
+  "seeAll": "See all",
+
+  "clear": "Clear",
+
+  "stickerCategories": "Sticker categories",
+
+  "failedAddSticker": "Failed to add sticker to timeline",
+
+  "captionsTitle": "Captions",
+
+  "language": "Language",
+
+  "autoDetect": "Auto detect",
+
+  "generateTranscript": "Generate transcript",
+
+  "transcribing": "Transcribing…",
+
+  "generatingCaptions": "Generating captions…",
+
+  "extractingAudio": "Extracting audio...",
+
+  "preparingAudio": "Preparing audio...",
+
+  "readingSubtitleFile": "Reading subtitle file...",
+
+  "importingSubtitles": "Importing subtitles...",
+
+  "loadingModel": "Loading model {{progress}}%",
+
+  "selectLanguage": "Select a language",
+
+  "settingsProjectInfo": "Project info",
+
+  "settingsBackground": "Background",
+
+  "settingsName": "Name",
+
+  "settingsFrameRate": "Frame rate",
+
+  "settingsSelectFrameRate": "Select a frame rate",
+
+  "settingsAspectRatio": "Aspect ratio",
+
+  "settingsCustom": "Custom",
+
+  "settingsCanvasWidth": "Canvas width",
+
+  "settingsCanvasHeight": "Canvas height",
+
+  "dragOverlayProcessing": "Processing your files ({{progress}}%)",
+
+  "dragOverlayHint": "Drag and drop videos, photos, and audio files here",
+
+  "settingsBlur": "Blur",
+
+  "settingsColors": "Colors",
+
+  "settingsPatternCraft": "Pattern craft",
+
+  "settingsSyntaxUi": "Syntax UI",
+
+  "settingsSelectBlur": "Select {{label}} blur",
+
+  "settingsSelectBackground": "Select background",
+
+  "settingsPickCustomColor": "Pick a custom background color"
+
+}
+

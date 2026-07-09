@@ -1,0 +1,198 @@
+{
+
+  "tabs": {
+
+    "media": "媒体",
+
+    "sounds": "音效",
+
+    "text": "文字",
+
+    "stickers": "贴纸",
+
+    "effects": "特效",
+
+    "transitions": "转场",
+
+    "captions": "字幕",
+
+    "adjustment": "调整",
+
+    "settings": "设置"
+
+  },
+
+  "title": "素材",
+
+  "delete": "删除",
+
+  "deleteCountItems": "删除 {{count}} 项",
+
+  "exportClips": "导出片段",
+
+  "gridView": "网格视图",
+
+  "listView": "列表视图",
+
+  "switchToListView": "切换到列表视图",
+
+  "switchToGridView": "切换到网格视图",
+
+  "sortName": "名称",
+
+  "sortType": "类型",
+
+  "sortDuration": "时长",
+
+  "sortSize": "文件大小",
+
+  "sortBy": "按 {{key}} 排序（{{order}}）",
+
+  "ascending": "升序",
+
+  "descending": "降序",
+
+  "import": "导入",
+
+  "dragHint": "拖放文件到此处或点击导入",
+
+  "noActiveProject": "无活动项目",
+
+  "typeVideo": "视频",
+
+  "typeAudio": "音频",
+
+  "typeUnknown": "未知",
+
+  "searchSounds": "搜索音效",
+
+  "soundEffects": "音效",
+
+  "saved": "已保存",
+
+  "commercialOnly": "仅显示可商用授权",
+
+  "commercialOnlyHint": "仅显示可商用授权的音效",
+
+  "allSoundsHint": "显示所有音效，不限授权类型",
+
+  "loadingSounds": "加载音效中…",
+
+  "searching": "搜索中…",
+
+  "noSoundsFound": "未找到音效",
+
+  "noSoundsAvailable": "暂无音效",
+
+  "loadingMoreSounds": "加载更多音效…",
+
+  "loadingSavedSounds": "加载已保存音效…",
+
+  "errorPrefix": "错误：{{message}}",
+
+  "noSavedSounds": "暂无已保存音效",
+
+  "saveSoundHint": "点击任意音效的心形图标即可保存到此",
+
+  "savedCount_one": "已保存 {{count}} 个音效",
+
+  "savedCount_other": "已保存 {{count}} 个音效",
+
+  "clearAll": "全部清除",
+
+  "clearAllSavedTitle": "清除所有已保存音效？",
+
+  "clearAllSavedDesc": "将永久移除收藏中的全部 {{count}} 个音效，此操作无法撤销。",
+
+  "clearAllSounds": "清除全部音效",
+
+  "addToTimeline": "添加到时间轴",
+
+  "saveSound": "保存音效",
+
+  "removeFromSaved": "从已保存中移除",
+
+  "clearSaved": "清除已保存",
+
+  "searchPlaceholder": "搜索…",
+
+  "noStickersFound": "未找到贴纸",
+
+  "resultsCount": "{{count}} 条结果",
+
+  "noStickersForQuery": "未找到与「{{query}}」匹配的贴纸",
+
+  "noStickersAvailable": "暂无可用贴纸。",
+
+  "noStickersInCategory": "{{category}} 分类下暂无贴纸。",
+
+  "seeAll": "查看全部",
+
+  "clear": "清除",
+
+  "stickerCategories": "贴纸分类",
+
+  "failedAddSticker": "添加贴纸到时间轴失败",
+
+  "captionsTitle": "字幕",
+
+  "language": "语言",
+
+  "autoDetect": "自动检测",
+
+  "generateTranscript": "生成转写",
+
+  "transcribing": "转写中…",
+
+  "generatingCaptions": "生成字幕中…",
+
+  "extractingAudio": "提取音频中…",
+
+  "preparingAudio": "准备音频中…",
+
+  "readingSubtitleFile": "读取字幕文件中…",
+
+  "importingSubtitles": "导入字幕中…",
+
+  "loadingModel": "加载模型 {{progress}}%",
+
+  "selectLanguage": "选择语言",
+
+  "settingsProjectInfo": "项目信息",
+
+  "settingsBackground": "背景",
+
+  "settingsName": "名称",
+
+  "settingsFrameRate": "帧率",
+
+  "settingsSelectFrameRate": "选择帧率",
+
+  "settingsAspectRatio": "宽高比",
+
+  "settingsCustom": "自定义",
+
+  "settingsCanvasWidth": "画布宽度",
+
+  "settingsCanvasHeight": "画布高度",
+
+  "dragOverlayProcessing": "正在处理文件（{{progress}}%）",
+
+  "dragOverlayHint": "拖放视频、图片和音频文件到此处",
+
+  "settingsBlur": "模糊",
+
+  "settingsColors": "颜色",
+
+  "settingsPatternCraft": "Pattern craft",
+
+  "settingsSyntaxUi": "Syntax UI",
+
+  "settingsSelectBlur": "选择 {{label}} 模糊",
+
+  "settingsSelectBackground": "选择背景",
+
+  "settingsPickCustomColor": "选择自定义背景色"
+
+}
+

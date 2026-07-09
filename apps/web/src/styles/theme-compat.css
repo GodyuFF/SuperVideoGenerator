@@ -1,0 +1,500 @@
+/**
+ * 主题兼容层：覆盖 index.css 中仍使用旧变量回退或遗漏的组件色块。
+ * 必须在 design-system.css 之后加载。
+ */
+
+html {
+  color-scheme: light dark;
+}
+
+html.light {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* 对话与 ReAct */
+.chat-assistant {
+  background: var(--svf-assistant-bg);
+  border-color: var(--svf-assistant-border);
+}
+
+.chat-system {
+  background: var(--svf-warn-bg);
+  border-color: var(--svf-warn-border);
+}
+
+.react-thought {
+  border-left-color: var(--svf-thought-border);
+}
+
+.react-action-input {
+  background: var(--svf-inset);
+}
+
+.react-action-input dd {
+  color: var(--svf-text-soft);
+}
+
+.react-section-label,
+.chat-assistant.streaming .chat-assistant-body::after,
+.react-thought-body.streaming::after {
+  color: var(--svf-cursor);
+}
+
+/* 技能与选择器 */
+.skill-badge {
+  background: var(--svf-skill-bg);
+  color: var(--svf-skill-text);
+}
+
+.skill-picker {
+  background: var(--svf-surface);
+  border-color: var(--svf-frame);
+  box-shadow: var(--svf-shadow-md);
+}
+
+.skill-picker-item:hover,
+.skill-picker-item.active {
+  background: var(--svf-skill-bg-hover);
+}
+
+.skill-picker-id {
+  color: var(--svf-skill-highlight);
+}
+
+/* 状态徽章（index.css 遗留规则） */
+.status-badge.running {
+  background: var(--svf-info-bg-alt);
+}
+
+.status-badge.style-locked {
+  background: var(--svf-warn-bg);
+}
+
+/* A2UI */
+.a2ui-overlay,
+.asset-editor-overlay,
+.editor-studio-modal-overlay {
+  background: var(--svf-overlay);
+}
+
+.a2ui-modal,
+.editor-studio-modal {
+  box-shadow: var(--svf-shadow-overlay);
+}
+
+.a2ui-badge {
+  background: var(--svf-accent-warn-bg);
+  color: var(--svf-accent-warn-text);
+}
+
+.a2ui-cost {
+  background: var(--svf-success-bg);
+}
+
+.a2ui-inline-status.approved {
+  background: var(--svf-success-bg);
+  color: var(--svf-success-text-bright);
+}
+
+.a2ui-inline-status.cancelled {
+  background: var(--svf-danger-bg);
+  color: var(--svf-danger-text-bright);
+}
+
+.a2ui-error,
+.a2ui-required {
+  color: var(--svf-danger-text-bright);
+}
+
+.react-action-pill.ask-user {
+  background: var(--svf-ask-bg);
+  color: var(--svf-gold-bright);
+  border-color: var(--svf-ask-border);
+}
+
+/* 配置与横幅 */
+.ai-config-banner {
+  background: var(--svf-banner-danger-bg);
+  border-bottom-color: var(--svf-danger-border);
+  color: var(--svf-danger-text-soft);
+}
+
+.ai-config-banner.loading-banner {
+  background: var(--svf-assistant-bg);
+  border-bottom-color: var(--svf-frame);
+  color: var(--svf-muted);
+}
+
+.settings-tab.active {
+  background: var(--svf-tab-active-bg);
+}
+
+.settings-alert.success,
+.sd-status.sd-ready {
+  background: var(--svf-success-bg);
+  border-color: var(--svf-success-soft);
+  color: var(--svf-success);
+}
+
+.settings-alert.error,
+.sd-status.sd-missing {
+  background: var(--svf-warn-bg);
+  border-color: var(--svf-warn-border);
+  color: var(--svf-gold);
+}
+
+.sd-model-count {
+  color: var(--svf-success);
+}
+
+.test-image-section {
+  border-top-color: var(--svf-divider);
+}
+
+.obs-toggle-btn,
+.toggle-arrow {
+  color: var(--svf-info-text-bright);
+  border-color: var(--svf-info-border);
+}
+
+.obs-toggle-btn:hover,
+.toggle-arrow:hover {
+  background: var(--svf-info-bg);
+  color: var(--svf-info);
+}
+
+.collapsible-section .react-section-body {
+  color: var(--svf-text-soft);
+}
+
+/* 日志页 */
+.logs-hint {
+  background: var(--svf-surface);
+  border-color: var(--svf-frame);
+}
+
+.log-item {
+  background: var(--svf-surface);
+  border-color: var(--svf-frame);
+}
+
+.log-item-header:hover {
+  background: var(--svf-hover-row);
+}
+
+.log-pre,
+.log-preformatted,
+.log-collapsible-section,
+.log-collapsible-body {
+  background: var(--svf-inset);
+}
+
+.log-record-meta,
+.log-collapsible-summary {
+  border-color: var(--svf-divider);
+}
+
+.log-meta-chip,
+.log-collapsible-summary {
+  background: var(--svf-inset-alt);
+}
+
+.log-model {
+  color: var(--svf-violet);
+}
+
+.log-token-inline,
+.log-token-chip {
+  color: var(--svf-success-text-bright);
+  background: var(--svf-token-bg);
+}
+
+.log-token-chip.total {
+  background: var(--svf-chip-info-bg);
+  color: var(--svf-info-text-bright);
+}
+
+.log-message.role-system .log-message-role {
+  color: var(--svf-violet);
+}
+
+.log-message.role-user .log-message-role {
+  color: var(--svf-accent);
+}
+
+.log-message.role-assistant .log-message-role {
+  color: var(--svf-gold);
+}
+
+/* 看板与资产 */
+.content-section,
+.plan-panel,
+.script-board {
+  background: var(--svf-surface);
+  border-color: var(--svf-frame);
+}
+
+.asset-card,
+.plan-step-card {
+  background: var(--svf-inset);
+  border-color: var(--svf-frame);
+}
+
+.plan-status-card {
+  background: var(--svf-panel-inset);
+}
+
+.board-status.status-completed {
+  background: var(--svf-chip-success-bg);
+  color: var(--svf-success);
+}
+
+.board-status.status-running {
+  background: var(--svf-warn-bg);
+  color: var(--svf-gold);
+}
+
+.media-kind {
+  background: var(--svf-warn-bg);
+  color: var(--svf-gold);
+}
+
+.image-text-cards .image-text-asset-card {
+  border-color: var(--svf-divider-strong);
+  background: var(--svf-surface);
+}
+
+.image-text-asset-card--compact:hover {
+  border-color: var(--svf-frame-soft);
+  box-shadow: var(--svf-shadow-sm);
+}
+
+.meta-chip {
+  background: var(--svf-chip-bg);
+}
+
+.meta-chip.tag {
+  background: var(--svf-tag-bg);
+  color: var(--svf-info-text-bright);
+}
+
+.prompt-block {
+  background: var(--svf-inset-alt);
+}
+
+.prompt-pre {
+  color: var(--svf-text-soft);
+}
+
+.manual-edit-banner {
+  background: var(--svf-gold-soft);
+  border-color: color-mix(in srgb, var(--svf-gold) 35%, transparent);
+}
+
+/* 子 Agent */
+.sub-agent-block {
+  background: var(--svf-subagent-bg);
+  border-color: var(--svf-divider-strong);
+}
+
+.sub-agent-header {
+  color: var(--svf-text);
+}
+
+.sub-agent-badge {
+  background: var(--svf-subagent-badge-bg);
+  color: var(--svf-success-text-bright);
+}
+
+.sub-agent-iteration {
+  border-top-color: var(--svf-divider);
+}
+
+/* 图片生成 */
+.image-gen-item {
+  border-bottom-color: var(--svf-divider);
+}
+
+.image-gen-item--started .image-gen-item-status {
+  color: var(--svf-info-text-bright);
+}
+
+.image-gen-item--completed .image-gen-item-status {
+  color: var(--svf-success-text-bright);
+}
+
+.image-gen-item--failed .image-gen-item-status,
+.image-gen-item-error {
+  color: var(--svf-danger-text-bright);
+}
+
+.a2ui-feedback {
+  background: var(--svf-feedback-bg);
+  border-color: var(--svf-divider-strong);
+  color: var(--svf-text);
+}
+
+/* 剪辑工作室（index.css 遗留区块） */
+.edit-tab-simple,
+.editor-page,
+.editor-studio-modal,
+.edit-studio-context-menu {
+  background: var(--svf-void);
+  color: var(--svf-text);
+  border-color: var(--svf-frame);
+}
+
+.editor-header,
+.editor-studio-toolbar,
+.editor-studio-modal-header {
+  background: var(--svf-surface-2);
+  border-color: var(--svf-frame);
+}
+
+.editor-preview-panel {
+  background: var(--svf-preview-sidebar);
+}
+
+.editor-sidebar {
+  background: var(--svf-editor-sidebar);
+}
+
+.edit-studio-canvas-wrap,
+.edit-studio-sidebar,
+.edit-studio-timeline,
+.edit-studio-inspector,
+.edit-studio-fieldset {
+  background: var(--svf-surface-2);
+  border-color: var(--svf-frame);
+}
+
+.edit-studio-canvas {
+  background: var(--svf-preview-canvas);
+}
+
+.edit-studio-track-lane,
+.edit-studio-ruler,
+.timeline-ruler,
+.timeline-track-lane {
+  background: var(--svf-timeline-lane);
+}
+
+.edit-studio-clip-video {
+  background: var(--svf-info-bg);
+  border-color: var(--svf-info-border);
+}
+
+.edit-studio-clip-audio {
+  background: var(--svf-success-bg);
+  border-color: var(--svf-success-soft);
+}
+
+.edit-studio-clip-subtitle {
+  background: var(--svf-clip-subtitle-bg);
+  border-color: var(--svf-clip-subtitle-border);
+}
+
+.edit-studio-inspector input,
+.edit-studio-inspector select,
+.edit-studio-inspector textarea,
+.asset-editor-field input,
+.asset-editor-field textarea {
+  background: var(--svf-inset);
+  border-color: var(--svf-frame);
+  color: var(--svf-text);
+}
+
+.asset-editor-overlay {
+  background: var(--svf-overlay-heavy);
+}
+
+.asset-editor-panel {
+  background: var(--svf-editor-panel);
+  border-color: var(--svf-frame);
+}
+
+.asset-image-frame--checkerboard {
+  background-color: var(--svf-checker-light);
+}
+
+/* 项目切换菜单 */
+.project-switcher-menu {
+  background: var(--svf-surface);
+  border-color: var(--svf-frame-soft);
+  box-shadow: var(--svf-shadow-md);
+}
+
+.project-switcher-menu li button:hover,
+.project-switcher-menu li button.active {
+  background: var(--svf-hover-row);
+}
+
+/* ReAct 回合与对话 */
+.react-turn {
+  background: var(--svf-surface);
+  border-color: var(--svf-frame);
+}
+
+.react-thought {
+  background: var(--svf-surface-2);
+}
+
+.chat-user-text,
+.chat-assistant-body {
+  color: var(--svf-text);
+}
+
+/* 看板卡片悬停阴影随主题 */
+html.light .board-card:hover,
+html.light .asset-card:hover {
+  box-shadow: var(--svf-shadow-sm);
+}
+
+html.dark .board-card:hover,
+html.dark .asset-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.graph-board-svg .graph-edge,
+.graph-board-svg .graph-edge-label,
+.graph-board-svg marker path {
+  stroke: var(--svf-muted);
+  fill: var(--svf-muted);
+}
+
+.graph-board-svg .graph-node-fallback {
+  fill: var(--svf-frame);
+  stroke: var(--svf-frame);
+}
+
+.graph-board-svg .graph-node-label {
+  fill: var(--svf-text);
+}
+
+.graph-board-svg .graph-node-subtitle {
+  fill: var(--svf-muted);
+}
+
+.graph-board-svg .graph-node-fallback {
+  fill: var(--svf-frame);
+}
+
+/* 剪辑上下文菜单阴影 */
+.edit-studio-context-menu {
+  box-shadow: var(--svf-shadow-md) !important;
+}
+
+/* 统计芯片 */
+.stat-chip {
+  background: var(--svf-surface-2);
+  border-color: var(--svf-frame);
+  color: var(--svf-muted);
+}
+
+.script-board {
+  background: var(--svf-void);
+}

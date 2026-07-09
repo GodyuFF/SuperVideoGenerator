@@ -1,7 +1,7 @@
 # SuperVideoGenerator 产品计划手册
 
 > 版本：v0.1  
-> 更新日期：2026-07-05  
+> 更新日期：2026-07-09  
 > 状态：规划阶段
 
 ---
@@ -70,6 +70,31 @@
 ---
 
 ## 3. 产品形态与页面布局
+
+### 3.0 视觉设计系统（2026-07-09）
+
+前端采用 **「暗房胶片」** 统一视觉语言，支持 **浅色 / 深色 / 跟随系统** 三种主题（`next-themes`，存储键 `svf-theme`）：
+
+| 维度 | 说明 |
+|------|------|
+| 主题切换 | 顶栏 `ThemeToggle`；全局 `SvfThemeProvider`；OpenCut 嵌入区同步 `html.light` / `html.dark` |
+| 深色 | 深空底 + 取景器珊瑚红 + 胶片琥珀辅色 |
+| 浅色 | 雾白底 + 深珊瑚主色 + 柔和边框与阴影 |
+| 字体 | Newsreader（标题）/ Outfit（界面）/ IBM Plex Mono（代码与时间码） |
+| 签名元素 | 顶栏胶片齿孔纹理；执行中 REC 脉冲点 |
+| 剪辑工作室 | `edit-cinema` 影院监视器布局；`svf-studio-chrome` 全屏专业剪辑顶栏 |
+| 布局组件 | `AppShell` / `AppTopBar` / `AppNavTrail` |
+| 样式文件 | `styles/design-system.css`（双主题令牌）、`styles/editor-studio.css`（剪辑深度 UI） |
+| OpenCut 桥接 | `svf-opencut-theme.css` 含 `.light` / `.dark` HSL 令牌映射 |
+
+### 3.0.1 界面语言（2026-07-09）
+
+- **支持语言**：简体中文（`zh-CN`，默认）、English（`en`）
+- **切换入口**：各页面顶栏 `LocaleSwitcher`（中文 / EN）
+- **持久化**：`localStorage` 键 `svg.locale`，刷新后保持选择
+- **覆盖范围**：全站按钮、Tab、下拉/右键菜单、工具栏 tooltip；含完整 OpenCut 嵌入层
+- **不在范围**：LLM 对话正文、用户项目名、API 下发的 A2UI 动态字段
+- **技术细节**：见 [`docs/i18n.md`](i18n.md)
 
 ### 3.1 主工作台布局（两阶段）
 
@@ -319,7 +344,7 @@ interface ProjectConfig {
 
 ## 6. 视频生产模式
 
-> **更新 2026-06-29**：视频风格三分——动态图文、动态漫画、AI 视频；动态图文/漫画共用「文字设计 → 图片 → 分镜 → TTS → 剪辑」路径（无 `video_gen`）。
+> **更新 2026-07-09**：动态图文/漫画 canonical 顺序为「文字设计 → 分镜（含 frame 文字资产）→ 图片 → TTS → 剪辑」（无 `video_gen`）。
 
 ### 6.1 模式对比
 
@@ -335,8 +360,9 @@ interface ProjectConfig {
 
 ```
 剧本 Agent（剧情/角色/道具/场景文字）
-  → 图片 Agent（批量生图或搜索，可 A2UI 选择）
-  → 分镜 Agent → TTS Agent → 剪辑 Agent → 成片
+  → 分镜 Agent（VideoPlan + create_frames 画面文字资产）
+  → 图片 Agent（角色/道具/场景文生图 → frame 多参考图生图）
+  → TTS Agent → 剪辑 Agent → 成片
 ```
 
 **AI 视频模式**：
@@ -433,8 +459,8 @@ interface PlanStep {
 | 2 | `script_design_with_rag` | 剧本 Agent | 剧情设计 + RAG 实体解析 |
 | 3 | `text_asset_resolve` | 剧本 Agent | RAG 检索 + 复用判定 |
 | 4 | `voice_role_create` | 剧本 Agent | 声音角色资产 |
-| 5 | `image_gen` | 图片 Agent | 为缺图文字资产生图（并发 Agnes API；前端 `ImageGenProgressModal` 逐张进度，完成后看板刷新） |
-| 6 | `storyboard` | 分镜 Agent | 视频计划稿 + 镜头 |
+| 5 | `storyboard` | 分镜 Agent | 视频计划稿 + 镜头 + frame 文字资产 |
+| 6 | `image_gen` | 图片 Agent | 为缺图文字资产生图（角色/道具/场景 → frame 多参考图生图；前端 `ImageGenProgressModal` 逐张进度） |
 | 7 | `video_gen` | 视频 Agent | 仅 ai_video 模式 |
 | 8 | `tts_gen` | TTS Agent | 按镜头/计划稿生成配音 |
 | 9 | `edit_compose` | 剪辑 Agent | FFmpeg 合成成片（dynamic 模式） |
@@ -523,9 +549,23 @@ image.delete(image_asset_id)
     "mode": "image_to_video",
     "first_frame_image_id": "img_1",
     "last_frame_image_id": null
-  }
+  },
+  "timeline_start_ms": 0,
+  "timeline_end_ms": 4000,
+  "timeline_source": "edit_timeline",
+  "subtitle_lines": [
+    {
+      "text": "第一句",
+      "start_ms": 0,
+      "end_ms": 1200,
+      "absolute_start_ms": 0,
+      "absolute_end_ms": 1200
+    }
+  ]
 }
 ```
+
+**镜级时间轴**（2026-07-09）：分镜看板、`load_edit_context` 与 `GET .../video-plan` 通过 `core/edit/shot_timing.py` 解析每镜 `timeline_start_ms` / `timeline_end_ms`。有 `EditTimeline` 时以主视频层 clip 为准（`timeline_source=edit_timeline`），否则按 plan + TTS 累加（`plan_estimate`）。`subtitle_lines` 来自 TTS `subtitle_cues`，`absolute_*` 为全片绝对毫秒。
 
 ```
 storyboard.generate(script_id)
@@ -686,8 +726,11 @@ interface ReuseDecision {
 
 - 看板 API：`GET /api/projects/{id}/board/edit?script_id=…`
 - **Edit Studio**：`GET/PATCH .../edit-timeline`（revision 乐观锁）；`POST .../export` FFmpeg 异步导出
-- 前端：[`EditStudio.tsx`](../apps/web/src/edit/EditStudio.tsx) 可拖拽三轨 + Canvas 预览 + ClipInspector
-- 规格：[`edit-studio-plan.md`](edit-studio-plan.md)
+- 前端剪辑 Tab：[`EditTabSimpleView.tsx`](../apps/web/src/editor/EditTabSimpleView.tsx) 简易预览 + 三种打开方式：
+  - **剪辑修改**：全屏弹窗 [`EditorStudioModal`](../apps/web/src/editor/EditorStudioModal.tsx)
+  - **单独页面**：哈希 `#/project/{id}/script/{scriptId}/edit` → [`EditorStudioPage`](../apps/web/src/pages/EditorStudioPage.tsx)
+  - **新窗口打开**：系统浏览器新标签（`window.open`），保存后通过 `svg:edit-timeline-reloaded` 事件通知工作台刷新
+- OpenCut Classic 规格：[`opencut-integration.md`](opencut-integration.md)、[`edit-studio-plan.md`](edit-studio-plan.md)
 
 ### 10.6 边样式
 

@@ -1,6 +1,7 @@
 /** 手动创建文字资产（剧情/角色/场景/物品） */
 
 import { useState } from "react";
+import { useAppTranslation } from "../../i18n/useAppTranslation";
 import { createTextAsset } from "../../lib/manualAssets";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -26,6 +27,7 @@ export function CreateTextAssetDialog({
   onClose,
   onCreated,
 }: CreateTextAssetDialogProps) {
+  const { t } = useAppTranslation("common");
   const [name, setName] = useState("");
   const [summary, setSummary] = useState("");
   const [description, setDescription] = useState("");
@@ -61,7 +63,7 @@ export function CreateTextAssetDialog({
         <header className="asset-editor-header">
           <h3>新建{TYPE_LABEL[assetType] ?? assetType}</h3>
           <button type="button" className="btn-secondary btn-sm" onClick={onClose}>
-            关闭
+            {t("actions.close")}
           </button>
         </header>
         {error && <p className="board-error">{error}</p>}
@@ -94,7 +96,7 @@ export function CreateTextAssetDialog({
         </div>
         <footer className="asset-editor-footer">
           <button type="button" className="btn-primary" disabled={saving || !name.trim()} onClick={() => void submit()}>
-            {saving ? "创建中…" : "创建"}
+            {saving ? t("actions.creating") : t("actions.create")}
           </button>
         </footer>
       </div>

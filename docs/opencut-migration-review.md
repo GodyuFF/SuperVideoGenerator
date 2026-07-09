@@ -1,45 +1,36 @@
-# OpenCut 当前状态评测
+# OpenCut 迁移状态评测
 
-## SuperVideoGenerator 侧（集成层）— 已完成 ✅
+> 更新日期：2026-07-09  
+> 路径规范见 [`opencut-integration.md`](opencut-integration.md) §路径与术语规范
 
-| 组件 | 状态 | 说明 |
+## 结论
+
+**OpenCut Classic 已深度融合进 SVF 前端**，无 iframe、无 postMessage、无独立 dev server。运行时源码位于 `apps/web/src/editor/opencut/`（`@opencut` alias）。
+
+## 已完成 ✅
+
+| 组件 | 路径 | 说明 |
 |------|------|------|
-| opencut 源码目录 | ✅ 完整 | opencut/ 含 75 个文件，56 个 shadcn/ui 组件 |
-| postMessage 通信桥 | ✅ 完成 | opencut-bridge.ts 123 行 |
-| iframe 宿主组件 | ✅ 完成 | opencut-integration.tsx 178 行（loading/error/retry） |
-| REST API | ✅ 完成 | edit-session 3 个端点 + media 端点 |
-| Agent 剪辑工具 | ✅ 完成 | 15 个注册工具（含 7 个 OpenCut 专用） |
-| Agent prompt | ✅ 完成 | editing_agent role 已更新 |
+| Classic 编辑器本体 | `apps/web/src/editor/opencut/` | 600+ 文件，时间轴/预览/特效/蒙版/WASM 渲染 |
+| SVF 集成壳层 | `apps/web/src/editor/` | `EditTabSimpleView`、`EditorStudioModal`、`SvfClassicEditor*` |
+| 数据适配 | `apps/web/src/editor/adapter/` | `svfProjectAdapter`、`SvfMediaBridge`、`svf-storage-bridge` |
+| Agent 桥接 | `classicAgentBridge.ts` | WebSocket 热更新 Classic EditorCore |
+| REST API | `apps/api/routes/edit_timeline.py` 等 | PATCH + revision + `metadata.classic_project` |
+| Agent 剪辑工具 | `core/llm/tools/editing/opencut_handler.py` | 15 个 editing 工具 |
+| 国际化 | `apps/web/src/i18n/locales/{zh-CN,en}/opencut/` | 嵌入层文案；用户可见页标题为「剪辑助手」 |
 
-## OpenCut 侧（编辑器本体）— 仅脚手架 ❌
+## 上游参考（不运行）
 
-| 组件 | 状态 | 说明 |
+| 组件 | 路径 | 说明 |
 |------|------|------|
-| shadcn/ui 组件库 | ✅ 完整 | 56 个 UI 组件（按钮/表单/弹窗等） |
-| Tailwind CSS | ✅ 配置完成 | 含暗色主题变量 |
-| TanStack Router | ✅ 配置完成 | 文件路由系统 |
-| **编辑器页面** | ❌ 空白 | routes/index.tsx 只有 "hello world!" |
-| **时间轴组件** | ❌ 不存在 | 无 timeline/ 源目录 |
-| **画布/预览** | ❌ 不存在 | 无 canvas/ renderer/ 源目录 |
-| **编辑状态管理** | ❌ 不存在 | 无 editor store |
-| **postMessage 监听** | ❌ 不存在 | 不响应宿主命令 |
-| **媒体库 UI** | ❌ 不存在 | 无媒体资产面板 |
+| OpenCut Classic 上游 | `opencut-classic/` | 对照移植来源 |
 
-## 评估结论
+## 已废弃 ❌
 
-**集成基础架构已完成**（SuperVideoGenerator 侧可以发送命令和接收事件），但 **OpenCut 编辑器本体还没开发**（只有 TanStack Start + shadcn/ui 的空白脚手架）。
+- `opencut/`（旧 monorepo）
+- `OpenCut-main/`
+- `apps/web/src/edit/opencut-bridge.ts`、`opencut-integration.tsx` 等 iframe 方案
 
-当前状态相当于：电话线已接通，但电话机还没造。
+## 详细架构
 
-## 后续工作
-
-要让 iframe 嵌入的 OpenCut 编辑器实际可用，需要：
-
-1. **编辑页面路由** (`opencut/apps/web/src/routes/editor.tsx`) — 编辑器主页面
-2. **postMessage 宿主通信** (`opencut/apps/web/src/host-bridge.ts`) — 响应 SuperVideoGenerator 命令
-3. **时间轴组件** — 多轨片段拖拽、缩放、吸附
-4. **画布预览** — Canvas/WebGL 视频帧渲染
-5. **编辑状态** — Zustand store（或 TanStack Store）
-6. **媒体面板** — 资产库浏览与拖放
-
-由于 OpenCut 正在重写中（README 明确说明），目前的源码是重写的起始状态。
+见 [`opencut-integration.md`](opencut-integration.md)、[`edit-studio-plan.md`](edit-studio-plan.md)。

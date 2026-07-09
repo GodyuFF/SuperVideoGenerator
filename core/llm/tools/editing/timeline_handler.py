@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from core.edit.asset_resolver import validate_edit_timeline
+from core.edit.timeline_analysis import AnalyzeTimelineRequest, analyze_edit_timeline
 from core.edit.timeline import (
     build_timeline_layer_summary,
     format_layer_summary_text,
@@ -223,3 +224,58 @@ def handle_get_edit_timeline(
         observation=obs,
         structured=structured,
     )
+
+
+def handle_analyze_edit_timeline(
+    store: MemoryStore, ctx: AgentRunContext, args: dict[str, Any]
+) -> ToolResult:
+    """按时间窗分析剪辑结构、空白、重叠与优化建议。"""
+    timeline = store.get_edit_timeline_for_script(ctx.script_id)
+    if timeline is None:
+        structured = {
+            "action": "analyze_edit_timeline",
+            "script_id": ctx.script_id,
+            "message": "当前剧本尚无剪辑计划稿",
+            "range": {"start_ms": 0, "end_ms": 0, "duration_ms": 0},
+            "clips_in_range": [],
+            "gaps": [],
+            "overlaps": [],
+            "warnings": [],
+            "missing_assets": [],
+            "shot_alignment": [],
+            "optimization_hints": [],
+        }
+        return ToolResult(
+            observation=structured["message"],
+            structured=structured,
+            ok=False,
+        )
+
+    tracks_raw = args.get("tracks")
+    tracks = None
+    if isinstance(tracks_raw, list):
+        tracks = [str(t) for t in tracks_raw if str(t).strip()]
+
+    layer_ids_raw = args.get("layer_ids")
+    layer_ids = None
+    if isinstance(layer_ids_raw, list):
+        layer_ids = [str(lid) for lid in layer_ids_raw if str(lid).strip()]
+
+    request = AnalyzeTimelineRequest(
+        start_ms=int(args["start_ms"]) if args.get("start_ms") is not None else None,
+        end_ms=int(args["end_ms"]) if args.get("end_ms") is not None else None,
+        tracks=tracks,
+        layer_ids=layer_ids,
+        include_hints=bool(args.get("include_hints", True)),
+        include_shot_alignment=bool(args.get("include_shot_alignment", True)),
+    )
+    result = analyze_edit_timeline(store, timeline, request)
+    structured = {
+        "action": "analyze_edit_timeline",
+        "script_id": ctx.script_id,
+        **result.to_dict(),
+    }
+    obs_prefix = str(args.get("observation", "")).strip()
+    obs_body = json.dumps(structured, ensure_ascii=False, indent=2)
+    obs = f"{obs_prefix}\n\n{obs_body}" if obs_prefix else obs_body
+    return ToolResult(observation=obs, structured=structured)

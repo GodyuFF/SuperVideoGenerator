@@ -1,0 +1,114 @@
+{
+
+  "editAssistant": "Edit Assistant",
+
+  "scriptWorkbench": "Script workspace",
+
+  "chatPanel": "Chat",
+
+  "exportMp4": "Export MP4",
+
+  "exporting": "Exporting…",
+
+  "exportNoSubs": "Export (no subtitles)",
+
+  "exportDone": "Export complete!",
+
+  "exportDoneShort": "Export complete",
+
+  "editStudio": "Edit timeline",
+
+  "previewPaused": "Pro editor is open; tab preview is paused.",
+
+  "loadingPreview": "Loading edit preview…",
+
+  "previewFailed": "Edit preview failed: {{error}}",
+
+  "studioExportMp4": "Export MP4 (FFmpeg)",
+
+  "studioExporting": "FFmpeg exporting…",
+
+  "doneClose": "Done and close",
+
+  "retryLoad": "Retry load",
+
+  "loadingTimeline": "Loading timeline and media…",
+
+  "noTimelineHint": "No edit timeline yet. Run editing_agent plan_edit_timeline first.",
+
+  "previewReadyHint": "Edit preview will appear here when the timeline is ready.",
+
+  "openStudioTitle": "Open pro edit studio",
+
+  "previewLoadFailed": "Edit preview failed: {{error}}",
+
+  "loadingEditPreview": "Loading edit preview…",
+
+  "ffmpegHint": "FFmpeg not found. Run pip install -e . in the backend directory, or set SVG_FFMPEG_PATH / system PATH (Windows: winget install ffmpeg).",
+
+  "ffmpegHintShort": "FFmpeg not found. Run pip install -e . in the backend directory, or set SVG_FFMPEG_PATH.",
+
+  "proEditorTitle": "Edit Assistant",
+
+  "moduleLoadFailed": "Failed to load editor module: {{error}}",
+
+  "loadingTimelineStudio": "Loading edit timeline…",
+
+  "loadingClassic": "Loading edit studio…",
+
+  "newTabTitle": "Open this editor page in a new browser tab",
+
+  "ffmpegExportTitle": "Server-side FFmpeg export",
+
+  "exportDoneFfmpeg": "FFmpeg export complete!",
+
+  "exportDoneFfmpegShort": "FFmpeg export complete",
+
+  "exportNlePremiere": "Export PR project",
+
+  "exportNlePremiereHint": "Export FCP7 XML package. After extracting the ZIP, import project.xml in Premiere Pro via File → Import.",
+
+  "exportNleDone": "PR project export complete!",
+
+  "exportNleDoneShort": "PR project export complete",
+
+  "exportNleExporting": "Exporting PR project…",
+
+  "studioExportNlePremiere": "Export PR project",
+
+  "mediaHydrationFailedAll": "Video media failed to load; preview unavailable. Check your network and retry.",
+
+  "mediaHydrationFailedPartial": "Some video media failed to load; preview may be incomplete.",
+
+  "cinemaMonitor": "Monitor",
+
+  "cinemaExport": "Export",
+
+  "cinemaStudio": "Studio",
+
+  "classicStage": {
+
+    "module": "Loading editor module…",
+
+    "bridge": "Syncing project data…",
+
+    "wasm": "Initializing GPU renderer…",
+
+    "project": "Loading timeline and media…",
+
+    "ready": "Ready",
+
+    "error": "Load failed"
+
+  },
+
+  "proEditorFallback": "Edit Assistant",
+
+  "classicLoadFailed": "Edit studio failed to load: {{error}}",
+
+  "classicLoadHint": "Ensure the API is reachable, WebAssembly is supported, and try Chrome.",
+
+  "classicInitComponents": "Initializing editor components…"
+
+}
+

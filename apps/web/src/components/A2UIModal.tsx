@@ -3,6 +3,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useAppTranslation } from "../i18n/useAppTranslation";
 import type { A2UIComponent, A2UIConfirmationRequest } from "../types";
 import {
   initialA2UIValues,
@@ -19,6 +20,7 @@ type ScriptIntent = "continue" | "regenerate" | "abort";
 
 /** A2UI 确认弹窗根组件 */
 export function A2UIModal({ request, onConfirm, onCancel }: Props) {
+  const { t } = useAppTranslation(["common", "settings"]);
   const [checkbox, setCheckbox] = useState(false);
   const [feedback, setFeedback] = useState("");
 
@@ -66,21 +68,21 @@ export function A2UIModal({ request, onConfirm, onCancel }: Props) {
               className="btn-secondary"
               onClick={() => submit("abort")}
             >
-              中止
+              {t("settings:a2ui.abort")}
             </button>
             <button
               type="button"
               className="btn-secondary"
               onClick={() => submit("regenerate")}
             >
-              重新生成
+              {t("settings:a2ui.regenerate")}
             </button>
             <button
               type="button"
               className="btn-primary"
               onClick={() => submit("continue")}
             >
-              继续
+              {t("settings:a2ui.continue")}
             </button>
           </footer>
         </div>
@@ -123,7 +125,7 @@ export function A2UIModal({ request, onConfirm, onCancel }: Props) {
         </div>
         <footer className="a2ui-actions">
           <button type="button" className="btn-secondary" onClick={onCancel}>
-            取消
+            {t("common:actions.cancel")}
           </button>
           <button
             type="button"
@@ -133,7 +135,7 @@ export function A2UIModal({ request, onConfirm, onCancel }: Props) {
             }
             onClick={() => onConfirm({ confirm_checkbox: checkbox })}
           >
-            确认并继续
+            {t("settings:a2ui.confirmContinue")}
           </button>
         </footer>
       </div>
@@ -146,6 +148,7 @@ function GenericQuestionModal({
   onConfirm,
   onCancel,
 }: Props) {
+  const { t } = useAppTranslation(["common", "settings"]);
   const [values, setValues] = useState<Record<string, unknown>>(() =>
     initialA2UIValues(request.components)
   );
@@ -188,10 +191,10 @@ function GenericQuestionModal({
         {error && <p className="a2ui-error">{error}</p>}
         <footer className="a2ui-actions">
           <button type="button" className="btn-secondary" onClick={onCancel}>
-            取消
+            {t("common:actions.cancel")}
           </button>
           <button type="button" className="btn-primary" onClick={submit}>
-            提交
+            {t("common:actions.submit")}
           </button>
         </footer>
       </div>

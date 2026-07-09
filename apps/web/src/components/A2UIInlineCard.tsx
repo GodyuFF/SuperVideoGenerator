@@ -3,6 +3,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useAppTranslation } from "../i18n/useAppTranslation";
 import type { A2UIComponent, A2UIConfirmationRequest } from "../types";
 import type { A2UIChatMessage } from "../types/chat";
 import {
@@ -123,26 +124,6 @@ export function A2UIInlineCard({
     }
   };
 
-  if (readOnly) {
-    return (
-      <div className="a2ui-inline-card a2ui-inline-card-readonly">
-        <header className="a2ui-inline-header">
-          <span className="a2ui-badge">{request.kind}</span>
-          <strong>{request.title}</strong>
-        </header>
-        {status === "pending" ? (
-          <p className="a2ui-inline-muted">未在历史中记录用户响应</p>
-        ) : (
-          <SubmittedSummary
-            request={request}
-            values={submittedValues ?? {}}
-            approved={status === "submitted"}
-          />
-        )}
-      </div>
-    );
-  }
-
   if (status === "superseded") {
     return (
       <div className="a2ui-inline-card a2ui-inline-card-readonly">
@@ -151,6 +132,26 @@ export function A2UIInlineCard({
           <strong>{request.title}</strong>
         </header>
         <p className="a2ui-inline-muted">已被新的确认请求取代</p>
+      </div>
+    );
+  }
+
+  if (readOnly) {
+    return (
+      <div className="a2ui-inline-card a2ui-inline-card-readonly">
+        <header className="a2ui-inline-header">
+          <span className="a2ui-badge">{request.kind}</span>
+          <strong>{request.title}</strong>
+        </header>
+        {status === "submitted" || status === "cancelled" ? (
+          <SubmittedSummary
+            request={request}
+            values={submittedValues ?? {}}
+            approved={status === "submitted"}
+          />
+        ) : (
+          <p className="a2ui-inline-muted">未在历史中记录用户响应</p>
+        )}
       </div>
     );
   }
@@ -200,6 +201,7 @@ function ScriptStructureCard({
   error: string;
   onSubmit: (approved: boolean, values: Record<string, unknown>) => void;
 }) {
+  const { t } = useAppTranslation(["common", "settings"]);
   const [feedback, setFeedback] = useState("");
   const summary = request.components.find(
     (c) => c.component === "markdown" || c.component === "text"
@@ -241,7 +243,7 @@ function ScriptStructureCard({
           disabled={submitting}
           onClick={() => submitIntent("abort")}
         >
-          中止
+          {t("settings:a2ui.abort")}
         </button>
         <button
           type="button"
@@ -249,7 +251,7 @@ function ScriptStructureCard({
           disabled={submitting}
           onClick={() => submitIntent("regenerate")}
         >
-          重新生成
+          {t("settings:a2ui.regenerate")}
         </button>
         <button
           type="button"
@@ -257,7 +259,7 @@ function ScriptStructureCard({
           disabled={submitting}
           onClick={() => submitIntent("continue")}
         >
-          {submitting ? "提交中…" : "继续"}
+          {submitting ? t("common:actions.submitting") : t("settings:a2ui.continue")}
         </button>
       </footer>
     </div>
@@ -277,6 +279,7 @@ function GenericQuestionCard({
   onSubmit: (approved: boolean, values: Record<string, unknown>) => void;
   onCancel: () => void;
 }) {
+  const { t } = useAppTranslation(["common", "settings"]);
   const [values, setValues] = useState<Record<string, unknown>>(() =>
     initialA2UIValues(request.components)
   );
@@ -328,7 +331,7 @@ function GenericQuestionCard({
           disabled={submitting}
           onClick={onCancel}
         >
-          取消
+          {t("common:actions.cancel")}
         </button>
         <button
           type="button"
@@ -336,7 +339,7 @@ function GenericQuestionCard({
           disabled={submitting}
           onClick={submit}
         >
-          {submitting ? "提交中…" : "提交"}
+          {submitting ? t("common:actions.submitting") : t("common:actions.submit")}
         </button>
       </footer>
     </div>
@@ -356,6 +359,7 @@ function CostConfirmCard({
   onSubmit: (approved: boolean, values: Record<string, unknown>) => void;
   onCancel: () => void;
 }) {
+  const { t } = useAppTranslation(["common", "settings"]);
   const [checkbox, setCheckbox] = useState(false);
 
   return (
@@ -388,7 +392,7 @@ function CostConfirmCard({
           disabled={submitting}
           onClick={onCancel}
         >
-          取消
+          {t("common:actions.cancel")}
         </button>
         <button
           type="button"
@@ -396,7 +400,7 @@ function CostConfirmCard({
           disabled={submitting || (request.kind === "video_generation_cost" && !checkbox)}
           onClick={() => onSubmit(true, { confirm_checkbox: checkbox })}
         >
-          {submitting ? "提交中…" : "确认并继续"}
+          {submitting ? t("common:actions.submitting") : t("settings:a2ui.confirmContinue")}
         </button>
       </footer>
     </div>

@@ -3,23 +3,27 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   LogRecordBody,
   LogTokenBadge,
   type LogRecordFields,
 } from "../components/LogPayloadView";
+import { LocaleSwitcher } from "../i18n/LocaleSwitcher";
+import { ThemeToggle } from "../components/theme/ThemeToggle";
+import { AppTopBar } from "../components/layout/AppTopBar";
 
 const API = "/api";
 
-const KIND_OPTIONS = [
-  { value: "", label: "全部类型" },
-  { value: "llm_request", label: "LLM 请求" },
-  { value: "llm_response", label: "LLM 响应" },
-  { value: "llm_error", label: "LLM 错误" },
-  { value: "agent_action", label: "Agent 动作" },
-  { value: "conversation_token_round", label: "对话 Token 汇总" },
-  { value: "api_request", label: "HTTP 请求" },
-];
+const KIND_VALUES = [
+  "",
+  "llm_request",
+  "llm_response",
+  "llm_error",
+  "agent_action",
+  "conversation_token_round",
+  "api_request",
+] as const;
 
 interface InteractionRecord extends LogRecordFields {
   id: string;
@@ -51,6 +55,7 @@ function formatBytes(n: number): string {
 }
 
 export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
+  const { t } = useTranslation();
   const [records, setRecords] = useState<InteractionRecord[]>([]);
   const [kindFilter, setKindFilter] = useState("");
   const [loading, setLoading] = useState(false);
@@ -200,21 +205,36 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
 
   const backLabel = projectId
     ? scriptId
-      ? "返回剧本"
-      : "返回项目"
-    : "返回首页";
+      ? t("backToScript", { ns: "nav" })
+      : t("backToProject", { ns: "nav" })
+    : t("backHome", { ns: "nav" });
+
+  /** 将日志类型值映射为 i18n 键名。 */
+  function kindLabel(value: string): string {
+    const key = value || "all";
+    return t(`logs.kinds.${key}`, { ns: "settings" });
+  }
 
   return (
     <div className="logs-page">
-      <header className="top-bar">
-        <h1>交互日志</h1>
-        <span className="status-badge">LLM 调用：{llmCallCount}</span>
-        <span className="status-badge muted-badge">{scopeLabel}</span>
-        <div className="top-bar-spacer" />
-        <button type="button" className="btn-secondary" onClick={onBack}>
-          {backLabel}
-        </button>
-      </header>
+      <AppTopBar
+        title={t("logs.title", { ns: "settings" })}
+        center={
+          <>
+            <span className="status-badge">LLM 调用：{llmCallCount}</span>
+            <span className="status-badge muted-badge">{scopeLabel}</span>
+          </>
+        }
+        trail={
+          <>
+            <ThemeToggle />
+            <LocaleSwitcher />
+            <button type="button" className="btn-secondary" onClick={onBack}>
+              {backLabel}
+            </button>
+          </>
+        }
+      />
 
       <div className="logs-content">
         <section className="logs-hint">
@@ -258,7 +278,7 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
         <div className="logs-toolbar">
           {!projectId && projectOptions.length > 0 && (
             <label>
-              项目
+              {t("logs.projectLabel", { ns: "settings" })}
               <select
                 value={deleteProjectId}
                 onChange={(e) => setDeleteProjectId(e.target.value)}
@@ -272,12 +292,12 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
             </label>
           )}
           <label>
-            日期
+            {t("logs.dateLabel", { ns: "settings" })}
             <select
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
             >
-              <option value="">全部日期</option>
+              <option value="">{t("logs.allDates", { ns: "settings" })}</option>
               {projectLogFiles.map((f) => (
                 <option key={`${f.project_id ?? ""}-${f.date}`} value={f.date}>
                   {f.date}
@@ -286,20 +306,22 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
             </select>
           </label>
           <label>
-            类型筛选
+            {t("logs.kindFilter", { ns: "settings" })}
             <select
               value={kindFilter}
               onChange={(e) => setKindFilter(e.target.value)}
             >
-              {KIND_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
+              {KIND_VALUES.map((value) => (
+                <option key={value || "all"} value={value}>
+                  {kindLabel(value)}
                 </option>
               ))}
             </select>
           </label>
           <button type="button" onClick={loadRecords} disabled={loading}>
-            {loading ? "加载中…" : "刷新"}
+            {loading
+              ? t("actions.loading", { ns: "common" })
+              : t("logs.loadRecords", { ns: "settings" })}
           </button>
           <button
             type="button"
@@ -307,7 +329,9 @@ export function LogsPage({ scriptId, projectId, onBack }: LogsPageProps) {
             disabled={deleting || !effectiveProjectId || !selectedDate}
             onClick={() => void handleDeleteLogs()}
           >
-            {deleting ? "删除中…" : "删除所选日志"}
+            {deleting
+              ? t("actions.deleting", { ns: "common" })
+              : t("logs.deleteSelected", { ns: "settings" })}
           </button>
           <span className="muted logs-count">共 {records.length} 条</span>
         </div>

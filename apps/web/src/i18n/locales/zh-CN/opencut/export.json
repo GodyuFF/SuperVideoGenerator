@@ -1,0 +1,20 @@
+{
+  "export": "导出",
+  "exportProject": "导出项目",
+  "exportingProject": "正在导出项目",
+  "exportFailed": "导出失败",
+  "unknownError": "发生未知错误",
+  "cancel": "取消",
+  "retry": "重试",
+  "copy": "复制",
+  "format": "格式",
+  "quality": "质量",
+  "audio": "音频",
+  "formatMp4": "MP4 (H.264) - 兼容性更好",
+  "formatWebm": "WebM (VP9) - 文件更小",
+  "qualityLow": "低 - 文件最小",
+  "qualityMedium": "中 - 均衡",
+  "qualityHigh": "高 - 推荐",
+  "qualityVeryHigh": "极高 - 文件最大",
+  "includeAudio": "导出时包含音频"
+}

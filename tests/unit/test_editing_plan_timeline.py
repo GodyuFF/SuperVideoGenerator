@@ -2,6 +2,7 @@
 
 import pytest
 
+from core.edit.timeline import compile_timeline_from_shots
 from core.llm.agent.react_core import AgentRunContext
 from core.llm.tools.editing.context import build_edit_context_payload
 from core.llm.tools.output_schemas import (
@@ -10,6 +11,7 @@ from core.llm.tools.output_schemas import (
     validate_edit_assets_output_schema,
 )
 from core.llm.tools.editing.timeline_handler import (
+    handle_analyze_edit_timeline,
     handle_load_edit_context,
     handle_plan_edit_timeline,
     handle_validate_edit_assets,
@@ -495,4 +497,47 @@ def test_plan_edit_timeline_replace_empty_subtitle_skips_enrich(editing_store: M
     timeline = editing_store.get_edit_timeline_for_script(script_id)
     assert timeline is not None
     assert timeline.tracks.get("subtitle") == []
+
+
+def test_analyze_edit_timeline_tool(editing_store: MemoryStore):
+    """analyze_edit_timeline 应返回区间分析与分镜对齐。"""
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    project_id = editing_store._test_project_id  # type: ignore[attr-defined]
+    plan = editing_store.get_video_plan_for_script(script_id)
+    assert plan
+    timeline = compile_timeline_from_shots(editing_store, script_id=script_id, plan=plan)
+    editing_store.set_edit_timeline(timeline)
+    ctx = AgentRunContext(
+        task_brief="分析剪辑",
+        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        script_id=script_id,
+        step_id="edit_compose",
+        agent_name="editing_agent",
+        project_id=project_id,
+    )
+    result = handle_analyze_edit_timeline(
+        editing_store,
+        ctx,
+        {"observation": "检查前 2 秒", "start_ms": 0, "end_ms": 2000},
+    )
+    assert result.ok is True
+    structured = result.structured
+    assert structured["action"] == "analyze_edit_timeline"
+    assert structured["range"]["end_ms"] == 2000
+    assert "clips_in_range" in structured
+    assert structured["shot_alignment"]
+
+
+def test_load_edit_context_includes_shot_timings(editing_store: MemoryStore):
+    """load_edit_context 的 shots 应含 timeline 与 subtitle_lines。"""
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    plan = editing_store.get_video_plan_for_script(script_id)
+    assert plan
+    timeline = compile_timeline_from_shots(editing_store, script_id=script_id, plan=plan)
+    editing_store.set_edit_timeline(timeline)
+    payload = build_edit_context_payload(editing_store, script_id)
+    shots = payload["video_plan"]["shots"]
+    assert shots[0]["timeline_start_ms"] is not None
+    assert shots[0]["timeline_end_ms"] is not None
+    assert payload["edit_timeline"]["analyze_summary"]
 

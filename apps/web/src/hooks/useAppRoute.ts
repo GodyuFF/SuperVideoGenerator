@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-export type AppRoute = "home" | "project" | "settings" | "agents" | "logs";
+export type AppRoute = "home" | "project" | "edit" | "settings" | "agents" | "logs";
 
 export interface AppRouteState {
   route: AppRoute;
@@ -37,6 +37,14 @@ function parseHash(): AppRouteState {
   if (raw === "logs") {
     return { route: "logs", projectId: null, scriptId: null };
   }
+  const editMatch = raw.match(/^project\/([^/]+)\/script\/([^/]+)\/edit$/);
+  if (editMatch) {
+    return {
+      route: "edit",
+      projectId: decodeURIComponent(editMatch[1]),
+      scriptId: decodeURIComponent(editMatch[2]),
+    };
+  }
   const projectMatch = raw.match(/^project\/([^/]+)(?:\/script\/([^/]+))?$/);
   if (projectMatch) {
     return {
@@ -46,6 +54,10 @@ function parseHash(): AppRouteState {
     };
   }
   return { route: "home", projectId: null, scriptId: null };
+}
+
+function editorHash(projectId: string, scriptId: string): string {
+  return `#/project/${encodeURIComponent(projectId)}/script/${encodeURIComponent(scriptId)}/edit`;
 }
 
 function projectHash(projectId: string, scriptId?: string | null): string {
@@ -59,9 +71,13 @@ export function useAppRoute() {
   const [state, setState] = useState<AppRouteState>(parseHash);
 
   useEffect(() => {
-    const onHash = () => setState(parseHash());
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    const sync = () => setState(parseHash());
+    window.addEventListener("hashchange", sync);
+    window.addEventListener("load", sync);
+    return () => {
+      window.removeEventListener("hashchange", sync);
+      window.removeEventListener("load", sync);
+    };
   }, []);
 
   const navigate = useCallback((target: AppRoute) => {
@@ -100,11 +116,16 @@ export function useAppRoute() {
     []
   );
 
+  const navigateToEditor = useCallback((projectId: string, scriptId: string) => {
+    window.location.hash = editorHash(projectId, scriptId);
+  }, []);
+
   return {
     ...state,
     navigate,
     navigateHome,
     navigateToProject,
+    navigateToEditor,
     navigateToLogs,
   };
 }

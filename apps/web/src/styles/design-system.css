@@ -1,0 +1,807 @@
+/**
+ * SuperVideoGenerator 设计系统 —「暗房胶片」视觉语言
+ * 面向 AI 视频创作工作流：深空底色、取景器珊瑚红、胶片琥珀辅色。
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Outfit:wght@400;500;600;700&display=swap");
+
+:root {
+  /* 排版与结构（双主题共享） */
+  --svf-font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --svf-font-body: "Outfit", system-ui, sans-serif;
+  --svf-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --svf-radius-sm: 6px;
+  --svf-radius: 10px;
+  --svf-radius-lg: 14px;
+  --svf-radius-pill: 999px;
+  --svf-space-xs: 0.25rem;
+  --svf-space-sm: 0.5rem;
+  --svf-space-md: 0.75rem;
+  --svf-space-lg: 1.25rem;
+  --svf-space-xl: 2rem;
+
+  /* 深色为 hydration 前回退 */
+  --svf-void: #080a0f;
+  --svf-surface: #111520;
+  --svf-surface-2: #181e2c;
+  --svf-surface-3: #1f2638;
+  --svf-frame: #2a3347;
+  --svf-frame-soft: #222a3c;
+  --svf-accent: #e0634a;
+  --svf-accent-hover: #c4523c;
+  --svf-accent-glow: rgba(224, 99, 74, 0.22);
+  --svf-gold: #c9a227;
+  --svf-gold-soft: rgba(201, 162, 39, 0.14);
+  --svf-success: #4dbb8a;
+  --svf-success-soft: rgba(77, 187, 138, 0.14);
+  --svf-danger: #e05252;
+  --svf-danger-soft: rgba(224, 82, 82, 0.12);
+  --svf-info: #6b9fd4;
+  --svf-info-soft: rgba(107, 159, 212, 0.14);
+  --svf-text: #e6eaf2;
+  --svf-text-soft: #b8c0d0;
+  --svf-muted: #8e9aaf;
+  --svf-muted-dim: #5c667a;
+  --svf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+  --svf-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.38);
+  --svf-shadow-accent: 0 0 0 1px var(--svf-accent-glow), 0 4px 20px rgba(224, 99, 74, 0.12);
+  --svf-ambient-1: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(224, 99, 74, 0.06), transparent 60%);
+  --svf-ambient-2: radial-gradient(ellipse 60% 40% at 100% 100%, rgba(201, 162, 39, 0.04), transparent 50%);
+
+  /* 语义表面（组件级，随主题切换） */
+  --svf-inset: #0d0f10;
+  --svf-inset-alt: #1a1d21;
+  --svf-hover-row: #1e2126;
+  --svf-hover-strong: #3f4448;
+  --svf-selected-row: #1a2634;
+  --svf-assistant-bg: #1a2433;
+  --svf-assistant-border: #2a3a4d;
+  --svf-warn-bg: #2d2a1a;
+  --svf-warn-border: #3d3520;
+  --svf-info-bg: #1a2a3a;
+  --svf-info-bg-alt: #2a2a3d;
+  --svf-info-border: #2a4a6a;
+  --svf-success-bg: #1a2e1a;
+  --svf-danger-bg: #2a1a1a;
+  --svf-danger-border: #5c2020;
+  --svf-danger-solid: #67070f;
+  --svf-danger-solid-hover: #7a0a12;
+  --svf-accent-warn-bg: #3d2a1a;
+  --svf-accent-warn-text: #ff7a00;
+  --svf-ask-bg: #2a2418;
+  --svf-ask-border: #4a3f1a;
+  --svf-banner-danger-bg: #3a1d1d;
+  --svf-tab-active-bg: #1a2733;
+  --svf-panel-inset: #161b22;
+  --svf-subagent-bg: #1a1d24;
+  --svf-subagent-badge-bg: #2d4a3e;
+  --svf-feedback-bg: #242731;
+  --svf-divider: #2a2d35;
+  --svf-divider-strong: #3a3f4b;
+  --svf-chip-bg: #2a2d35;
+  --svf-tag-bg: #1e3a5f;
+  --svf-chip-success-bg: #1e3a2f;
+  --svf-chip-info-bg: #1e2a3a;
+  --svf-token-bg: #1a2e24;
+  --svf-context-menu-bg: #1e1e2e;
+  --svf-editor-panel: #252830;
+  --svf-preview-sidebar: #0a0e13;
+  --svf-editor-sidebar: #0d1015;
+  --svf-timeline-lane: #14171c;
+  --svf-thought-border: #3f4448;
+  --svf-cursor: #8b98a5;
+  --svf-skill-text: #4338ca;
+  --svf-skill-highlight: #818cf8;
+  --svf-skill-bg: rgba(99, 102, 241, 0.15);
+  --svf-skill-bg-hover: rgba(99, 102, 241, 0.12);
+  --svf-success-text-bright: #6ee7a0;
+  --svf-danger-text-bright: #f87171;
+  --svf-danger-text-soft: #ff8a8a;
+  --svf-info-text-bright: #93c5fd;
+  --svf-violet: #a78bfa;
+  --svf-gold-bright: #fbbf24;
+  --svf-overlay: rgba(0, 0, 0, 0.65);
+  --svf-overlay-heavy: rgba(0, 0, 0, 0.75);
+  --svf-shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --svf-preview-canvas: #0f172a;
+  --svf-on-accent: #ffffff;
+  --svf-border-faint: rgba(255, 255, 255, 0.04);
+  --svf-scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --svf-checker-light: #e8e8e8;
+  --svf-checker-dark: #cccccc;
+  --svf-awaiting-border: rgba(255, 212, 0, 0.4);
+  --svf-awaiting-bg: rgba(255, 212, 0, 0.13);
+  --svf-clip-video-bg: rgba(59, 130, 246, 0.15);
+  --svf-clip-video-border: rgba(59, 130, 246, 0.35);
+  --svf-clip-audio-bg: rgba(16, 185, 129, 0.15);
+  --svf-clip-audio-border: rgba(16, 185, 129, 0.35);
+  --svf-clip-subtitle-bg: rgba(245, 158, 11, 0.15);
+  --svf-clip-subtitle-border: rgba(245, 158, 11, 0.35);
+  --svf-handle-accent: #38bdf8;
+  --svf-handle-border: #0f172a;
+  --svf-keyframe: #fbbf24;
+  --svf-keyframe-active: #f97316;
+  --svf-keyframe-hover: #fde047;
+  --svf-dim-text: #555555;
+  --svf-plan-abort-text: #fecaca;
+
+  --bg-base: var(--svf-void);
+  --bg-elevated: var(--svf-surface);
+  --border: var(--svf-frame);
+  --accent: var(--svf-accent);
+  --text-primary: var(--svf-text);
+  --text-muted: var(--svf-muted);
+  --radius: var(--svf-radius);
+  --space-sm: var(--svf-space-sm);
+  --space-md: var(--svf-space-md);
+  --muted-color: var(--svf-muted);
+  --panel-bg: var(--svf-editor-panel);
+  --border-color: var(--svf-divider);
+  --muted: var(--svf-muted);
+  --bg: var(--svf-void);
+  --surface-1: var(--svf-surface);
+  --surface-2: var(--svf-surface-3);
+}
+
+/* ── 浅色主题 ── */
+html.light,
+.light {
+  --svf-void: #f0f3f8;
+  --svf-surface: #ffffff;
+  --svf-surface-2: #f5f7fb;
+  --svf-surface-3: #e8edf5;
+  --svf-frame: #cdd5e3;
+  --svf-frame-soft: #dce3ef;
+  --svf-accent: #c94e38;
+  --svf-accent-hover: #a83f2c;
+  --svf-accent-glow: rgba(201, 78, 56, 0.16);
+  --svf-gold: #9a7b18;
+  --svf-gold-soft: rgba(154, 123, 24, 0.12);
+  --svf-success: #2d9a6a;
+  --svf-success-soft: rgba(45, 154, 106, 0.12);
+  --svf-danger: #c93c3c;
+  --svf-danger-soft: rgba(201, 60, 60, 0.1);
+  --svf-info: #3d7ab8;
+  --svf-info-soft: rgba(61, 122, 184, 0.12);
+  --svf-text: #1a2130;
+  --svf-text-soft: #3d4a5f;
+  --svf-muted: #5c6b82;
+  --svf-muted-dim: #8a97ad;
+  --svf-shadow-sm: 0 2px 8px rgba(26, 33, 48, 0.08);
+  --svf-shadow-md: 0 8px 24px rgba(26, 33, 48, 0.12);
+  --svf-shadow-accent: 0 0 0 1px var(--svf-accent-glow), 0 4px 16px rgba(201, 78, 56, 0.1);
+  --svf-ambient-1: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(201, 78, 56, 0.05), transparent 60%);
+  --svf-ambient-2: radial-gradient(ellipse 60% 40% at 100% 100%, rgba(154, 123, 24, 0.04), transparent 50%);
+
+  --svf-inset: #e4e9f2;
+  --svf-inset-alt: #eef1f7;
+  --svf-hover-row: #eef1f7;
+  --svf-hover-strong: #dce3ef;
+  --svf-selected-row: rgba(201, 78, 56, 0.1);
+  --svf-assistant-bg: #f0f4fa;
+  --svf-assistant-border: #cdd5e3;
+  --svf-warn-bg: rgba(154, 123, 24, 0.1);
+  --svf-warn-border: rgba(154, 123, 24, 0.25);
+  --svf-info-bg: rgba(61, 122, 184, 0.1);
+  --svf-info-bg-alt: rgba(61, 122, 184, 0.08);
+  --svf-info-border: rgba(61, 122, 184, 0.28);
+  --svf-success-bg: rgba(45, 154, 106, 0.1);
+  --svf-danger-bg: rgba(201, 60, 60, 0.08);
+  --svf-danger-border: rgba(201, 60, 60, 0.25);
+  --svf-danger-solid: #c93c3c;
+  --svf-danger-solid-hover: #a83232;
+  --svf-accent-warn-bg: rgba(201, 78, 56, 0.1);
+  --svf-accent-warn-text: #b84a28;
+  --svf-ask-bg: rgba(154, 123, 24, 0.1);
+  --svf-ask-border: rgba(154, 123, 24, 0.28);
+  --svf-banner-danger-bg: rgba(201, 60, 60, 0.1);
+  --svf-tab-active-bg: rgba(201, 78, 56, 0.08);
+  --svf-panel-inset: #f5f7fb;
+  --svf-subagent-bg: #f5f7fb;
+  --svf-subagent-badge-bg: rgba(45, 154, 106, 0.15);
+  --svf-feedback-bg: #ffffff;
+  --svf-divider: #dce3ef;
+  --svf-divider-strong: #cdd5e3;
+  --svf-chip-bg: #e8edf5;
+  --svf-tag-bg: rgba(61, 122, 184, 0.12);
+  --svf-chip-success-bg: rgba(45, 154, 106, 0.12);
+  --svf-chip-info-bg: rgba(61, 122, 184, 0.12);
+  --svf-token-bg: rgba(45, 154, 106, 0.1);
+  --svf-context-menu-bg: #ffffff;
+  --svf-editor-panel: #f5f7fb;
+  --svf-preview-sidebar: #e8edf5;
+  --svf-editor-sidebar: #f0f3f8;
+  --svf-timeline-lane: #eef1f7;
+  --svf-thought-border: #cdd5e3;
+  --svf-cursor: #8a97ad;
+  --svf-skill-text: #3d5fae;
+  --svf-skill-highlight: #4a6fc9;
+  --svf-skill-bg: rgba(61, 122, 184, 0.12);
+  --svf-skill-bg-hover: rgba(61, 122, 184, 0.18);
+  --svf-success-text-bright: #1f7a52;
+  --svf-danger-text-bright: #c93c3c;
+  --svf-danger-text-soft: #c93c3c;
+  --svf-info-text-bright: #2d5f94;
+  --svf-violet: #6b4fae;
+  --svf-gold-bright: #9a7b18;
+  --svf-overlay: rgba(26, 33, 48, 0.45);
+  --svf-overlay-heavy: rgba(26, 33, 48, 0.55);
+  --svf-shadow-overlay: 0 8px 32px rgba(26, 33, 48, 0.15);
+  --svf-preview-canvas: #0f172a;
+  --svf-on-accent: #ffffff;
+  --svf-border-faint: rgba(26, 33, 48, 0.06);
+  --svf-scrollbar-thumb: rgba(26, 33, 48, 0.15);
+  --svf-checker-light: #f0f0f0;
+  --svf-checker-dark: #d8d8d8;
+  --svf-awaiting-border: rgba(154, 123, 24, 0.45);
+  --svf-awaiting-bg: rgba(154, 123, 24, 0.12);
+  --svf-clip-video-bg: rgba(61, 122, 184, 0.12);
+  --svf-clip-video-border: rgba(61, 122, 184, 0.3);
+  --svf-clip-audio-bg: rgba(45, 154, 106, 0.12);
+  --svf-clip-audio-border: rgba(45, 154, 106, 0.3);
+  --svf-clip-subtitle-bg: rgba(154, 123, 24, 0.12);
+  --svf-clip-subtitle-border: rgba(154, 123, 24, 0.3);
+  --svf-handle-accent: #3d7ab8;
+  --svf-handle-border: #ffffff;
+  --svf-keyframe: #9a7b18;
+  --svf-keyframe-active: #c94e38;
+  --svf-keyframe-hover: #b8860b;
+  --svf-dim-text: #8a97ad;
+  --svf-plan-abort-text: #c93c3c;
+}
+
+/* ── 深色主题（显式） ── */
+html.dark,
+.dark {
+  --svf-void: #080a0f;
+  --svf-surface: #111520;
+  --svf-surface-2: #181e2c;
+  --svf-surface-3: #1f2638;
+  --svf-frame: #2a3347;
+  --svf-frame-soft: #222a3c;
+  --svf-accent: #e0634a;
+  --svf-accent-hover: #c4523c;
+  --svf-accent-glow: rgba(224, 99, 74, 0.22);
+  --svf-gold: #c9a227;
+  --svf-gold-soft: rgba(201, 162, 39, 0.14);
+  --svf-success: #4dbb8a;
+  --svf-success-soft: rgba(77, 187, 138, 0.14);
+  --svf-danger: #e05252;
+  --svf-danger-soft: rgba(224, 82, 82, 0.12);
+  --svf-info: #6b9fd4;
+  --svf-info-soft: rgba(107, 159, 212, 0.14);
+  --svf-text: #e6eaf2;
+  --svf-text-soft: #b8c0d0;
+  --svf-muted: #8e9aaf;
+  --svf-muted-dim: #5c667a;
+  --svf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+  --svf-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.38);
+  --svf-shadow-accent: 0 0 0 1px var(--svf-accent-glow), 0 4px 20px rgba(224, 99, 74, 0.12);
+  --svf-ambient-1: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(224, 99, 74, 0.06), transparent 60%);
+  --svf-ambient-2: radial-gradient(ellipse 60% 40% at 100% 100%, rgba(201, 162, 39, 0.04), transparent 50%);
+
+  --svf-inset: #0d0f10;
+  --svf-inset-alt: #1a1d21;
+  --svf-hover-row: #1e2126;
+  --svf-hover-strong: #3f4448;
+  --svf-selected-row: #1a2634;
+  --svf-assistant-bg: #1a2433;
+  --svf-assistant-border: #2a3a4d;
+  --svf-warn-bg: #2d2a1a;
+  --svf-warn-border: #3d3520;
+  --svf-info-bg: #1a2a3a;
+  --svf-info-bg-alt: #2a2a3d;
+  --svf-info-border: #2a4a6a;
+  --svf-success-bg: #1a2e1a;
+  --svf-danger-bg: #2a1a1a;
+  --svf-danger-border: #5c2020;
+  --svf-danger-solid: #67070f;
+  --svf-danger-solid-hover: #7a0a12;
+  --svf-accent-warn-bg: #3d2a1a;
+  --svf-accent-warn-text: #ff7a00;
+  --svf-ask-bg: #2a2418;
+  --svf-ask-border: #4a3f1a;
+  --svf-banner-danger-bg: #3a1d1d;
+  --svf-tab-active-bg: #1a2733;
+  --svf-panel-inset: #161b22;
+  --svf-subagent-bg: #1a1d24;
+  --svf-subagent-badge-bg: #2d4a3e;
+  --svf-feedback-bg: #242731;
+  --svf-divider: #2a2d35;
+  --svf-divider-strong: #3a3f4b;
+  --svf-chip-bg: #2a2d35;
+  --svf-tag-bg: #1e3a5f;
+  --svf-chip-success-bg: #1e3a2f;
+  --svf-chip-info-bg: #1e2a3a;
+  --svf-token-bg: #1a2e24;
+  --svf-context-menu-bg: #1e1e2e;
+  --svf-editor-panel: #252830;
+  --svf-preview-sidebar: #0a0e13;
+  --svf-editor-sidebar: #0d1015;
+  --svf-timeline-lane: #14171c;
+  --svf-thought-border: #3f4448;
+  --svf-cursor: #8b98a5;
+  --svf-skill-text: #4338ca;
+  --svf-skill-highlight: #818cf8;
+  --svf-skill-bg: rgba(99, 102, 241, 0.15);
+  --svf-skill-bg-hover: rgba(99, 102, 241, 0.12);
+  --svf-success-text-bright: #6ee7a0;
+  --svf-danger-text-bright: #f87171;
+  --svf-danger-text-soft: #ff8a8a;
+  --svf-info-text-bright: #93c5fd;
+  --svf-violet: #a78bfa;
+  --svf-gold-bright: #fbbf24;
+  --svf-overlay: rgba(0, 0, 0, 0.65);
+  --svf-overlay-heavy: rgba(0, 0, 0, 0.75);
+  --svf-shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --svf-preview-canvas: #0f172a;
+  --svf-on-accent: #ffffff;
+  --svf-border-faint: rgba(255, 255, 255, 0.04);
+  --svf-scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --svf-checker-light: #e8e8e8;
+  --svf-checker-dark: #cccccc;
+  --svf-awaiting-border: rgba(255, 212, 0, 0.4);
+  --svf-awaiting-bg: rgba(255, 212, 0, 0.13);
+  --svf-clip-video-bg: rgba(59, 130, 246, 0.15);
+  --svf-clip-video-border: rgba(59, 130, 246, 0.35);
+  --svf-clip-audio-bg: rgba(16, 185, 129, 0.15);
+  --svf-clip-audio-border: rgba(16, 185, 129, 0.35);
+  --svf-clip-subtitle-bg: rgba(245, 158, 11, 0.15);
+  --svf-clip-subtitle-border: rgba(245, 158, 11, 0.35);
+  --svf-handle-accent: #38bdf8;
+  --svf-handle-border: #0f172a;
+  --svf-keyframe: #fbbf24;
+  --svf-keyframe-active: #f97316;
+  --svf-keyframe-hover: #fde047;
+  --svf-dim-text: #555555;
+  --svf-plan-abort-text: #fecaca;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── 基底 ── */
+body {
+  font-family: var(--svf-font-body);
+  background: var(--svf-void);
+  color: var(--svf-text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: var(--svf-ambient-1), var(--svf-ambient-2);
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--svf-font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+code,
+.react-action-input dt,
+.step-type,
+.log-kind,
+.agent-tools-list code {
+  font-family: var(--svf-font-mono);
+}
+
+/* ── 签名元素：胶片齿孔顶栏 ── */
+.top-bar {
+  position: relative;
+  background: linear-gradient(180deg, var(--svf-surface-2) 0%, var(--svf-surface) 100%);
+  border-bottom: 1px solid var(--svf-frame);
+  box-shadow: var(--svf-shadow-sm);
+  padding: 0.65rem 1.35rem;
+  gap: 0.65rem;
+}
+
+.top-bar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent 6px,
+    var(--svf-muted-dim) 6px,
+    var(--svf-muted-dim) 8px,
+    transparent 8px,
+    transparent 18px
+  );
+  opacity: 0.55;
+}
+
+.top-bar h1 {
+  font-family: var(--svf-font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--svf-text);
+}
+
+.top-bar .svf-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.top-bar .svf-brand-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--svf-accent);
+  box-shadow: 0 0 8px var(--svf-accent-glow);
+  flex-shrink: 0;
+}
+
+/* ── 按钮 ── */
+button {
+  font-family: var(--svf-font-body);
+  font-weight: 500;
+  border-radius: var(--svf-radius-sm);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+button {
+  background: var(--svf-accent);
+  color: #fff;
+}
+
+button:hover:not(:disabled) {
+  background: var(--svf-accent-hover);
+  box-shadow: var(--svf-shadow-accent);
+}
+
+.btn-primary {
+  background: var(--svf-accent);
+  border-radius: var(--svf-radius-sm);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--svf-accent-hover);
+}
+
+.btn-secondary {
+  background: var(--svf-surface-3);
+  color: var(--svf-text-soft);
+  border: 1px solid var(--svf-frame);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--svf-frame-soft);
+  border-color: var(--svf-muted-dim);
+  color: var(--svf-text);
+}
+
+.btn-danger {
+  background: var(--svf-danger-soft);
+  color: var(--svf-danger);
+  border: 1px solid rgba(224, 82, 82, 0.35);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(224, 82, 82, 0.22);
+}
+
+/* ── 状态徽章 ── */
+.status-badge {
+  font-family: var(--svf-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--svf-radius-pill);
+  border: 1px solid transparent;
+}
+
+.status-badge.running,
+.status-badge.awaiting {
+  position: relative;
+  padding-left: 1.1rem;
+}
+
+.status-badge.running::before,
+.status-badge.awaiting::before {
+  content: "";
+  position: absolute;
+  left: 0.45rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--svf-accent);
+  animation: svf-rec-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes svf-rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 var(--svf-accent-glow);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+.status-badge.ai-ready {
+  background: var(--svf-success-soft);
+  color: var(--svf-success);
+  border-color: rgba(77, 187, 138, 0.25);
+}
+
+.status-badge.ai-missing {
+  background: var(--svf-danger-soft);
+  color: var(--svf-danger);
+  border-color: rgba(224, 82, 82, 0.3);
+}
+
+.status-badge.running {
+  background: var(--svf-info-soft);
+  color: var(--svf-info);
+  border-color: rgba(107, 159, 212, 0.25);
+}
+
+.status-badge.style-locked {
+  background: var(--svf-gold-soft);
+  color: var(--svf-gold);
+  border-color: rgba(201, 162, 39, 0.3);
+}
+
+.muted-badge {
+  background: var(--svf-surface-3);
+  color: var(--svf-muted);
+  border: 1px solid var(--svf-frame);
+}
+
+/* ── 卡片 ── */
+.project-home-card,
+.board-card,
+.agent-card,
+.asset-card,
+.log-item,
+.a2ui-modal,
+.a2ui-inline-card {
+  background: var(--svf-surface);
+  border: 1px solid var(--svf-frame);
+  border-radius: var(--svf-radius);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.15s ease;
+}
+
+.project-home-card:hover,
+.board-card:hover,
+.board-card-clickable:hover {
+  border-color: rgba(224, 99, 74, 0.45);
+  box-shadow: var(--svf-shadow-md);
+  transform: translateY(-2px);
+}
+
+.project-home-open {
+  color: var(--svf-accent);
+  font-weight: 500;
+}
+
+/* ── 首页 Hero ── */
+.svf-hero {
+  margin-bottom: var(--svf-space-xl);
+  padding: var(--svf-space-xl) 0 var(--svf-space-lg);
+  border-bottom: 1px solid var(--svf-frame-soft);
+}
+
+.svf-hero-eyebrow {
+  font-family: var(--svf-font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--svf-accent);
+  margin: 0 0 var(--svf-space-sm);
+}
+
+.svf-hero-title {
+  font-family: var(--svf-font-display);
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 600;
+  line-height: 1.15;
+  margin: 0 0 var(--svf-space-md);
+  max-width: 28ch;
+}
+
+.svf-hero-desc {
+  margin: 0;
+  color: var(--svf-muted);
+  font-size: 1rem;
+  max-width: 52ch;
+  line-height: 1.6;
+}
+
+/* ── 工作台分栏 ── */
+.workbench {
+  background: var(--svf-void);
+}
+
+.chat-panel {
+  background: var(--svf-surface);
+  border-right: 1px solid var(--svf-frame);
+}
+
+.script-panel {
+  background: var(--svf-void);
+}
+
+.chat-log {
+  background: var(--svf-void);
+  border: 1px solid var(--svf-frame);
+  border-radius: var(--svf-radius);
+}
+
+.chat-assistant {
+  background: var(--svf-surface-2);
+  border: 1px solid var(--svf-frame);
+  border-left: 3px solid var(--svf-accent);
+}
+
+.chat-assistant .chat-role {
+  color: var(--svf-accent);
+}
+
+.conversation-item.active {
+  background: var(--svf-accent-glow);
+  border-color: rgba(224, 99, 74, 0.4);
+}
+
+/* ── Tab ── */
+.board-tab.active::after {
+  background: var(--svf-accent);
+}
+
+.board-tab.active {
+  color: var(--svf-text);
+}
+
+.settings-tab.active {
+  border-color: var(--svf-accent);
+  background: var(--svf-accent-glow);
+  color: var(--svf-accent);
+}
+
+/* ── 表单 ── */
+input,
+select,
+textarea {
+  font-family: var(--svf-font-body);
+  border-radius: var(--svf-radius-sm);
+  border: 1px solid var(--svf-frame);
+  background: var(--svf-void);
+  color: var(--svf-text);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--svf-accent);
+  box-shadow: 0 0 0 3px var(--svf-accent-glow);
+}
+
+/* ── 计划面板 ── */
+.plan-progress-fill {
+  background: linear-gradient(90deg, var(--svf-accent), var(--svf-gold));
+}
+
+.plan-step-card.status-running {
+  border-color: var(--svf-accent);
+}
+
+.plan-step-card.status-completed {
+  border-color: rgba(77, 187, 138, 0.35);
+}
+
+/* ── ReAct 块 ── */
+.react-action-pill.delegate {
+  background: var(--svf-info-soft);
+  color: var(--svf-info);
+  border-color: rgba(107, 159, 212, 0.3);
+}
+
+.react-action-pill.tool {
+  background: var(--svf-gold-soft);
+  color: var(--svf-gold);
+  border-color: rgba(201, 162, 39, 0.3);
+}
+
+.react-action-pill.finish {
+  background: var(--svf-success-soft);
+  color: var(--svf-success);
+  border-color: rgba(77, 187, 138, 0.3);
+}
+
+/* ── 设置页 ── */
+.settings-page {
+  background: var(--svf-void);
+  min-height: 100vh;
+}
+
+.settings-main {
+  max-width: 640px;
+}
+
+.agent-settings-main {
+  max-width: 960px;
+}
+
+/* ── 空状态 ── */
+.project-home-empty {
+  padding: 4rem 2rem;
+  border: 1px dashed var(--svf-frame);
+  border-radius: var(--svf-radius-lg);
+  background: var(--svf-surface);
+}
+
+.error-banner {
+  border-radius: var(--svf-radius);
+  border: 1px solid rgba(224, 82, 82, 0.35);
+  background: var(--svf-danger-soft);
+  color: var(--svf-danger);
+}
+
+/* ── 滚动条 ── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--svf-frame);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--svf-muted-dim);
+}
+
+/* ── 顶栏导航组 ── */
+.svf-nav-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.svf-nav-actions .btn-config {
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.7rem;
+}

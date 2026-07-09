@@ -2,6 +2,8 @@
  * 生图进度弹窗：展示 generate_images 并发任务的逐张状态。
  */
 
+import { useAppTranslation } from "../i18n/useAppTranslation";
+
 export type ImageGenItemStatus = "pending" | "started" | "completed" | "failed";
 
 export interface ImageGenProgressItem {
@@ -44,6 +46,7 @@ export function ImageGenProgressModal({
   items,
   onClose,
 }: Props) {
+  const { t } = useAppTranslation("common");
   if (!open || total <= 0) return null;
 
   const completed = items.filter((i) => i.status === "completed").length;
@@ -80,7 +83,7 @@ export function ImageGenProgressModal({
         {done && onClose && (
           <footer className="a2ui-actions">
             <button type="button" className="btn-primary" onClick={onClose}>
-              关闭
+              {t("actions.close")}
             </button>
           </footer>
         )}

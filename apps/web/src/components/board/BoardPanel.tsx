@@ -2,13 +2,14 @@
  * 看板 Tab 容器与各类型看板渲染
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { useAppTranslation } from "../../i18n/useAppTranslation";
 import { GraphBoard } from "./GraphBoard";
 import { ImageTextAssetCard, type ImageTextAssetItem } from "../ImageTextAssetCard";
 import { ImageTextAssetEditor } from "../ImageTextAssetEditor";
 import { EditTimelineBoard } from "./EditTimelineBoard";
-import { OpenCutIntegration, type OpenCutIntegrationProps } from "../../edit/opencut-integration";
-import type { EditTimelineData } from "../../edit/types";
+import { EditTabSimpleView } from "../../editor/EditTabSimpleView";
+import { useEditTimeline } from "../../edit/useEditTimeline";
 import { MediaPreview } from "../MediaPreview";
 import { ScriptDetailsBoard } from "./ScriptDetailsBoard";
 import { BOARD_TABS, type BoardTabId, type BoardView, type ScriptBoardMeta, visibleScriptTabs } from "../../types/board";
@@ -17,6 +18,12 @@ import { ManualEditBanner } from "../manual/ManualEditBanner";
 import { CreateTextAssetDialog } from "../manual/CreateTextAssetDialog";
 import { PlotAssetEditor } from "../manual/PlotAssetEditor";
 import { deleteTextAsset } from "../../lib/manualAssets";
+import { StoryboardTable } from "./StoryboardTable";
+import { resolveMediaPlayUrl } from "../../utils/mediaUrl";
+
+const EditorStudioModal = lazy(() =>
+  import("../../editor/EditorStudioModal").then((m) => ({ default: m.EditorStudioModal })),
+);
 
 interface BoardPanelProps {
   workspaceMode: WorkspaceMode;
@@ -51,6 +58,7 @@ function OverviewBoard({
   onCreateScript?: (title: string) => void | Promise<void>;
   onDeleteScript?: (id: string) => void | Promise<void>;
 }) {
+  const { t } = useAppTranslation(["board", "common"]);
   const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -58,7 +66,7 @@ function OverviewBoard({
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const title = newTitle.trim() || `剧本 ${Date.now().toString().slice(-4)}`;
+    const title = newTitle.trim() || t("board:defaultScriptTitle", { suffix: Date.now().toString().slice(-4) });
     if (!onCreateScript) return;
     setCreating(true);
     try {
@@ -76,18 +84,18 @@ function OverviewBoard({
           <input
             type="text"
             value={newTitle}
-            placeholder="新剧本标题"
+            placeholder={t("board:newScriptPlaceholder")}
             disabled={creating}
             onChange={(e) => setNewTitle(e.target.value)}
           />
           <button type="submit" className="btn-secondary btn-sm" disabled={creating}>
-            {creating ? "创建中…" : "＋ 新建剧本"}
+            {creating ? t("common:actions.creating") : t("board:newScript")}
           </button>
         </form>
       )}
 
       {items.length === 0 ? (
-        <p className="muted">暂无剧本，请点击上方新建剧本。</p>
+        <p className="muted">{t("board:noScripts")}</p>
       ) : (
         <div className="board-cards">
           {items.map((raw) => {
@@ -112,7 +120,7 @@ function OverviewBoard({
                   <StatusBadge status={String(item.status)} />
                 </header>
                 <p className="muted board-preview">
-                  {String(item.content_preview || "暂无正文")}
+                  {String(item.content_preview || t("board:noContentPreview"))}
                 </p>
                 <ul className="board-stats-row">
                   <li>资产 {String(item.asset_count)}</li>
@@ -132,7 +140,7 @@ function OverviewBoard({
                         onEnterScript(sid);
                       }}
                     >
-                      进入剧本
+                      {t("board:enterScript")}
                     </button>
                     {onDeleteScript && (
                       <button
@@ -151,7 +159,7 @@ function OverviewBoard({
                           })();
                         }}
                       >
-                        {deletingId === sid ? "删除中…" : "删除"}
+                        {deletingId === sid ? t("common:actions.deleting") : t("common:actions.delete")}
                       </button>
                     )}
                   </div>
@@ -219,7 +227,7 @@ function CharacterSceneBoard({
   manualEditEnabled,
 }: {
   board: BoardView;
-  kind: "character" | "scene" | "prop";
+  kind: "character" | "scene" | "prop" | "frame";
   projectId?: string | null;
   scriptId?: string | null;
   onEdit?: (item: ImageTextAssetItem) => void;
@@ -227,20 +235,27 @@ function CharacterSceneBoard({
   onCreate?: (kind: "character" | "scene" | "prop") => void;
   manualEditEnabled?: boolean;
 }) {
+  const { t } = useAppTranslation(["board", "common"]);
   const items = board.items ?? [];
   const empty =
     kind === "character"
-      ? "暂无角色资产"
+      ? t("board:emptyCharacter")
       : kind === "scene"
-        ? "暂无空镜资产"
-        : "暂无物品资产";
+        ? t("board:emptyScene")
+        : kind === "frame"
+          ? t("board:emptyFrame")
+          : t("board:emptyProp");
   if (items.length === 0 && !manualEditEnabled) return <p className="muted">{empty}</p>;
   return (
     <div className="character-scene-board">
       {manualEditEnabled && projectId && scriptId && onCreate && (
         <div className="board-toolbar">
           <button type="button" className="btn-secondary btn-sm" onClick={() => onCreate(kind)}>
-            ＋ 新建{kind === "character" ? "角色" : kind === "scene" ? "空镜" : "物品"}
+            {kind === "character"
+              ? t("board:newCharacterShort")
+              : kind === "scene"
+                ? t("board:newSceneShort")
+                : t("board:newPropShort")}
           </button>
         </div>
       )}
@@ -254,6 +269,8 @@ function CharacterSceneBoard({
               <ImageTextAssetCard
                 key={item.id}
                 item={item}
+                projectId={projectId}
+                scriptId={scriptId}
                 onEdit={projectId && manualEditEnabled ? onEdit : undefined}
                 onDelete={projectId && manualEditEnabled ? onDelete : undefined}
                 manualEditEnabled={manualEditEnabled}
@@ -279,6 +296,7 @@ function ScriptBoard({
   manualEditEnabled?: boolean;
   onRefresh?: () => void;
 }) {
+  const { t } = useAppTranslation(["board", "common"]);
   const [editingPlot, setEditingPlot] = useState<{
     id: string;
     name: string;
@@ -325,7 +343,7 @@ function ScriptBoard({
             className="btn-secondary btn-sm"
             onClick={() => setCreatePlotOpen(true)}
           >
-            ＋ 新建剧情
+            {t("board:newPlot")}
           </button>
         )}
       </div>
@@ -355,7 +373,7 @@ function ScriptBoard({
                           })
                         }
                       >
-                        编辑
+                        {t("board:editPlot")}
                       </button>
                       <button
                         type="button"
@@ -363,7 +381,7 @@ function ScriptBoard({
                         disabled={deletingId === id}
                         onClick={() => void handleDeletePlot(id)}
                       >
-                        {deletingId === id ? "删除中…" : "删除"}
+                        {deletingId === id ? t("common:actions.deleting") : t("common:actions.delete")}
                       </button>
                     </span>
                   )}
@@ -374,7 +392,7 @@ function ScriptBoard({
         </>
       )}
       {!content && plotItems.length === 0 && (
-        <p className="muted">暂无剧本内容。</p>
+        <p className="muted">{t("board:noScriptContent")}</p>
       )}
 
       {createPlotOpen && projectId && scriptId && (
@@ -400,46 +418,34 @@ function ScriptBoard({
   );
 }
 
-function StoryboardBoard({ board }: { board: BoardView }) {
-  const items = board.items ?? [];
-  if (items.length === 0) {
-    return <p className="muted">分镜计划稿将在 storyboard_agent 完成后显示。</p>;
-  }
-  return (
-    <ol className="shot-list board-shot-list">
-      {items.map((raw, index) => {
-        const shot = raw as Record<string, unknown>;
-        return (
-          <li key={String(shot.id)} className="shot-item">
-            <div className="shot-header">
-              <span className="shot-order">镜 {index + 1}</span>
-              <span className="shot-meta">
-                {Number(shot.duration_ms) / 1000}s · {String(shot.camera_motion)}
-              </span>
-            </div>
-            <p className="shot-narration">{String(shot.narration_text)}</p>
-            {shot.tts_audio_url ? (
-              <MediaPreview
-                kind="audio"
-                url={String(shot.tts_audio_url)}
-                label="配音试听"
-                className="shot-tts-preview"
-              />
-            ) : null}
-          </li>
-        );
-      })}
-    </ol>
-  );
+function StoryboardBoard({
+  board,
+  projectId,
+  scriptId,
+}: {
+  board: BoardView;
+  projectId?: string | null;
+  scriptId?: string | null;
+}) {
+  return <StoryboardTable board={board} projectId={projectId} scriptId={scriptId} />;
 }
 
-function MediaBoard({ board }: { board: BoardView }) {
+function MediaBoard({
+  board,
+  projectId,
+  scriptId,
+}: {
+  board: BoardView;
+  projectId?: string | null;
+  scriptId?: string | null;
+}) {
+  const { t } = useAppTranslation("board");
   const items = board.items ?? [];
   const byType: Record<string, typeof items> = {};
   for (const raw of items) {
-    const t = String((raw as Record<string, unknown>).type);
-    byType[t] = byType[t] ?? [];
-    byType[t].push(raw);
+    const mediaType = String((raw as Record<string, unknown>).type);
+    byType[mediaType] = byType[mediaType] ?? [];
+    byType[mediaType].push(raw);
   }
   if (items.length === 0) {
     return <p className="muted">媒体资产将在图片/视频/TTS/剪辑步骤完成后显示。</p>;
@@ -456,16 +462,23 @@ function MediaBoard({ board }: { board: BoardView }) {
               const m = raw as Record<string, unknown>;
               const url = m.url ? String(m.url) : "";
               const type = String(m.type);
+              const playUrl = resolveMediaPlayUrl(url, projectId, scriptId);
               return (
                 <li key={String(m.id)} className="media-output-item">
                   <strong>{String(m.name)}</strong>
                   {m.shot_id ? (
                     <span className="muted"> · 镜头 {String(m.shot_id)}</span>
                   ) : null}
-                  <MediaPreview kind={type} url={url} className="board-media-preview" />
-                  {url ? (
-                    <a href={url} target="_blank" rel="noreferrer" className="media-link">
-                      打开文件
+                  <MediaPreview
+                    kind={type}
+                    url={url}
+                    projectId={projectId}
+                    scriptId={scriptId}
+                    className="board-media-preview"
+                  />
+                  {playUrl ? (
+                    <a href={playUrl} target="_blank" rel="noreferrer" className="media-link">
+                      {t("openFile")}
                     </a>
                   ) : (
                     <code>{String(m.id)}</code>
@@ -626,23 +639,24 @@ function BoardContent({
           manualEditEnabled={manualEditEnabled}
         />
       );
+    case "frame":
+      return (
+        <CharacterSceneBoard
+          board={board}
+          kind="frame"
+          projectId={projectId}
+          scriptId={scriptId}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          manualEditEnabled={manualEditEnabled}
+        />
+      );
     case "storyboard":
-      return <StoryboardBoard board={board} />;
+      return <StoryboardBoard board={board} projectId={projectId} scriptId={scriptId} />;
     case "edit":
-      if (projectId && scriptId) {
-        return (
-          <OpenCutIntegration
-            project={{
-              id: scriptId,
-              name: (scriptMeta as Record<string, unknown>)?.title as string ?? "未命名剧本",
-            }}
-            className="board-edit-studio"
-          />
-        );
-      }
       return <EditTimelineBoard board={board} />;
     case "media":
-      return <MediaBoard board={board} />;
+      return <MediaBoard board={board} projectId={projectId} scriptId={scriptId} />;
     case "pipeline":
       return <PipelineBoard board={board} />;
     default:
@@ -667,11 +681,17 @@ export function BoardPanel({
   scriptMeta,
   manualEditEnabled = false,
 }: BoardPanelProps) {
+  const { t } = useAppTranslation(["board", "common"]);
   const [editing, setEditing] = useState<ImageTextAssetItem | null>(null);
   const [createAssetKind, setCreateAssetKind] = useState<
     "character" | "scene" | "prop" | null
   >(null);
+  const [editStudioOpen, setEditStudioOpen] = useState(false);
   const isProjectMode = workspaceMode === "project";
+  const isEditTab = !isProjectMode && activeTab === "edit" && Boolean(projectId && scriptId);
+  const editTimelineApi = useEditTimeline(projectId ?? "", scriptId ?? "", {
+    enabled: isEditTab,
+  });
   const projectTabs = BOARD_TABS.filter((t) => t.id === "overview" || t.id === "knowledge");
   const visibleSecondaryIds = useMemo(
     () => new Set(visibleScriptTabs(scriptMeta ?? null)),
@@ -711,31 +731,40 @@ export function BoardPanel({
       <div className="board-tab-bar">
         {!isProjectMode && onBackToOverview && (
           <button type="button" className="board-back-link btn-secondary btn-sm" onClick={onBackToOverview}>
-            ← 返回整体看板
+            {t("board:backOverview")}
           </button>
         )}
         <div className="board-tab-list">
-          {visibleTabs.map((t) => (
+          {visibleTabs.map((tab) => (
             <button
-              key={t.id}
+              key={tab.id}
               type="button"
-              className={`board-tab ${activeTab === t.id ? "active" : ""}`}
-              onClick={() => onTabChange(t.id)}
+              className={`board-tab ${activeTab === tab.id ? "active" : ""}`}
+              onClick={() => onTabChange(tab.id)}
             >
-              {t.label}
+              {t(`board:tabs.${tab.id}`)}
             </button>
           ))}
         </div>
         <button type="button" className="btn-secondary btn-sm board-refresh" onClick={onRefresh}>
-          刷新
+          {t("board:refresh")}
         </button>
       </div>
 
       <div className="board-content">
-        {loading && <p className="muted">加载看板…</p>}
-        {error && <p className="board-error">{error}</p>}
-        {!isProjectMode && <ManualEditBanner visible={!manualEditEnabled} />}
-        {!loading && board && (
+        {loading && !isEditTab && <p className="muted">加载看板…</p>}
+        {error && !isEditTab && <p className="board-error">{error}</p>}
+        {!isProjectMode && !isEditTab && <ManualEditBanner visible={!manualEditEnabled} />}
+        {isEditTab && projectId && scriptId && (
+          <EditTabSimpleView
+            projectId={projectId}
+            scriptId={scriptId}
+            timelineApi={editTimelineApi}
+            onStudioOpenChange={setEditStudioOpen}
+            studioOpen={editStudioOpen}
+          />
+        )}
+        {!loading && board && !isEditTab && (
           <>
             {board.description && <p className="muted board-desc">{board.description}</p>}
             <BoardContent
@@ -775,6 +804,20 @@ export function BoardPanel({
           onClose={() => setCreateAssetKind(null)}
           onCreated={onRefresh}
         />
+      )}
+
+      {editStudioOpen && projectId && scriptId && (
+        <Suspense fallback={null}>
+          <EditorStudioModal
+            projectId={projectId}
+            scriptId={scriptId}
+            timelineApi={editTimelineApi}
+            onClose={(saved) => {
+              setEditStudioOpen(false);
+              if (saved) void editTimelineApi.fetchTimeline();
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

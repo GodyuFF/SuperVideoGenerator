@@ -299,6 +299,27 @@ def edit_timeline_board_output_schema() -> dict[str, Any]:
     )
 
 
+def analyze_edit_timeline_output_schema() -> dict[str, Any]:
+    """analyze_edit_timeline 输出 schema。"""
+    return _object_schema(
+        {
+            "action": {"type": "string"},
+            "script_id": {"type": "string"},
+            "range": {"type": "object"},
+            "clips_in_range": {"type": "array"},
+            "gaps": {"type": "array"},
+            "overlaps": {"type": "array"},
+            "warnings": {"type": "array", "items": {"type": "string"}},
+            "missing_assets": {"type": "array"},
+            "shot_alignment": {"type": "array"},
+            "optimization_hints": {"type": "array"},
+            "message": {"type": "string"},
+        },
+        required=["action", "script_id", "range"],
+        additional_properties=True,
+    )
+
+
 def build_edit_timeline_output_schema() -> dict[str, Any]:
     return _object_schema(
         {

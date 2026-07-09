@@ -79,12 +79,18 @@ export function GraphBoard({ nodes, edges }: GraphBoardProps) {
                 y1={from.y + 24}
                 x2={to.x + 60}
                 y2={to.y + 24}
-                stroke="#536471"
+                className="graph-edge"
                 strokeWidth={1.5}
                 markerEnd="url(#arrow)"
               />
               {e.label && (
-                <text x={mx + 60} y={my + 18} fill="#71767b" fontSize={10} textAnchor="middle">
+                <text
+                  x={mx + 60}
+                  y={my + 18}
+                  className="graph-edge-label"
+                  fontSize={10}
+                  textAnchor="middle"
+                >
                   {e.label}
                 </text>
               )}
@@ -93,29 +99,31 @@ export function GraphBoard({ nodes, edges }: GraphBoardProps) {
         })}
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-            <path d="M0,0 L6,3 L0,6 Z" fill="#536471" />
+            <path d="M0,0 L6,3 L0,6 Z" className="graph-edge" />
           </marker>
         </defs>
         {nodes.map((n) => {
           const p = positions.get(n.id);
           if (!p) return null;
-          const fill = KIND_COLOR[n.kind] ?? "#38444d";
+          const fill = KIND_COLOR[n.kind];
+          const useFallback = !fill;
           return (
-            <g key={n.id} transform={`translate(${p.x}, ${p.y})`}>
+            <g key={n.id} transform={`translate(${p.x}, ${p.y})`} className="graph-node">
               <rect
                 width={120}
                 height={48}
                 rx={6}
-                fill={fill}
+                fill={fill ?? "var(--svf-frame)"}
                 fillOpacity={0.2}
-                stroke={fill}
+                stroke={fill ?? "var(--svf-frame)"}
+                className={useFallback ? "graph-node-fallback" : undefined}
                 strokeWidth={1.5}
               />
-              <text x={8} y={18} fill="#e7e9ea" fontSize={11} fontWeight={600}>
+              <text x={8} y={18} className="graph-node-label" fontSize={11} fontWeight={600}>
                 {n.label.length > 14 ? `${n.label.slice(0, 14)}…` : n.label}
               </text>
               {n.subtitle && (
-                <text x={8} y={34} fill="#71767b" fontSize={9}>
+                <text x={8} y={34} className="graph-node-subtitle" fontSize={9}>
                   {n.subtitle.length > 16 ? `${n.subtitle.slice(0, 16)}…` : n.subtitle}
                 </text>
               )}

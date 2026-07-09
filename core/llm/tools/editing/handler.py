@@ -1,6 +1,7 @@
 """editing_agent tools handlers."""
 
 from core.llm.tools.editing.timeline_handler import (
+    handle_analyze_edit_timeline,
     handle_get_edit_timeline,
     handle_load_edit_context,
     handle_plan_edit_timeline,
@@ -22,6 +23,7 @@ HANDLERS = {
     "validate_edit_assets": handle_validate_edit_assets,
     "report_missing_assets": handle_report_missing_assets,
     "get_edit_timeline": handle_get_edit_timeline,
+    "analyze_edit_timeline": handle_analyze_edit_timeline,
     "gather_media": handle_gather_media,
     "compose_final": handle_compose_final,
     "list_final": handle_list_final,

@@ -1,6 +1,7 @@
 /** 编辑剧情（plot）私有文字资产 */
 
 import { useState } from "react";
+import { useAppTranslation } from "../../i18n/useAppTranslation";
 
 const API = "/api";
 
@@ -21,6 +22,7 @@ export function PlotAssetEditor({
   onClose,
   onSaved,
 }: PlotAssetEditorProps) {
+  const { t } = useAppTranslation("common");
   const [name, setName] = useState(initialName);
   const [text, setText] = useState(initialText);
   const [saving, setSaving] = useState(false);
@@ -54,7 +56,7 @@ export function PlotAssetEditor({
         <header className="asset-editor-header">
           <h3>编辑剧情</h3>
           <button type="button" className="btn-secondary btn-sm" onClick={onClose}>
-            关闭
+            {t("actions.close")}
           </button>
         </header>
         {error && <p className="board-error">{error}</p>}
@@ -70,7 +72,7 @@ export function PlotAssetEditor({
         </div>
         <footer className="asset-editor-footer">
           <button type="button" className="btn-primary" disabled={saving} onClick={() => void save()}>
-            {saving ? "保存中…" : "保存"}
+            {saving ? t("actions.saving") : t("actions.save")}
           </button>
         </footer>
       </div>

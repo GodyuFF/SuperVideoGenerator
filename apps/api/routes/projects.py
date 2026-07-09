@@ -459,7 +459,11 @@ def get_video_plan(project_id: str, script_id: str):
     vp = state.store.get_video_plan_for_script(script_id)
     if not vp:
         raise HTTPException(404, "视频计划稿不存在")
-    return vp.model_dump()
+    from core.edit.shot_timing import resolve_shot_timings
+
+    payload = vp.model_dump()
+    payload["shot_timings"] = [t.to_dict() for t in resolve_shot_timings(state.store, script_id, plan=vp)]
+    return payload
 
 
 @router.get("/projects/{project_id}/scripts/{script_id}/media")

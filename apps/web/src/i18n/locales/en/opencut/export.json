@@ -1,0 +1,20 @@
+{
+  "export": "Export",
+  "exportProject": "Export project",
+  "exportingProject": "Exporting project",
+  "exportFailed": "Export failed",
+  "unknownError": "Unknown error occurred",
+  "cancel": "Cancel",
+  "retry": "Retry",
+  "copy": "Copy",
+  "format": "Format",
+  "quality": "Quality",
+  "audio": "Audio",
+  "formatMp4": "MP4 (H.264) - Better compatibility",
+  "formatWebm": "WebM (VP9) - Smaller file size",
+  "qualityLow": "Low - Smallest file size",
+  "qualityMedium": "Medium - Balanced",
+  "qualityHigh": "High - Recommended",
+  "qualityVeryHigh": "Very high - Largest file size",
+  "includeAudio": "Include audio in export"
+}

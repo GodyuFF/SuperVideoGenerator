@@ -11,7 +11,14 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "strict": true
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "@opencut/*": ["src/editor/opencut/*"],
+      "next/link": ["src/editor/opencut/shims/next-link.tsx"],
+      "next/image": ["src/editor/opencut/shims/next-image.tsx"],
+      "next/navigation": ["src/editor/opencut/shims/next-navigation.ts"]
+    }
   },
-  "include": ["src"]
+  "exclude": ["src/editor/opencut/**"]
 }

@@ -1,30 +1,42 @@
 # Edit Studio 规格说明
 
-> 更新日期：2026-07-06
+> 更新日期：2026-07-09（含 Premiere Pro 工程包导出）
 
 ## 目标
 
-将只读剪辑看板升级为 **可预览、可拖拽、可写回** 的多轨剪辑工作室；成片导出默认走 **FFmpeg**；`editing_agent` 在用户已编辑时间轴上采用 **merge** 策略。视频采用 **多条视频图层轨**（`video_layers[]`），支持画中画叠加与画布变换/关键帧。
+将只读剪辑看板升级为 **可预览、可拖拽、可写回** 的多轨剪辑工作室；成片导出默认走 **FFmpeg**；专业弹窗内另提供 **Classic 浏览器导出**；`editing_agent` 在用户已编辑时间轴上采用 **merge** 策略。视频采用 **多条视频图层轨**（`video_layers[]`），支持画中画叠加与画布变换/关键帧。
 
 ## 架构
 
 ```
-用户 UI (EditStudio)  ←PATCH→  timeline_service  →  EditTimeline (store)
+剧本页剪辑 Tab (EditTabSimpleView)  — OpenCut WASM 预览/播放/导出 + 预加载 Classic
+  └── OpenCutPreviewPane（仅 PreviewPanel，与弹窗共享 EditorCore；studioOpen 时暂停）
+  └── EditorStudioModal — 剪辑助手弹窗（完整 Classic 编辑器，`apps/web/src/editor/opencut/`）
+        └── SvfClassicEditor + SvfClassicEditorShell
+              ├── SvfEditorHeader（浏览器导出 / 快捷键 / 撤销）
+              ├── Assets / Preview / Properties / Timeline（完整 Classic）
+              └── svf-storage-bridge + SvfMediaBridge
+
+用户 UI  ←PATCH→  timeline_service  →  EditTimeline (store + metadata.classic_project)
 editing_agent plan_edit_timeline (mode=merge)  ────────────────┘
-compose_final / POST export  →  ffmpeg_renderer (overlay 多层)  →  exports/*.mp4
-预览：TimelinePlaybackEngine + Canvas 多层合成（transform 插值 + Ken Burns）
+compose_final / POST export  →  ffmpeg_renderer  →  exports/*.mp4
+POST export-nle  →  nle_export  →  exports/nle_premiere_*.zip
+预览：剪辑 Tab 与 Classic 弹窗/独立页均使用 opencut-wasm（buildScene + CanvasRenderer）
 ```
 
 ## API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/edit/capabilities` | 运镜/转场/背景枚举 + `ffmpeg_available` / `export_enabled` / `max_video_layers` |
+| GET | `/api/edit/capabilities` | 运镜/转场/背景枚举 + `ffmpeg_available` / `export_enabled` / `nle_export_enabled` / `max_video_layers` |
 | GET | `/api/projects/{pid}/scripts/{sid}/edit-timeline` | 时间轴 + `video_layers` + revision + 每 clip `preview_url` |
-| PATCH | 同上，`If-Match: revision` | 用户写回（`video_layers` 或 deprecated `tracks.video`） |
+| PATCH | 同上，`If-Match: revision` | 用户写回（`video_layers`、`tracks`、`duration_ms`、`metadata`） |
 | POST | `.../edit-timeline/validate` | 素材与软校验 |
+| POST | `.../edit-timeline/analyze` | 按时间窗分析 clip/空白/重叠/分镜对齐与优化建议（body：`start_ms`、`end_ms`、`tracks[]`、`layer_ids[]`、`include_hints`、`include_shot_alignment`） |
 | POST | `.../export` | 异步 FFmpeg 导出 |
 | GET | `.../export/{job_id}` | 导出进度 |
+| POST | `.../export-nle` | 异步 Premiere Pro 工程包导出（FCP7 XMEML ZIP） |
+| GET | `.../export-nle/{job_id}` | NLE 工程导出进度 |
 
 ## 数据模型
 
@@ -43,9 +55,9 @@ compose_final / POST export  →  ffmpeg_renderer (overlay 多层)  →  exports
 
 ### 其他字段
 
-`EditTimeline` 扩展：`revision`、`user_edited`、`last_edited_by`、`updated_at`。
+`EditTimeline` 扩展：`revision`、`user_edited`、`last_edited_by`、`updated_at`、`metadata`（含 `classic_project` Classic 场景/特效快照）。
 
-`EditClip.metadata` 约定：`edited_by`、`user_locked`（merge 时保护）。
+`EditClip.metadata` 约定：`edited_by`、`user_locked`（merge 时保护）、`classic`（Classic 元素扩展字段）。
 
 能力单源：[`core/edit/capabilities.json`](../core/edit/capabilities.json)。
 
@@ -84,7 +96,15 @@ LLM/分镜可能写入创意运镜名（如 `gentle_push_in`）。入库（`_par
 3. `source_refs.shot_id` 或 `metadata.shot_id`（真实 plan shot ID）
 4. **`source_refs.video_plan_shot_order`**：先按 0-based `order` 匹配；失败且 order≥1 时再试 `order-1`（兼容 Agent 1-based 写法如 `shot_1` + `order: 1`）
 
-前端 [`PreviewPanel`](../apps/web/src/edit/PreviewPanel.tsx)：`activeVideoLayersAt` 按 `z_index` 叠层绘制；`interpolateTransform` 应用 transform/keyframes；Ken Burns 与 motion_detail 合并。
+前端 [`OpenCutPreviewPane`](../apps/web/src/editor/OpenCutPreviewPane.tsx) 与 Classic [`PreviewPanel`](../apps/web/src/editor/opencut/preview/components/index.tsx) 共用 `buildScene` + opencut-wasm 渲染。数据链路：
+
+1. `installSvfStorageBridge` 拉取 `/media` + `edit-timeline`
+2. `hydrateSvfMediaFiles` 将 URL 水合为可解码 `File`（视频预览必需）
+3. `loadFromSvf` 构建 Classic project（快照场景会重映射 `mediaId`）
+4. `EditorProvider.loadProject` → `media.loadProjectMedia` + `initializeScenes`
+5. `RenderTreeController` 调用 `buildScene`（要求 `mediaMap` 命中且 `file`+`url` 齐全）
+
+`timeline.revision` / `updated_at` 变化时 Tab 预览会 `force` 刷新 bridge 并重载 `EditorProvider`。
 
 ## Agent merge 规则
 
@@ -99,22 +119,24 @@ LLM/分镜可能写入创意运镜名（如 `gentle_push_in`）。入库（`_par
 
 ## 前端模块
 
-`apps/web/src/edit/`：
+> 更新日期：2026-07-09 — OpenCut Classic 完整弹窗，无 EditStudio 回退。
 
 | 模块 | 职责 |
 |------|------|
-| `EditStudio` | 编排、播放头订阅、Delete 删除、MediaBin 拖入 |
-| `TimelineEditor` | 多行视频轨、lane 点击 seek、添加层 |
-| `PreviewPanel` | 多层 Canvas 合成 |
-| `ClipInspector` | transform 数值、动画预设、完整关键帧编辑 |
-| `ClipBlock` | 拖移/trim、时间条关键帧标记与运镜/转场徽章 |
-| `TransformOverlay` | 预览画布拖拽缩放/旋转；快捷键 `K` 打关键帧 |
-| `animationPresets.ts` | 淡入淡出/缩放/滑入等预设 |
-| `transformInterp.ts` | 与后端 `transform_interp.py` 对齐的插值 |
+| `EditTabSimpleView.tsx` | 剪辑 Tab（左上角「剪辑助手」）+ WASM 预览 +「剪辑修改」打开弹窗 + `prefetchClassicStudio()` |
+| `OpenCutPreviewPane.tsx` | Tab 轻量 OpenCut WASM 预览（`paused` 与弹窗互斥 EditorCore） |
+| `EditorStudioModal.tsx` | 弹窗 + FFmpeg 导出 |
+| `opencut/SvfClassicEditor.tsx` | Classic 入口 + bridge 安装 |
+| `opencut/SvfClassicEditorShell.tsx` | 顶栏 + 四区布局 |
+| `adapter/svfProjectAdapter.ts` | EditTimeline ↔ TProject + classic_project |
+| `adapter/SvfMediaBridge.ts` | SVF 媒体 → Classic MediaAsset |
+| `classicAgentBridge.ts` | Agent 驱动 Classic EditorCore |
+| `edit/useEditTimeline.ts` | PATCH 保存、revision、metadata |
+| `agentBridge.ts` | WebSocket 热更新路由 |
 
 ## 预览音轨同步
 
-Edit Studio 播放时，[`TimelineAudioSync`](../apps/web/src/edit/TimelineAudioSync.ts) 根据播放头同步 `tracks.audio` 当前 clip 的 `preview_url`（HTMLAudioElement），与 Canvas 画面、字幕 overlay 对齐。seek / 暂停 / clip 切换时同步 `currentTime`。
+剪辑 Tab 与 Classic 弹窗播放时，由 OpenCut `AudioManager` + 预览渲染管线同步 `tracks.audio` 与画面/字幕；与 FFmpeg 导出使用同一 `buildScene` 合成逻辑。
 
 ## FFmpeg 映射
 
@@ -146,3 +168,34 @@ Edit Studio 播放时，[`TimelineAudioSync`](../apps/web/src/edit/TimelineAudio
 ## 成片导出
 
 **FFmpeg 为唯一成片路径**（`compose_final` → `ffmpeg_renderer`）。能力单源：[`core/edit/capabilities.json`](../core/edit/capabilities.json) + [`core/edit/edit_capabilities.py`](../core/edit/edit_capabilities.py)。Remotion 栈已移除。
+
+## Premiere Pro 工程包导出（NLE）
+
+除 MP4 成片外，支持导出 **Premiere Pro 可导入的 FCP7 XMEML 工程 ZIP**（不依赖 FFmpeg）：
+
+| 项 | 说明 |
+|----|------|
+| 模块 | [`core/edit/nle_export/`](../core/edit/nle_export/)：`exporter` / `xmeml_writer` / `media_bundle` / `srt_writer` / `packager` |
+| API | `POST .../export-nle` → 异步 job → `GET .../export-nle/{job_id}` |
+| 产物 | `data/projects/.../assets/exports/nle_premiere_{id}.zip` |
+| 下载 | `GET .../assets/exports/{filename}`（与 MP4 相同） |
+| UI | 剪辑 Tab / 专业剪辑顶栏「导出 PR 工程」 |
+
+**ZIP 结构：**
+
+```
+nle_premiere_{id}.zip
+├── project.xml      # FCP7 XMEML v5，素材 pathurl 指向 media/
+├── subtitles.srt    # 字幕轨（若有）
+├── README.txt       # PR 导入说明
+└── media/           # 时间轴引用的图片/视频/音频副本
+```
+
+**PR 导入步骤：** 解压 ZIP → Premiere Pro → File → Import → 选择 `project.xml`。若提示离线媒体，确认 `media/` 与 `project.xml` 同级。
+
+**能力边界：**
+
+- 已导出：多视频图层、音频轨、字幕 SRT、片段入出点、基础 transform（静态 opacity 等）
+- 未完整迁移：Ken Burns 运镜、复杂转场/Classic 特效、精确 composite（需在 PR 中手动重做）
+
+**剪映草稿导出**：本期未实现（剪映 6.0+ 加密限制）；后续可基于 CapCut 国际版 / 剪映 5.9 + `pyJianYingDraft` 扩展。

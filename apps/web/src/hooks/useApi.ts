@@ -284,6 +284,8 @@ export function useProject(options: UseProjectOptions = {}) {
   };
 }
 
+const WS_EVENT_RING_MAX = 200;
+
 /** 连接 WebSocket，收集事件并处理 A2UI 确认回传 */
 export function useWebSocket(
   projectId: string | null,
@@ -334,7 +336,11 @@ export function useWebSocket(
 
     ws.onmessage = (ev) => {
       const data = JSON.parse(ev.data) as WsEvent;
-      setEvents((prev) => [...prev, data]);
+      setEvents((prev) => {
+        const next = [...prev, data];
+        if (next.length <= WS_EVENT_RING_MAX) return next;
+        return next.slice(next.length - WS_EVENT_RING_MAX);
+      });
 
       if (data.type === "a2ui_confirmation_ack") {
         const confirmationId = String(data.confirmation_id ?? "");

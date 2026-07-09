@@ -1,19 +1,14 @@
 /** Plan 状态与步骤展示文案 */
 
+import i18n from "../i18n/config";
 import type { PlanDocument, PlanStep, PlanViewState } from "../types";
 
-const STEP_STATUS_LABEL: Record<string, string> = {
-  pending: "待执行",
-  running: "执行中",
-  completed: "已完成",
-  failed: "失败",
-  paused: "已暂停",
-  skipped: "已跳过",
-  awaiting_confirmation: "待确认",
-};
-
+/** 步骤状态本地化标签。 */
 export function stepStatusLabel(status: string): string {
-  return STEP_STATUS_LABEL[status] ?? status;
+  return i18n.t(`stepStatus.${status}`, {
+    ns: "plan",
+    defaultValue: status,
+  });
 }
 
 export function emptyPlanView(): PlanViewState {
@@ -75,4 +70,12 @@ export function planProgress(steps: PlanStep[]): { done: number; total: number; 
   const running = steps.some((s) => s.status === "running") ? 0.5 : 0;
   const percent = Math.min(100, Math.round(((done + running) / total) * 100));
   return { done, total, percent };
+}
+
+/** 剧本执行状态本地化标签。 */
+export function scriptStatusLabel(status: string): string {
+  return i18n.t(`scriptStatus.${status}`, {
+    ns: "plan",
+    defaultValue: status,
+  });
 }

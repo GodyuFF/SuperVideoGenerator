@@ -1,0 +1,87 @@
+{
+  "toggleKeyframe": "切换 {{label}} 关键帧",
+  "transform.positionX": "位置 X",
+  "transform.positionY": "位置 Y",
+  "transform.scaleX": "缩放 X",
+  "transform.scaleY": "缩放 Y",
+  "transform.rotate": "旋转",
+  "opacity": "不透明度",
+  "blendMode": "混合模式",
+  "volume": "音量",
+  "muted": "静音",
+  "content": "内容",
+  "fontFamily": "字体",
+  "fontSize": "字号",
+  "color": "颜色",
+  "textAlign": "对齐",
+  "fontWeight": "字重",
+  "fontStyle": "字形",
+  "textDecoration": "装饰",
+  "letterSpacing": "字间距",
+  "lineHeight": "行高",
+  "background.enabled": "背景启用",
+  "background.color": "背景颜色",
+  "background.cornerRadius": "背景圆角",
+  "background.paddingX": "背景内边距 X",
+  "background.paddingY": "背景内边距 Y",
+  "background.offsetX": "背景偏移 X",
+  "background.offsetY": "背景偏移 Y",
+  "speed": "速度",
+  "changePitch": "改变音高",
+  "blurLight": "轻度",
+  "blurMedium": "中度",
+  "blurHeavy": "重度",
+  "dragClipVolume": "拖动调整片段音量",
+  "fill": "填充",
+  "stroke": "颜色",
+  "strokeWidth": "宽度",
+  "cornerRadius": "圆角",
+  "sides": "边数",
+  "points": "角数",
+  "depth": "深度",
+  "strokeAlign": "描边对齐",
+  "options": {
+    "blendMode": {
+      "normal": "正常",
+      "darken": "变暗",
+      "multiply": "正片叠底",
+      "color-burn": "颜色加深",
+      "lighten": "变亮",
+      "screen": "滤色",
+      "plus-lighter": "加亮",
+      "color-dodge": "颜色减淡",
+      "overlay": "叠加",
+      "soft-light": "柔光",
+      "hard-light": "强光",
+      "difference": "差值",
+      "exclusion": "排除",
+      "hue": "色相",
+      "saturation": "饱和度",
+      "color": "颜色",
+      "luminosity": "亮度"
+    },
+    "textAlign": {
+      "left": "左对齐",
+      "center": "居中",
+      "right": "右对齐"
+    },
+    "fontWeight": {
+      "normal": "常规",
+      "bold": "粗体"
+    },
+    "fontStyle": {
+      "normal": "常规",
+      "italic": "斜体"
+    },
+    "textDecoration": {
+      "none": "无",
+      "underline": "下划线",
+      "line-through": "删除线"
+    },
+    "strokeAlign": {
+      "inside": "内侧",
+      "center": "居中",
+      "outside": "外侧"
+    }
+  }
+}

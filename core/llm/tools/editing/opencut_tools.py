@@ -1,4 +1,4 @@
-"""Agent 可控剪辑工具定义 — OpenCut 集成。
+"""Agent 可控剪辑工具定义。
 
 供 editing_agent 通过 MCP function calling 调用：
 - get_edit_timeline  — 查询当前时间轴

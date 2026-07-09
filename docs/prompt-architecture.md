@@ -328,7 +328,7 @@ Schema：[`output_schemas.py`](../core/llm/tools/output_schemas.py) `load_edit_c
 | 2026-07-05 | 图文资产 **image_variants[]**：设定 base 主形象 + 表情/姿态/动作变体；reference 生图；分镜 `variant_refs`；看板变体列表 |
 | 2026-06-29 | Edit Studio：capabilities 迁至 `core/edit/capabilities.json`；PATCH edit-timeline；FFmpeg 默认导出；editing_agent `plan_edit_timeline.mode` merge |
 | 2026-07-06 | **编排状态末轮注入**：`## 当前编排状态` / 行动上下文迁至 messages 末条 user（`turn_user`）；system 仅静态协议+角色；`extract_react_state_json` 优先解析末条 user |
-| 2026-07-07 | **画面 frame + Agnes 2.1 图生图**：`TextAssetType.FRAME`；storyboard `create_frames`；`generate_images_with_references_async`（`extra_body.image[]`）；时间轴 `resolve_shot_image_ref` 优先 frame、禁止 character/prop 裸图；image_agent 两阶段生图 |
+| 2026-07-09 | **剪辑 Tab 性能 + 画面看板**：OpenCut Core 懒加载；EditorStudioModal Portal；frame Tab 接线；分镜 `frame_preview_url`；WS `svg:ws-event` + delta throttle；主编排 canonical 顺序 script→storyboard→image→tts→edit |
 | 2026-07-07 | **空镜 + 绿幕抠图**：scene 生图 prompt 强制无人物空镜；character/prop 绿幕 `#00FF00` 生图 + `chroma_key.py` 抠透明 PNG；看板 scene 展示为「空镜」 |
 | 2026-07-07 | **空镜背景板语义强化**：scene = establishing plate / matte backdrop；script/image Agent 提示词 + `build_scene_content_schema` + `image_prompt.py`（`PROMPT_VERSION=2`）三层约束；`key_objects` 仅环境固定陈设 |
 | 2026-07-07 | **剪辑图层摘要**：`build_timeline_layer_summary` 注入 load/plan/get/validate；compose_final 失败附【图层摘要】；FFmpeg 同层重叠 preflight |

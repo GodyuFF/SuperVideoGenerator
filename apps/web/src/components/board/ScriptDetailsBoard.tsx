@@ -3,6 +3,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useAppTranslation } from "../../i18n/useAppTranslation";
 import { patchScript } from "../../lib/manualAssets";
 import type { BoardView } from "../../types/board";
 
@@ -25,6 +26,7 @@ export function ScriptDetailsBoard({
   manualEditEnabled = false,
   onRefresh,
 }: ScriptDetailsBoardProps) {
+  const { t } = useAppTranslation(["board", "common"]);
   const stats = board.stats ?? {};
   const item = (board.items ?? [])[0] as Record<string, unknown> | undefined;
   const title = String(item?.title ?? stats.title ?? "未命名剧本");
@@ -99,7 +101,7 @@ export function ScriptDetailsBoard({
                     setDraftContent(contentMd);
                   }}
                 >
-                  取消
+                  {t("common:actions.cancel")}
                 </button>
                 <button
                   type="button"
@@ -107,7 +109,7 @@ export function ScriptDetailsBoard({
                   disabled={saving}
                   onClick={() => void save()}
                 >
-                  {saving ? "保存中…" : "保存"}
+                  {saving ? t("common:actions.saving") : t("common:actions.save")}
                 </button>
               </>
             ) : (
@@ -116,7 +118,7 @@ export function ScriptDetailsBoard({
                 className="btn-secondary btn-sm"
                 onClick={() => setEditing(true)}
               >
-                编辑剧本
+                {t("board:editScript")}
               </button>
             )}
           </div>

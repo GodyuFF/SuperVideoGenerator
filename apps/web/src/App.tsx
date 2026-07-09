@@ -2,17 +2,22 @@
  * 应用根：项目首页 ↔ 工作台 ↔ 配置/日志页（哈希路由）。
  */
 
+import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { useAppRoute } from "./hooks/useAppRoute";
 import { useAiConfig } from "./hooks/useAiConfig";
 import { AgentSettingsPage } from "./pages/AgentSettingsPage";
 import { AiSettingsPage } from "./pages/AiSettingsPage";
 import { LogsPage } from "./pages/LogsPage";
+import { EditorStudioPage } from "./pages/EditorStudioPage";
 import { ProjectHomePage } from "./pages/ProjectHomePage";
 import { Workbench } from "./pages/Workbench";
 
+import { LocaleProvider } from "./i18n/LocaleProvider";
+import { SvfThemeProvider } from "./components/theme/SvfThemeProvider";
+
 export default function App() {
-  const { route, projectId, scriptId, navigate, navigateHome, navigateToProject, navigateToLogs } =
+  const { route, projectId, scriptId, navigate, navigateHome, navigateToProject, navigateToEditor, navigateToLogs } =
     useAppRoute();
   const ai = useAiConfig();
 
@@ -22,12 +27,12 @@ export default function App() {
     }
   }, [route]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (route === "agents") {
-    return <AgentSettingsPage onBack={() => navigate("home")} />;
-  }
+  let content: ReactNode;
 
-  if (route === "settings") {
-    return (
+  if (route === "agents") {
+    content = <AgentSettingsPage onBack={() => navigate("home")} />;
+  } else if (route === "settings") {
+    content = (
       <AiSettingsPage
         config={ai.config}
         loading={ai.loading}
@@ -37,10 +42,8 @@ export default function App() {
         onRefresh={ai.refresh}
       />
     );
-  }
-
-  if (route === "logs") {
-    return (
+  } else if (route === "logs") {
+    content = (
       <LogsPage
         scriptId={scriptId}
         projectId={projectId}
@@ -51,10 +54,16 @@ export default function App() {
         }}
       />
     );
-  }
-
-  if (route === "project" && projectId) {
-    return (
+  } else if (route === "edit" && projectId && scriptId) {
+    content = (
+      <EditorStudioPage
+        projectId={projectId}
+        scriptId={scriptId}
+        onExit={() => navigateToProject(projectId, scriptId)}
+      />
+    );
+  } else if (route === "project" && projectId) {
+    content = (
       <Workbench
         routeProjectId={projectId}
         routeScriptId={scriptId}
@@ -68,14 +77,20 @@ export default function App() {
         onNavigateToProject={navigateToProject}
       />
     );
+  } else {
+    content = (
+      <ProjectHomePage
+        onOpenProject={(id) => navigateToProject(id)}
+        onOpenSettings={() => navigate("settings")}
+        onOpenAgents={() => navigate("agents")}
+        onOpenLogs={() => navigateToLogs()}
+      />
+    );
   }
 
   return (
-    <ProjectHomePage
-      onOpenProject={(id) => navigateToProject(id)}
-      onOpenSettings={() => navigate("settings")}
-      onOpenAgents={() => navigate("agents")}
-      onOpenLogs={() => navigateToLogs()}
-    />
+    <SvfThemeProvider>
+      <LocaleProvider>{content}</LocaleProvider>
+    </SvfThemeProvider>
   );
 }

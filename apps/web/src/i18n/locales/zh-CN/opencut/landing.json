@@ -1,0 +1,23 @@
+{
+  "roadmap": "路线图",
+  "contributors": "贡献者",
+  "sponsors": "赞助者",
+  "blog": "博客",
+  "signIn": "登录",
+  "getStarted": "开始使用",
+  "projects": "项目",
+  "copySvg": "复制 SVG",
+  "downloadSvg": "下载 SVG",
+  "brandAssets": "品牌资源",
+  "closeMenu": "关闭菜单",
+  "logoAlt": "OpenCut 标志",
+  "heroTitle": "开源视频编辑器",
+  "heroTitleLine1": "开源",
+  "heroTitleLine2": "视频编辑器",
+  "heroSubtitle": "简单却强大的视频编辑器，助你高效完成剪辑。可在任意平台使用。",
+  "tryEarlyBeta": "体验早期测试版",
+  "heroBackgroundAlt": "OpenCut 视频编辑器落地页背景",
+  "heroCta": "立即体验",
+  "startContributing": "开始贡献",
+  "reportIssues": "报告问题"
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from core.llm.tools.output_schemas import (
+    analyze_edit_timeline_output_schema,
     asset_mutation_output_schema,
     build_edit_timeline_output_schema,
     validate_edit_assets_output_schema,
@@ -56,6 +57,8 @@ def output_schema_for(name: str) -> dict:
         return validate_edit_assets_output_schema()
     if name == "get_edit_timeline":
         return edit_timeline_board_output_schema()
+    if name == "analyze_edit_timeline":
+        return analyze_edit_timeline_output_schema()
     if name == "read_webpage":
         return read_webpage_output_schema()
     if name.startswith("list_"):

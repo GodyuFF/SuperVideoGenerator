@@ -1,8 +1,10 @@
-"""generate_images：收集待生图项并并发调用 Agnes AI API。"""
+"""generate_images：收集待生图项并并发调用 AI API。"""
 
 from __future__ import annotations
 
 import asyncio
+import re
+
 from typing import Any
 
 from core.execution.cancel import ExecutionCancelledError, check_cancelled, gather_with_cancel
@@ -12,7 +14,9 @@ from core.llm.tools.image.errors import (
     ImageGenFailureItem,
     build_failure_item,
     build_image_gen_failure_analysis,
+    classify_image_gen_error,
     format_image_gen_abort_message,
+    parse_agnes_api_error_body,
 )
 from core.assets.image_prompt import compose_base_image_prompt, compose_variant_image_prompt
 from core.llm.tools.image.agnes_client import (
@@ -50,6 +54,62 @@ from core.models.image_text_asset import (
 from core.store.memory import MemoryStore
 
 IMAGE_GEN_MAX_ATTEMPTS = 3
+
+# 提示词不合规时尝试去除的英文敏感词（使用 word boundary 匹配防止误伤）
+_PROMPT_SENSITIVE_WORDS_EN = [
+    "blood", "gore", "violence", "weapon", "nude", "naked",
+    "kill", "murder", "dead", "death", "gun", "shooting",
+    "hunt", "predator", "prey", "flesh", "carcass",
+    "terror", "bomb", "explosive", "massacre",
+]
+_PROMPT_SENSITIVE_WORDS_CN = [
+    "暴力", "血腥", "猎食", "捕食", "真实人物", "名人", "政治人物",
+    "枪支", "武器", "裸露", "色情", "歧视", "种族", "恐怖",
+]
+
+
+def _sanitize_prompt_for_retry(prompt: str, error_category: str) -> str | None:
+    """针对提示词不合规错误，去除敏感词后返回修改后的 prompt。
+    仅当至少有一个词被修改时才返回新 prompt，否则返回 None（不重试）。
+    如果清理后的 prompt 过短（少于 5 个字符），也不返回（无效）。"""
+    if not prompt:
+        return None
+    modified = prompt
+    changed = False
+    # 英文词使用 word boundary 匹配防止误伤
+    for word in _PROMPT_SENSITIVE_WORDS_EN:
+        pattern = r"\b" + re.escape(word) + r"\b"
+        new_text = re.sub(pattern, "", modified, flags=re.IGNORECASE)
+        if new_text != modified:
+            changed = True
+            modified = new_text
+    # 中文精确匹配
+    for word in _PROMPT_SENSITIVE_WORDS_CN:
+        if word in modified:
+            modified = modified.replace(word, "")
+            changed = True
+    if not changed:
+        return None
+    # 清理多余空格和标点残留
+    modified = re.sub(r"\s{2,}", " ", modified).strip()
+    modified = re.sub(r",\s*,", ",", modified)
+    modified = re.sub(r"\(\s*\)", "", modified)
+    modified = re.sub(r"\[\s*\]", "", modified)
+    modified = re.sub(r",(\S)", r", \1", modified)
+    # 清理无意义的介词和连词残留
+    modified = re.sub(r"\bwith\s+and\b", "with", modified, flags=re.IGNORECASE)
+    modified = re.sub(r"\band\s+and\b", "and", modified, flags=re.IGNORECASE)
+    modified = re.sub(r",\s*and\s*,", ",", modified)
+    modified = re.sub(r"^\s*(and|with|of|or)\s+", "", modified, flags=re.IGNORECASE)
+    modified = re.sub(r"\s+(and|with|of|or)\s*$", "", modified, flags=re.IGNORECASE)
+    # 如果清理后的结果像 "A and range" 或 "a scene with everywhere"，尝试修复
+    modified = re.sub(r"\bA and\b", "A", modified)
+    modified = re.sub(r"\ba and\b", "a", modified)
+    modified = re.sub(r"\bwith everywhere\b", "", modified, flags=re.IGNORECASE)
+    modified = modified.strip()
+    if len(modified) < 5:
+        return None
+    return modified
 
 
 def _recompose_prompt_in_english(
@@ -361,6 +421,24 @@ async def _generate_one_item(
                     )
             except (AgnesImageGenerationError, SdImageGenerationError, BailianImageGenerationError) as e:
                 last_error = str(e)
+                # 检查是否为提示词不合规错误，若是则尝试修改提示词后重试
+                error_info = parse_agnes_api_error_body(
+                    getattr(e, "http_status", 500) or 500,
+                    str(e),
+                )
+                error_cat = classify_image_gen_error(
+                    message=error_info.get("message", str(e)),
+                    error_code=error_info.get("error_code", ""),
+                    error_type=error_info.get("error_type", ""),
+                    param=error_info.get("param", ""),
+                    http_status=getattr(e, "http_status", None),
+                )
+                # 提示词类错误：修改 image_prompt 后重试
+                if error_cat in ("content_policy", "invalid_prompt") and attempt < IMAGE_GEN_MAX_ATTEMPTS:
+                    modified = _sanitize_prompt_for_retry(image_prompt, error_cat)
+                    if modified and modified != image_prompt:
+                        image_prompt = modified
+                        item["image_prompt"] = modified
                 if attempt < IMAGE_GEN_MAX_ATTEMPTS:
                     await _emit_image_gen_progress(
                         ctx,

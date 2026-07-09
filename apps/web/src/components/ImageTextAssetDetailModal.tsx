@@ -9,20 +9,26 @@ import {
   fieldFromItem,
   traitEntries,
 } from "./imageTextAssetShared";
+import { useAppTranslation } from "../i18n/useAppTranslation";
 import { AssetImagePreview } from "./AssetImagePreview";
 import type { ImageTextAssetItem } from "./ImageTextAssetCard";
 
 interface ImageTextAssetDetailModalProps {
   item: ImageTextAssetItem;
+  projectId?: string | null;
+  scriptId?: string | null;
   onClose: () => void;
   onEdit?: (item: ImageTextAssetItem) => void;
 }
 
 export function ImageTextAssetDetailModal({
   item,
+  projectId,
+  scriptId,
   onClose,
   onEdit,
 }: ImageTextAssetDetailModalProps) {
+  const { t } = useAppTranslation("common");
   const images = assetImages(item);
   const useCheckerboard = item.type === "character" || item.type === "prop";
   const desc =
@@ -63,11 +69,11 @@ export function ImageTextAssetDetailModal({
                 className="btn-secondary btn-sm"
                 onClick={() => onEdit(item)}
               >
-                编辑
+                {t("actions.edit")}
               </button>
             )}
             <button type="button" className="btn-secondary btn-sm" onClick={onClose}>
-              关闭
+              {t("actions.close")}
             </button>
           </div>
         </header>
@@ -166,6 +172,8 @@ export function ImageTextAssetDetailModal({
                         name={v.label}
                         size="card"
                         checkerboard={useCheckerboard}
+                        projectId={projectId}
+                        scriptId={scriptId}
                       />
                     )}
                   </li>
@@ -186,6 +194,8 @@ export function ImageTextAssetDetailModal({
                       name={img.name}
                       size="detail"
                       checkerboard={useCheckerboard}
+                      projectId={projectId}
+                      scriptId={scriptId}
                     />
                   ) : null
                 )}

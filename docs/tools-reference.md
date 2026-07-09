@@ -1,6 +1,6 @@
 # Tools 参考手册
 
-> 更新日期：2026-07-06
+> 更新日期：2026-07-09
 
 本文档描述 SuperVideoGenerator 中 **MCP 语义 Tool Registry**（`core/llm/tools/`）与各 Agent 可调用的 action。主编排 ReAct 的 `delegate_*` / `tool_*` 见文末「主编排专用」。
 
@@ -86,8 +86,22 @@
 | `validate_edit_assets` | edit.validate_edit_assets | read | 校验剪辑计划稿素材是否齐备；输出 `{ready, missing_items, resolved_clips, summary}` | `editing/timeline_handler.py` |
 | `report_missing_assets` | edit.report_missing_assets | write_pipeline | 上报缺失素材（内部构造 `ReturnToMasterError`）供主编排重委派上游 | `editing/timeline_handler.py` |
 | `get_edit_timeline` | edit.get_edit_timeline | read | 读取剪辑计划稿 | `editing/timeline_handler.py` |
+| `analyze_edit_timeline` | edit.analyze_edit_timeline | read | 按时间窗分析 clip/空白/重叠/分镜对齐与优化建议；参数：`start_ms`、`end_ms`、`tracks[]`、`layer_ids[]`、`include_hints`、`include_shot_alignment` | `editing/timeline_handler.py` → `core/edit/timeline_analysis.py` |
 | `gather_media` | edit.gather_media | write_pipeline | 收集 EditTimeline 引用的图片/视频/配音；observation 含 `missing_refs` | `editing/handler.py` → `llm_action.py` |
 | `compose_final` | edit.compose_final | write_pipeline | 校验素材就绪后 FFmpeg 合成成片；`skip_subtitles=true` 导出纯画面+配音 | `editing/handler.py` → `llm_action.py` |
+| `list_final` | edit.list_final | read | 列出 FINAL 类型 media 资产 | `editing/handler.py` |
+
+### 精确剪辑工具（OpenCut Classic 融合）
+
+| action | logical_name | 类型 | 说明 | 实现 |
+|--------|--------------|------|------|------|
+| `add_clip` | edit.add_clip | write_ad_hoc | 向 video/audio/subtitle 轨添加片段 | `opencut_handler.py` |
+| `update_clip` | edit.update_clip | write_ad_hoc | 修改位置、时长、transform、运镜 | `opencut_handler.py` |
+| `remove_clip` | edit.remove_clip | write_ad_hoc | 删除片段 | `opencut_handler.py` |
+| `apply_effect` | edit.apply_effect | write_ad_hoc | 应用视觉效果（持久化 metadata） | `opencut_handler.py` |
+| `set_keyframe` | edit.set_keyframe | write_ad_hoc | 设置 transform 关键帧 | `opencut_handler.py` |
+| `export_timeline` | edit.export_timeline | write_pipeline | 触发 FFmpeg 导出，返回 job_id | `opencut_handler.py` |
+| `get_export_status` | edit.get_export_status | read | 轮询导出进度 | `opencut_handler.py` |
 | `list_final` | edit.list_final | read | 列出成片资产 | `shared/executor.py` |
 
 ---

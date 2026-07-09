@@ -1,0 +1,87 @@
+{
+  "toggleKeyframe": "Toggle {{label}} keyframe",
+  "transform.positionX": "Position X",
+  "transform.positionY": "Position Y",
+  "transform.scaleX": "Scale X",
+  "transform.scaleY": "Scale Y",
+  "transform.rotate": "Rotate",
+  "opacity": "Opacity",
+  "blendMode": "Blend Mode",
+  "volume": "Volume",
+  "muted": "Muted",
+  "content": "Content",
+  "fontFamily": "Font Family",
+  "fontSize": "Font Size",
+  "color": "Color",
+  "textAlign": "Text Align",
+  "fontWeight": "Font Weight",
+  "fontStyle": "Font Style",
+  "textDecoration": "Text Decoration",
+  "letterSpacing": "Letter Spacing",
+  "lineHeight": "Line Height",
+  "background.enabled": "Background Enabled",
+  "background.color": "Background Color",
+  "background.cornerRadius": "Background Radius",
+  "background.paddingX": "Background Padding X",
+  "background.paddingY": "Background Padding Y",
+  "background.offsetX": "Background Offset X",
+  "background.offsetY": "Background Offset Y",
+  "speed": "Speed",
+  "changePitch": "Change pitch",
+  "blurLight": "Light",
+  "blurMedium": "Medium",
+  "blurHeavy": "Heavy",
+  "dragClipVolume": "Drag to adjust clip volume",
+  "fill": "Fill",
+  "stroke": "Color",
+  "strokeWidth": "Width",
+  "cornerRadius": "Corner radius",
+  "sides": "Sides",
+  "points": "Points",
+  "depth": "Depth",
+  "strokeAlign": "Stroke align",
+  "options": {
+    "blendMode": {
+      "normal": "Normal",
+      "darken": "Darken",
+      "multiply": "Multiply",
+      "color-burn": "Color Burn",
+      "lighten": "Lighten",
+      "screen": "Screen",
+      "plus-lighter": "Plus Lighter",
+      "color-dodge": "Color Dodge",
+      "overlay": "Overlay",
+      "soft-light": "Soft Light",
+      "hard-light": "Hard Light",
+      "difference": "Difference",
+      "exclusion": "Exclusion",
+      "hue": "Hue",
+      "saturation": "Saturation",
+      "color": "Color",
+      "luminosity": "Luminosity"
+    },
+    "textAlign": {
+      "left": "Left",
+      "center": "Center",
+      "right": "Right"
+    },
+    "fontWeight": {
+      "normal": "Normal",
+      "bold": "Bold"
+    },
+    "fontStyle": {
+      "normal": "Normal",
+      "italic": "Italic"
+    },
+    "textDecoration": {
+      "none": "None",
+      "underline": "Underline",
+      "line-through": "Line Through"
+    },
+    "strokeAlign": {
+      "inside": "Inside",
+      "center": "Center",
+      "outside": "Outside"
+    }
+  }
+}

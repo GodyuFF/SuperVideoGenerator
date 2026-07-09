@@ -12,7 +12,8 @@ from core.llm.tools.shared.edit_timeline_schema import (
     EDIT_TIMELINE_TRACKS_SCHEMA,
     EDIT_VIDEO_LAYERS_SCHEMA,
 )
-from core.llm.tools.shared.input_common import OBSERVATION_ONLY, READ_ONLY_QUERY_SCHEMA
+from core.llm.tools.editing.opencut_tools import OPEN_CUT_TOOL_SCHEMAS
+from core.llm.tools.shared.input_common import OBSERVATION_ONLY, READ_ONLY_QUERY_SCHEMA, merge_plan_tracking
 
 COMPOSE_FINAL_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -77,13 +78,62 @@ REPORT_MISSING_SCHEMA: dict[str, Any] = {
     "additionalProperties": True,
 }
 
+ANALYZE_EDIT_TIMELINE_SCHEMA: dict[str, Any] = merge_plan_tracking(
+    {
+        "type": "object",
+        "properties": {
+            "observation": _OBSERVATION,
+            "start_ms": {
+                "type": "integer",
+                "description": "分析区间起点（毫秒），默认 0",
+            },
+            "end_ms": {
+                "type": "integer",
+                "description": "分析区间终点（毫秒），默认全片时长",
+            },
+            "tracks": {
+                "type": "array",
+                "items": {"type": "string", "enum": ["video", "audio", "subtitle"]},
+                "description": "可选：仅分析指定轨道",
+            },
+            "layer_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "可选：仅分析指定视频层",
+            },
+            "include_hints": {
+                "type": "boolean",
+                "description": "是否输出 optimization_hints，默认 true",
+            },
+            "include_shot_alignment": {
+                "type": "boolean",
+                "description": "是否输出每镜对齐信息，默认 true",
+            },
+        },
+        "required": ["observation"],
+        "additionalProperties": True,
+    }
+)
+
 EDITING_SCHEMAS: dict[str, dict[str, Any]] = {
     "load_edit_context": READ_ONLY_QUERY_SCHEMA,
     "plan_edit_timeline": PLAN_EDIT_TIMELINE_SCHEMA,
     "validate_edit_assets": READ_ONLY_QUERY_SCHEMA,
     "report_missing_assets": REPORT_MISSING_SCHEMA,
     "get_edit_timeline": READ_ONLY_QUERY_SCHEMA,
+    "analyze_edit_timeline": ANALYZE_EDIT_TIMELINE_SCHEMA,
     "gather_media": dict(OBSERVATION_ONLY),
     "compose_final": COMPOSE_FINAL_SCHEMA,
     "list_final": READ_ONLY_QUERY_SCHEMA,
 }
+
+# OpenCut 精确剪辑工具 schema（合并 plan_status / remaining_plan）
+for _action, _schema in OPEN_CUT_TOOL_SCHEMAS.items():
+    if _action in EDITING_SCHEMAS:
+        continue
+    if _action in ("get_edit_timeline", "get_export_status"):
+        EDITING_SCHEMAS[_action] = merge_plan_tracking(dict(_schema))
+    elif _action == "export_timeline":
+        EDITING_SCHEMAS[_action] = merge_plan_tracking(dict(_schema))
+    else:
+        EDITING_SCHEMAS[_action] = merge_plan_tracking(dict(_schema))

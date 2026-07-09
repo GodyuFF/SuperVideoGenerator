@@ -3,8 +3,9 @@
  */
 
 import { MediaPreview } from "./MediaPreview";
+import { useAppTranslation } from "../i18n/useAppTranslation";
 import type { PlanViewState } from "../types";
-import { planProgress, stepStatusLabel } from "../utils/planLabels";
+import { planProgress, scriptStatusLabel, stepStatusLabel } from "../utils/planLabels";
 import { resolveMediaPlayUrl } from "../utils/mediaUrl";
 
 interface PlanPanelProps {
@@ -17,18 +18,6 @@ interface PlanPanelProps {
   onAbort?: () => void;
 }
 
-const SCRIPT_STATUS_LABEL: Record<string, string> = {
-  draft: "草稿",
-  planned: "已规划",
-  executing: "执行中",
-  completed: "已完成",
-  failed: "失败",
-};
-
-function scriptStatusLabel(status: string): string {
-  return SCRIPT_STATUS_LABEL[status] ?? status;
-}
-
 export function PlanPanel({
   plan,
   scriptStatus,
@@ -38,6 +27,7 @@ export function PlanPanel({
   isAborting = false,
   onAbort,
 }: PlanPanelProps) {
+  const { t } = useAppTranslation(["common", "nav", "plan"]);
   const { done, total, percent } = planProgress(plan.steps);
   const hasSteps = plan.steps.length > 0;
   const summary = plan.runtime_summary?.trim();
@@ -48,9 +38,11 @@ export function PlanPanel({
     <section className="plan-panel">
       <div className="plan-panel-header">
         <div>
-          <h3>执行计划</h3>
+          <h3>{t("plan:title")}</h3>
           <p className="plan-panel-meta muted">
-            {plan.goal ? `目标：${plan.goal}` : "发送对话后按流水线顺序执行"}
+            {plan.goal
+              ? t("plan:goalPrefix", { goal: plan.goal })
+              : t("plan:defaultHint")}
             {plan.version > 0 && ` · v${plan.version}`}
           </p>
         </div>
@@ -62,7 +54,7 @@ export function PlanPanel({
               onClick={onAbort}
               disabled={isAborting}
             >
-              {isAborting ? "中止中…" : "中止执行"}
+              {isAborting ? t("common:actions.aborting") : t("nav:abortExecution")}
             </button>
           )}
           <span className={`plan-script-badge status-${scriptStatus}`}>
@@ -72,7 +64,7 @@ export function PlanPanel({
       </div>
 
       {hasSteps && (
-        <div className="plan-progress-bar" aria-label="计划进度">
+        <div className="plan-progress-bar" aria-label={t("plan:progressAria")}>
           <div className="plan-progress-track">
             <div
               className="plan-progress-fill"
@@ -80,21 +72,21 @@ export function PlanPanel({
             />
           </div>
           <span className="plan-progress-text muted">
-            {done}/{total} 步完成 · {percent}%
+            {t("plan:progressText", { done, total, percent })}
           </span>
         </div>
       )}
 
       {summary && (
         <div className="plan-status-card">
-          <div className="plan-status-label">当前状态（AI）</div>
+          <div className="plan-status-label">{t("plan:currentStatus")}</div>
           <p className="plan-status-text">{summary}</p>
         </div>
       )}
 
       {remaining.length > 0 && (
         <div className="plan-remaining-block">
-          <div className="plan-block-title">后续计划</div>
+          <div className="plan-block-title">{t("plan:remainingPlan")}</div>
           <ul className="plan-remaining-list">
             {remaining.map((item, i) => (
               <li key={`${i}-${item.slice(0, 24)}`}>{item}</li>
@@ -105,7 +97,7 @@ export function PlanPanel({
 
       {history.length > 0 && (
         <details className="plan-history-details">
-          <summary>状态历史（{history.length}）</summary>
+          <summary>{t("plan:statusHistory", { count: history.length })}</summary>
           <ul className="plan-history-list">
             {history.map((item, i) => (
               <li key={`${i}-${item.slice(0, 16)}`}>{item}</li>
@@ -115,9 +107,7 @@ export function PlanPanel({
       )}
 
       {!hasSteps && !summary && (
-        <p className="muted plan-empty-hint">
-          剧本 → 设定 → 分镜 → 图片 → [视频] → 配音 → 剪辑
-        </p>
+        <p className="muted plan-empty-hint">{t("plan:pipelineHint")}</p>
       )}
 
       {hasSteps && (
@@ -170,7 +160,7 @@ export function PlanPanel({
                               target="_blank"
                               rel="noreferrer"
                             >
-                              打开
+                              {t("common:actions.open")}
                             </a>
                           ) : o.url ? (
                             <span className="muted">{o.url}</span>

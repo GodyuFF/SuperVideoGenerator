@@ -1,0 +1,48 @@
+{
+  "actions": {
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "close": "Close",
+    "retry": "Retry",
+    "delete": "Delete",
+    "deleting": "Deleting…",
+    "edit": "Edit",
+    "create": "Create",
+    "creating": "Creating…",
+    "confirm": "Confirm",
+    "submit": "Submit",
+    "submitting": "Submitting…",
+    "download": "Download",
+    "refresh": "Refresh",
+    "refreshing": "Loading…",
+    "loading": "Loading…",
+    "details": "Details",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "copy": "Copy",
+    "duplicate": "Duplicate",
+    "abort": "Abort",
+    "aborting": "Aborting…",
+    "continue": "Continue",
+    "stop": "Stop",
+    "play": "Play",
+    "pause": "Pause",
+    "open": "Open",
+    "regeneratePrompt": "Regenerate prompt"
+  },
+  "view": {
+    "formatted": "Formatted view",
+    "rawJson": "Raw JSON"
+  },
+  "theme": {
+    "system": "System",
+    "dark": "Dark",
+    "light": "Light",
+    "followSystem": "Follow system",
+    "switchToLight": "Switch to light",
+    "switchToDark": "Switch to dark"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "agent": {
+    "saveProfile": "保存 Agent 配置",
+    "collapseTools": "收起工具",
+    "expandTools": "查看工具 ({{count}})",
+    "promptMode": "提示词模式",
+    "rolePrompt": "当前生效 role_prompt"
+  },
+  "ai": {
+    "tabs": {
+      "llm": "LLM",
+      "image": "图片",
+      "video": "视频",
+      "tts": "TTS",
+      "editExport": "剪辑导出 / FFmpeg"
+    },
+    "detect": "重新检测",
+    "detecting": "检测中…",
+    "testImage": "生成测试图",
+    "testImageGenerating": "生成中…",
+    "testTts": "生成试听",
+    "testTtsGenerating": "合成中…",
+    "saveConfig": "保存配置",
+    "saveAndBack": "保存并返回对话"
+  },
+  "logs": {
+    "title": "交互日志",
+    "deleteSelected": "删除所选日志",
+    "loadRecords": "刷新",
+    "allDates": "全部日期",
+    "projectLabel": "项目",
+    "dateLabel": "日期",
+    "kindFilter": "类型筛选",
+    "kinds": {
+      "all": "全部类型",
+      "llm_request": "LLM 请求",
+      "llm_response": "LLM 响应",
+      "llm_error": "LLM 错误",
+      "agent_action": "Agent 动作",
+      "conversation_token_round": "对话 Token 汇总",
+      "api_request": "HTTP 请求"
+    }
+  },
+  "a2ui": {
+    "abort": "中止",
+    "regenerate": "重新生成",
+    "continue": "继续",
+    "confirmContinue": "确认并继续"
+  }
+}

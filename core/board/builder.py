@@ -45,6 +45,14 @@ BOARD_TITLES: dict[str, str] = {
 }
 
 
+def _format_storyboard_time_ms(ms: int) -> str:
+    """将毫秒格式化为分镜表格时间码（m:ss.s）。"""
+    total_sec = max(0, ms) / 1000.0
+    minutes = int(total_sec // 60)
+    seconds = total_sec % 60
+    return f"{minutes}:{seconds:04.1f}"
+
+
 def _asset_preview(content: dict) -> str:
     preview = image_text_preview(content)
     if preview:
@@ -607,12 +615,66 @@ class BoardBuilder:
             }
             for shot in sorted(vp.shots, key=lambda s: s.order)
         ]
+        from core.edit.shot_timing import resolve_shot_timings
         from core.edit.timeline import build_tts_by_shot
         from core.llm.tools.shared.media_list import resolve_media_access
 
+        timing_by_shot = {t.shot_id: t for t in resolve_shot_timings(self._store, script_id)}
         tts_by_shot = build_tts_by_shot(self._store, script_id)
         for item in items:
-            audio_id = tts_by_shot.get(str(item["id"]))
+            shot_id = str(item["id"])
+            timing = timing_by_shot.get(shot_id)
+            if timing:
+                start_ms = timing.timeline_start_ms
+                end_ms = timing.timeline_end_ms
+                item["start_ms"] = start_ms
+                item["end_ms"] = end_ms
+                item["timeline_source"] = timing.timeline_source
+                item["time_label"] = (
+                    f"{_format_storyboard_time_ms(start_ms)} – {_format_storyboard_time_ms(end_ms)}"
+                )
+                subtitle_dicts = [line.to_dict() for line in timing.subtitle_lines]
+                item["subtitle_lines"] = subtitle_dicts
+                item["subtitle_line_count"] = len(subtitle_dicts)
+                item["subtitle_preview"] = subtitle_dicts[:3]
+                if timing.tts_duration_ms:
+                    item["tts_duration_ms"] = timing.tts_duration_ms
+            else:
+                duration = int(item.get("duration_ms") or 0)
+                item["start_ms"] = 0
+                item["end_ms"] = duration
+                item["timeline_source"] = "plan_estimate"
+                item["time_label"] = (
+                    f"{_format_storyboard_time_ms(0)} – {_format_storyboard_time_ms(duration)}"
+                )
+
+            asset_refs = item.get("asset_refs") or {}
+            frame_ids = asset_refs.get("frame") or []
+            if frame_ids:
+                frame_id = str(frame_ids[0])
+                frame_asset = self._store.text_assets.get(frame_id)
+                if frame_asset:
+                    item["frame_asset_name"] = frame_asset.name
+                frame_media = _media_for_text(self._store, frame_id)
+                frame_images = [m for m in frame_media if m.get("type") == "image"]
+                if frame_images:
+                    item["frame_preview_url"] = frame_images[0].get("url", "")
+                elif frame_asset and frame_asset.primary_media_id:
+                    media = self._store.media_assets.get(frame_asset.primary_media_id)
+                    if media and media.url:
+                        access = resolve_media_access(media.url)
+                        item["frame_preview_url"] = access.get("link") or media.url
+
+            char_ids = asset_refs.get("character") or []
+            char_names: list[str] = []
+            for cid in char_ids:
+                char = self._store.text_assets.get(str(cid))
+                if char and char.name:
+                    char_names.append(char.name)
+            if char_names:
+                item["character_names"] = char_names
+
+            audio_id = tts_by_shot.get(shot_id)
             if not audio_id:
                 continue
             media = self._store.media_assets.get(audio_id)

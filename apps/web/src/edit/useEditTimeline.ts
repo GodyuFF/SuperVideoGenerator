@@ -3,7 +3,20 @@ import type { EditTimelineData } from "./types";
 
 const API = "/api";
 
-export function useEditTimeline(projectId: string, scriptId: string) {
+export interface UseEditTimelineOptions {
+  /** 为 false 时不发起请求（如非剪辑 Tab）。 */
+  enabled?: boolean;
+}
+
+/** useEditTimeline 返回值类型，供弹窗与 Tab 共享。 */
+export type EditTimelineApi = ReturnType<typeof useEditTimeline>;
+
+export function useEditTimeline(
+  projectId: string,
+  scriptId: string,
+  options: UseEditTimelineOptions = {},
+) {
+  const { enabled = true } = options;
   const [timeline, setTimeline] = useState<EditTimelineData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,11 +54,15 @@ export function useEditTimeline(projectId: string, scriptId: string) {
   }, [projectId, scriptId]);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     void fetchTimeline();
-  }, [fetchTimeline]);
+  }, [fetchTimeline, enabled]);
 
   const saveTimeline = useCallback(
-    async (next: EditTimelineData) => {
+    async (next: EditTimelineData): Promise<EditTimelineData | undefined> => {
       // Cancel any in-flight save to avoid racing
       saveAbortRef.current?.abort();
       const controller = new AbortController();
@@ -72,6 +89,7 @@ export function useEditTimeline(projectId: string, scriptId: string) {
               tracks: next.tracks,
               video_layers: next.video_layers,
               duration_ms: next.duration_ms,
+              metadata: next.metadata,
             }),
             signal: controller.signal,
           }
@@ -98,6 +116,7 @@ export function useEditTimeline(projectId: string, scriptId: string) {
                 tracks: next.tracks,
                 video_layers: next.video_layers,
                 duration_ms: next.duration_ms,
+                metadata: next.metadata,
               }),
             }
           );
@@ -108,7 +127,7 @@ export function useEditTimeline(projectId: string, scriptId: string) {
           const retryData = (await retryRes.json()) as EditTimelineData;
           setTimeline(retryData);
           latestRevision.current = retryData.revision ?? 0;
-          return;
+          return retryData;
         }
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
@@ -117,9 +136,11 @@ export function useEditTimeline(projectId: string, scriptId: string) {
         const data = (await res.json()) as EditTimelineData;
         setTimeline(data);
         latestRevision.current = data.revision ?? 0;
+        return data;
       } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") return;
+        if (e instanceof DOMException && e.name === "AbortError") return undefined;
         setError(e instanceof Error ? e.message : String(e));
+        return undefined;
       } finally {
         setSaving(false);
       }
@@ -145,22 +166,25 @@ export function useEditTimeline(projectId: string, scriptId: string) {
     [saveTimeline]
   );
 
-  /** Force immediate save (used at drag-end to persist final state) */
-  const flushSave = useCallback(() => {
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
-    const toSave = pendingSave.current;
-    if (toSave) {
+  /** 立即保存：优先 explicit，其次 debounce 队列，最后当前 timeline 状态 */
+  const flushSave = useCallback(
+    async (explicit?: EditTimelineData | null) => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      const toSave = explicit ?? pendingSave.current ?? timeline;
       pendingSave.current = null;
-      void saveTimeline(toSave);
-    }
-  }, [saveTimeline]);
+      if (!toSave) return;
+      await saveTimeline(toSave);
+    },
+    [saveTimeline, timeline],
+  );
 
   /** 导出视频，支持进度回调 */
   const exportVideo = useCallback(
     async (onProgress?: (pct: number, msg: string) => void) => {
+      await flushSave();
       // Step 1: Validate
       onProgress?.(5, "正在校验素材…");
       const validateRes = await fetch(
@@ -219,12 +243,13 @@ export function useEditTimeline(projectId: string, scriptId: string) {
       }
       throw new Error("导出超时（超过 3 分钟）");
     },
-    [projectId, scriptId]
+    [projectId, scriptId, flushSave]
   );
 
   /** 导出纯画面+配音（skip_subtitles） */
   const exportVideoNoSubtitles = useCallback(
     async (onProgress?: (pct: number, msg: string) => void) => {
+      await flushSave();
       onProgress?.(5, "正在校验素材…");
       const res = await fetch(
         `${API}/projects/${projectId}/scripts/${scriptId}/export?skip_subtitles=1`,
@@ -253,7 +278,67 @@ export function useEditTimeline(projectId: string, scriptId: string) {
       }
       throw new Error("导出超时");
     },
-    [projectId, scriptId]
+    [projectId, scriptId, flushSave]
+  );
+
+  /** 导出 Premiere Pro 工程包（FCP7 XMEML ZIP）。 */
+  const exportNleProject = useCallback(
+    async (onProgress?: (pct: number, msg: string) => void) => {
+      await flushSave();
+      onProgress?.(5, "正在校验素材…");
+      const validateRes = await fetch(
+        `${API}/projects/${projectId}/scripts/${scriptId}/edit-timeline/validate`,
+        { method: "POST" }
+      );
+      if (validateRes.ok) {
+        const validation = (await validateRes.json()) as {
+          ready?: boolean;
+          validation?: { missing_items?: { reason?: string }[] };
+        };
+        if (validation.ready === false) {
+          const reasons =
+            validation.validation?.missing_items
+              ?.map((m) => m.reason)
+              .filter(Boolean)
+              .slice(0, 3)
+              .join("；") || "剪辑素材未齐备";
+          throw new Error(`无法导出：${reasons}`);
+        }
+      }
+
+      onProgress?.(10, "正在提交 PR 工程导出…");
+      const res = await fetch(
+        `${API}/projects/${projectId}/scripts/${scriptId}/export-nle`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || "PR 工程导出失败");
+      }
+      const { job_id } = (await res.json()) as { job_id: string };
+
+      for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const statusRes = await fetch(
+          `${API}/projects/${projectId}/scripts/${scriptId}/export-nle/${job_id}`
+        );
+        if (!statusRes.ok) continue;
+        const job = (await statusRes.json()) as {
+          status: string;
+          result?: { url?: string };
+          error?: string;
+        };
+        if (job.status === "completed") {
+          onProgress?.(100, "PR 工程导出完成！");
+          return job.result?.url ?? "";
+        }
+        if (job.status === "failed") throw new Error(job.error || "PR 工程导出失败");
+        const pct = 10 + Math.min(85, (i / 40) * 85);
+        onProgress?.(pct, "正在打包 PR 工程…");
+      }
+      throw new Error("PR 工程导出超时（超过 2 分钟）");
+    },
+    [projectId, scriptId, flushSave]
   );
 
   /** 下载导出的视频到本地 */
@@ -281,6 +366,7 @@ export function useEditTimeline(projectId: string, scriptId: string) {
     flushSave,
     exportVideo,
     exportVideoNoSubtitles,
+    exportNleProject,
     downloadExport,
   };
 }

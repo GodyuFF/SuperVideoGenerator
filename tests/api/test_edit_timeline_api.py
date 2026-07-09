@@ -28,6 +28,28 @@ async def test_get_edit_capabilities():
     data = res.json()
     assert "motions" in data
     assert "transitions" in data
+    assert data.get("nle_export_enabled") is True
+    assert "premiere" in (data.get("nle_export_formats") or [])
+
+
+@pytest.mark.asyncio
+async def test_post_export_nle_returns_job_id(api_ctx, monkeypatch, tmp_path):
+    """POST export-nle 应返回 job_id。"""
+    from core.store import project_paths
+
+    monkeypatch.setattr(project_paths, "DATA_ROOT", tmp_path)
+    monkeypatch.setattr(project_paths, "PROJECTS_ROOT", tmp_path / "projects")
+
+    project_id, script_id = api_ctx
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post(
+            f"/api/projects/{project_id}/scripts/{script_id}/export-nle",
+        )
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("ok") is True
+    assert data.get("job_id", "").startswith("exp_")
 
 
 @pytest.mark.asyncio

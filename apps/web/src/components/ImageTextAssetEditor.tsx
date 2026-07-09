@@ -3,6 +3,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAppTranslation } from "../i18n/useAppTranslation";
 import type { ImageTextAssetItem } from "./ImageTextAssetCard";
 
 const API = "/api";
@@ -122,6 +123,7 @@ export function ImageTextAssetEditor({
   onSaved,
   disabled = false,
 }: ImageTextAssetEditorProps) {
+  const { t } = useAppTranslation("common");
   const traitKeys = TRAIT_FIELDS[item.type] ?? [];
   const initialContent = useMemo(
     () => ({ ...(item.content ?? {}), ...flattenTraits(item) }),
@@ -185,7 +187,7 @@ export function ImageTextAssetEditor({
         <header className="asset-editor-header">
           <h3>编辑{item.type === "character" ? "角色" : item.type === "scene" ? "空镜" : "物品"}</h3>
           <button type="button" className="btn-secondary btn-sm" onClick={onClose}>
-            关闭
+            {t("actions.close")}
           </button>
         </header>
 
@@ -285,10 +287,10 @@ export function ImageTextAssetEditor({
             disabled={saving || disabled}
             onClick={() => save({ forceRecompose: true })}
           >
-            重新生成 Prompt
+            {t("actions.regeneratePrompt")}
           </button>
           <button type="button" className="btn-primary" disabled={saving || disabled} onClick={() => save()}>
-            {saving ? "保存中…" : "保存"}
+            {saving ? t("actions.saving") : t("actions.save")}
           </button>
         </footer>
       </div>

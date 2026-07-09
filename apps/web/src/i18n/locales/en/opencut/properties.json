@@ -1,0 +1,96 @@
+{
+
+  "transform": "Transform",
+
+  "blending": "Blending",
+
+  "masks": "Masks",
+
+  "effect": "Effect",
+
+  "effects": "Effects",
+
+  "speed": "Speed",
+
+  "audio": "Audio",
+
+  "text": "Text",
+
+  "graphic": "Graphic",
+
+  "noEffects": "No effects",
+
+  "openEffects": "Open effects",
+
+  "effectsFromAssets": "Add effects to this layer from the Assets panel.",
+
+  "noMasks": "No masks",
+
+  "addMask": "Add mask",
+
+  "oneMaskOnlyTooltip": "Only one mask is supported right now. If you need more, duplicate the clip and apply a different mask to each copy.",
+
+  "addMaskHint": "Add a mask to hide or reveal parts of this layer.",
+
+  "toggleMaskInversion": "Toggle {{name}} mask inversion",
+
+  "removeMask": "Remove {{name}} mask",
+
+  "position": "Position",
+
+  "size": "Size",
+
+  "height": "Height",
+
+  "width": "Width",
+
+  "scale": "Scale",
+
+  "rotation": "Rotation",
+
+  "feather": "Feather",
+
+  "stroke": "Stroke",
+
+  "content": "Content",
+
+  "font": "Font",
+
+  "spacing": "Spacing",
+
+  "letterSpacing": "Letter spacing",
+
+  "lineHeight": "Line height",
+
+  "toggleEffect": "Toggle {{effect}}",
+
+  "removeEffect": "Remove {{effect}}",
+
+  "fontAll": "All fonts",
+
+  "fontMyFonts": "My fonts",
+
+  "fontFavorites": "Favorites",
+
+  "fontSelect": "Select a font",
+
+  "fontSearchPlaceholder": "Search {{tab}}...",
+
+  "fontLoading": "Loading fonts...",
+
+  "fontLoadFailed": "Failed to load font previews.",
+
+  "fontNotFound": "No fonts found.",
+
+  "colorCustom": "Custom",
+
+  "colorSaved": "Saved",
+
+  "colorSelectMode": "Select a mode",
+
+  "addGuideLine": "Add guide line",
+
+  "guideCustom": "Custom"
+
+}
+

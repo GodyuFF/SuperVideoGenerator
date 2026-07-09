@@ -451,3 +451,4 @@ class EditTimeline(BaseModel):
     user_edited: bool = False
     last_edited_by: Literal["user", "agent", ""] = ""
     updated_at: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)

@@ -11,7 +11,12 @@ start_api() {
   if [ -f .env ]; then
     export $(grep -v '^#' .env | grep -v '^$' | sed 's/#.*//' | xargs)
   fi
-  .venv/scripts/python.exe -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload \
+  if [ -f .venv/bin/python ]; then
+    PYTHON=".venv/bin/python"
+  else
+    PYTHON="python"
+  fi
+  $PYTHON -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload \
     --reload-exclude 'data/*'
 }
 

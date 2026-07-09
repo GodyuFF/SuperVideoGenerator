@@ -13,6 +13,7 @@ const SCRIPT_TABS: BoardTabId[] = [
   "character",
   "scene",
   "prop",
+  "frame",
   "storyboard",
   "edit",
   "media",
@@ -59,6 +60,31 @@ export function useBoardData(
   const refresh = useCallback(async () => {
     if (!projectId) return;
     if (workspaceMode === "script" && !scriptId) return;
+    if (effectiveTab === "edit") {
+      setLoading(false);
+      setError(null);
+      setBoard({
+        kind: "edit",
+        title: "剪辑",
+        description: "简易预览与专业剪辑入口",
+        items: [],
+        stats: {},
+      });
+      if (workspaceMode === "script" && scriptId) {
+        const params = new URLSearchParams({ script_id: scriptId });
+        const metaUrl = `${API}/projects/${projectId}/board/script_details?${params}`;
+        try {
+          const metaRes = await fetch(metaUrl);
+          if (metaRes.ok) {
+            const metaBoard = (await metaRes.json()) as BoardView;
+            setScriptMeta((metaBoard.stats ?? {}) as ScriptBoardMeta);
+          }
+        } catch {
+          // meta 拉取失败不阻断剪辑 Tab
+        }
+      }
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

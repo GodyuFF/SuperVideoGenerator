@@ -1,0 +1,226 @@
+{
+
+  "menu": "菜单",
+
+  "shortcuts": "快捷键",
+
+  "doneClose": "完成并关闭",
+
+  "done": "完成",
+
+  "scenes": "场景",
+
+  "select": "选择",
+
+  "cancel": "取消",
+
+  "delete": "删除",
+
+  "finish": "完成",
+
+  "deleteScenes": "删除场景",
+
+  "rename": "重命名",
+
+  "deleteProject": "删除项目",
+
+  "exit": "退出",
+
+  "mobileGateTitle": "请使用桌面浏览器",
+
+  "mobileGateBody": "OpenCut 编辑器需要较大屏幕，请在桌面设备上使用。",
+
+  "onboardingSkip": "跳过",
+
+  "onboardingNext": "下一步",
+
+  "onboardingDone": "完成",
+
+  "onboardingWelcome": "欢迎使用 OpenCut",
+
+  "onboardingTitle0": "欢迎使用 OpenCut Beta！🎉",
+
+  "onboardingTitle1": "⚠️ 这是超早期测试版！",
+
+  "onboardingTitle2": "🦋 尽情体验吧！",
+
+  "onboardingDefaultTitle": "OpenCut 入门引导",
+
+  "onboardingDesc0": "你是首批体验 OpenCut 的用户——完全开源的 CapCut 替代方案。",
+
+  "onboardingDesc1a": "要让这款编辑器变得出色，还有很多工作要做。",
+
+  "onboardingDesc1b": "许多功能尚未就绪，我们正在努力开发！",
+
+  "onboardingDesc1c": "好奇的话，可以查看我们的路线图 [这里](https://opencut.app/roadmap)",
+
+  "onboardingDesc2": "加入我们的 [Discord]({{discordUrl}})，与社区交流并分享反馈，帮助 OpenCut 成为最好的编辑器。",
+
+  "scenesTitle": "场景",
+
+  "selectScenesTitle": "选择场景（{{count}}）",
+
+  "selectScenesDescription": "选择要删除的场景",
+
+  "scenesDescription": "在项目中的场景之间切换",
+
+  "noScenesAvailable": "暂无场景",
+
+  "deleteCount": "删除（{{count}}）",
+
+  "deleteScenesTitle": "删除场景",
+
+  "deleteScenesConfirm_one": "确定要删除 {{count}} 个场景吗？此操作无法撤销。",
+
+  "deleteScenesConfirm_other": "确定要删除 {{count}} 个场景吗？此操作无法撤销。",
+
+  "failedDeleteScene": "删除场景失败",
+
+  "storagePersist": "持久化存储",
+
+  "storageDismiss": "关闭",
+
+  "loadingProject": "加载项目中…",
+
+  "loadingEmbedded": "加载时间轴与素材…",
+
+  "exitingProject": "正在退出项目…",
+
+  "failedCreateProject": "创建项目失败",
+
+  "projectNotFound": "项目未找到，请重试加载。",
+
+  "failedLoadProject": "加载项目失败",
+
+  "embeddedRetryHint": "请确认后端 API 已启动（dev.bat 或 uvicorn），并刷新页面重试。",
+
+  "retryLoad": "重试",
+
+  "close": "关闭",
+
+  "mobileGateGoBack": "返回",
+
+  "mobileGateTitleDetailed": "目前仅支持桌面端",
+
+  "mobileGateBodyDetailed": "OpenCut 尚未针对手机或 iPad 优化，界面可能错乱且功能不稳定。请在桌面端获得完整体验。",
+
+  "mobileTakeLookAnyway": "仍要预览",
+
+  "renameProject": "重命名项目",
+
+  "newName": "新名称",
+
+  "enterNewName": "输入新名称",
+
+  "deleteProjectTitle": "删除「{{name}}」？",
+
+  "deleteProjectsTitle": "删除 {{count}} 个项目？",
+
+  "warning": "警告",
+
+  "deleteProjectWarningSingle": "将永久删除「{{name}}」及所有关联文件。",
+
+  "deleteProjectWarningMultiple": "将永久删除 {{count}} 个项目及所有关联文件。",
+
+  "typeDeleteConfirm": "输入 DELETE 以确认",
+
+  "deleteConfirmPlaceholder": "DELETE",
+
+  "duration": "时长",
+
+  "created": "创建时间",
+
+  "modified": "修改时间",
+
+  "projectId": "项目 ID",
+
+  "exitProject": "退出项目",
+
+  "discord": "Discord",
+
+  "failedRenameProject": "重命名项目失败",
+
+  "pleaseTryAgain": "请重试",
+
+  "failedDeleteProject": "删除项目失败",
+
+  "projectThumbnailAlt": "项目缩略图",
+
+  "storageDontLoseTitle": "别丢失你的项目",
+
+  "storageDontLoseBody1": "存储空间不足时，浏览器可能会自动删除你的项目。",
+
+  "storageDontLoseBody2": "是否允许 OpenCut 保护它们？",
+
+  "storageNotNow": "暂不",
+
+  "storageAllow": "允许",
+
+  "changelogDismiss": "关闭",
+
+  "seeFullChangelog": "查看完整更新日志",
+
+  "copyAsMarkdown": "复制 Markdown",
+
+  "copyAsMarkdownTitle": "复制为 Markdown",
+
+  "copied": "已复制！",
+
+  "classicLoadFailed": "剪辑器加载失败：{{message}}",
+
+  "classicRetryHint": "请重试；若持续失败请刷新页面并确认浏览器支持 WebAssembly。",
+
+  "classicEditorLoadFailed": "Classic 编辑器加载失败：{{error}}",
+
+  "loadStageModule": "加载编辑器模块…",
+
+  "loadStageBridge": "同步项目数据…",
+
+  "loadStageWasm": "初始化 GPU 渲染…",
+
+  "loadStageProject": "加载时间轴与素材…",
+
+  "loadStageReady": "就绪",
+
+  "loadStageError": "加载失败",
+
+  "initEditorComponents": "初始化编辑器组件…",
+
+  "editShortcutRecording": "请按下任意组合键…",
+
+  "editShortcutClick": "点击编辑快捷键",
+
+  "migrationUpdatingProject": "正在更新项目",
+
+  "migrationUpdatingProjects": "正在更新项目",
+
+  "migrationUpgradingSingle": "正在将「{{name}}」从 v{{from}} 升级到 v{{to}}",
+
+  "migrationUpgradingMultiple": "正在将项目从 v{{from}} 升级到 v{{to}}",
+
+  "collapseSection": "折叠区块",
+
+  "expandSection": "展开区块",
+
+  "graphPresets": "预设",
+
+  "graphSaved": "已保存",
+
+  "graphSavePreset": "保存",
+
+  "graphExpand": "展开",
+
+  "defaultText": "默认文字",
+
+  "clearInput": "清除输入",
+
+  "hidePassword": "隐藏密码",
+
+  "showPassword": "显示密码",
+
+  "allFonts": "全部字体",
+
+  "myFonts": "我的字体"
+
+}
+

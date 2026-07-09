@@ -1,0 +1,50 @@
+{
+  "agent": {
+    "saveProfile": "Save agent settings",
+    "collapseTools": "Collapse tools",
+    "expandTools": "View tools ({{count}})",
+    "promptMode": "Prompt profile",
+    "rolePrompt": "Active role_prompt"
+  },
+  "ai": {
+    "tabs": {
+      "llm": "LLM",
+      "image": "Image",
+      "video": "Video",
+      "tts": "TTS",
+      "editExport": "Edit export / FFmpeg"
+    },
+    "detect": "Re-detect",
+    "detecting": "Detecting…",
+    "testImage": "Generate test image",
+    "testImageGenerating": "Generating…",
+    "testTts": "Preview TTS",
+    "testTtsGenerating": "Synthesizing…",
+    "saveConfig": "Save settings",
+    "saveAndBack": "Save and return to chat"
+  },
+  "logs": {
+    "title": "Interaction logs",
+    "deleteSelected": "Delete selected logs",
+    "loadRecords": "Refresh",
+    "allDates": "All dates",
+    "projectLabel": "Project",
+    "dateLabel": "Date",
+    "kindFilter": "Filter by type",
+    "kinds": {
+      "all": "All types",
+      "llm_request": "LLM request",
+      "llm_response": "LLM response",
+      "llm_error": "LLM error",
+      "agent_action": "Agent action",
+      "conversation_token_round": "Conversation token summary",
+      "api_request": "HTTP request"
+    }
+  },
+  "a2ui": {
+    "abort": "Abort",
+    "regenerate": "Regenerate",
+    "continue": "Continue",
+    "confirmContinue": "Confirm and continue"
+  }
+}

@@ -3,8 +3,12 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { AiConfig, AiConfigPatch, AiConfigTab, ImageSourceMode } from "../types";
 import { IMAGE_SOURCE_LABELS } from "../constants";
+import { LocaleSwitcher } from "../i18n/LocaleSwitcher";
+import { ThemeToggle } from "../components/theme/ThemeToggle";
+import { AppShell } from "../components/layout/AppShell";
 
 interface AiSettingsPageProps {
   config: AiConfig | null;
@@ -15,13 +19,15 @@ interface AiSettingsPageProps {
   onRefresh: () => void;
 }
 
-const TABS: { id: AiConfigTab; label: string }[] = [
-  { id: "llm", label: "LLM" },
-  { id: "image", label: "图片" },
-  { id: "video", label: "视频" },
-  { id: "tts", label: "TTS" },
-  { id: "export", label: "剪辑导出 / FFmpeg" },
-];
+const TAB_IDS: AiConfigTab[] = ["llm", "image", "video", "tts", "export"];
+
+const TAB_I18N_KEYS: Record<AiConfigTab, string> = {
+  llm: "ai.tabs.llm",
+  image: "ai.tabs.image",
+  video: "ai.tabs.video",
+  tts: "ai.tabs.tts",
+  export: "ai.tabs.editExport",
+};
 
 export function AiSettingsPage({
   config,
@@ -31,6 +37,7 @@ export function AiSettingsPage({
   onBack,
   onRefresh,
 }: AiSettingsPageProps) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<AiConfigTab>("llm");
 
   const [provider, setProvider] = useState("");
@@ -387,46 +394,56 @@ export function AiSettingsPage({
   }
 
   return (
-    <div className="settings-page">
-      <header className="top-bar settings-top-bar">
-        <button type="button" className="btn-secondary" onClick={onBack}>
-          返回对话
-        </button>
-        <h1>AI 配置</h1>
-        {config && (
+    <AppShell
+      pageClass="settings-page"
+      mainClass="settings-main"
+      className="settings-top-bar"
+      title={t("aiConfig", { ns: "nav" })}
+      badge={
+        config ? (
           <span
             className={`status-badge ${config.llm.llm_active ? "ai-ready" : "ai-missing"}`}
           >
             {statusLabel}
           </span>
-        )}
-      </header>
-
-      <main className="settings-main">
-        {loading && <p className="muted">加载配置中…</p>}
+        ) : undefined
+      }
+      lead={
+        <button type="button" className="btn-secondary" onClick={onBack}>
+          {t("backToChat", { ns: "nav" })}
+        </button>
+      }
+      trail={
+        <>
+          <ThemeToggle />
+          <LocaleSwitcher />
+        </>
+      }
+    >
+        {loading && <p className="muted">{t("actions.loading", { ns: "common" })}</p>}
 
         {loadError && (
           <div className="settings-alert error">
             <p>{loadError}</p>
-            <button type="button" onClick={onRefresh}>重试</button>
+            <button type="button" onClick={onRefresh}>{t("actions.retry", { ns: "common" })}</button>
           </div>
         )}
 
         {!loading && config && (
           <>
-            <nav className="settings-tabs" aria-label="AI 配置分区">
-              {TABS.map((t) => (
+            <nav className="settings-tabs" aria-label={t("aiConfig", { ns: "nav" })}>
+              {TAB_IDS.map((tabId) => (
                 <button
-                  key={t.id}
+                  key={tabId}
                   type="button"
-                  className={`settings-tab ${tab === t.id ? "active" : ""}`}
-                  onClick={() => setTab(t.id)}
+                  className={`settings-tab ${tab === tabId ? "active" : ""}`}
+                  onClick={() => setTab(tabId)}
                 >
-                  {t.label}
-                  {t.id === "llm" && config.llm.llm_active && (
+                  {t(TAB_I18N_KEYS[tabId], { ns: "settings" })}
+                  {tabId === "llm" && config.llm.llm_active && (
                     <span className="settings-tab-dot" aria-hidden />
                   )}
-                  {t.id === "image" && config.image.active && (
+                  {tabId === "image" && config.image.active && (
                     <span className="settings-tab-dot" aria-hidden />
                   )}
                 </button>
@@ -577,7 +594,9 @@ export function AiSettingsPage({
                         disabled={sdDetecting}
                         onClick={detectSd}
                       >
-                        {sdDetecting ? "检测中…" : "重新检测"}
+                        {sdDetecting
+                          ? t("ai.detecting", { ns: "settings" })
+                          : t("ai.detect", { ns: "settings" })}
                       </button>
                     </div>
                   )}
@@ -751,7 +770,9 @@ export function AiSettingsPage({
                         disabled={testImageLoading || !testPrompt.trim()}
                         onClick={testImageGen}
                       >
-                        {testImageLoading ? "生成中…" : "生成测试图"}
+                        {testImageLoading
+                          ? t("ai.testImageGenerating", { ns: "settings" })
+                          : t("ai.testImage", { ns: "settings" })}
                       </button>
                     </div>
                     {testImageError && (
@@ -762,7 +783,7 @@ export function AiSettingsPage({
                         <img
                           src={testImageUrl}
                           alt="测试生成结果"
-                          style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 8, border: "1px solid #ccc" }}
+                          style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 8, border: "1px solid var(--svf-frame)" }}
                         />
                       </div>
                     )}
@@ -1120,7 +1141,9 @@ export function AiSettingsPage({
                         }
                       }}
                     >
-                      {ttsPreviewLoading ? "合成中…" : "生成试听"}
+                      {ttsPreviewLoading
+                        ? t("ai.testTtsGenerating", { ns: "settings" })
+                        : t("ai.testTts", { ns: "settings" })}
                     </button>
                     {ttsPreviewUrl ? (
                       <audio controls src={ttsPreviewUrl} style={{ width: "100%", marginTop: 8 }} />
@@ -1204,7 +1227,9 @@ export function AiSettingsPage({
 
               <div className="settings-actions">
                 <button type="submit" disabled={saving}>
-                  {saving ? "保存中…" : "保存配置"}
+                  {saving
+                    ? t("actions.saving", { ns: "common" })
+                    : t("ai.saveConfig", { ns: "settings" })}
                 </button>
                 <button
                   type="button"
@@ -1212,13 +1237,14 @@ export function AiSettingsPage({
                   disabled={saving}
                   onClick={handleSaveAndBack}
                 >
-                  {saving ? "保存中…" : "保存并返回对话"}
+                  {saving
+                    ? t("actions.saving", { ns: "common" })
+                    : t("ai.saveAndBack", { ns: "settings" })}
                 </button>
               </div>
             </form>
           </>
         )}
-      </main>
-    </div>
+    </AppShell>
   );
 }

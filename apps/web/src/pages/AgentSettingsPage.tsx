@@ -3,15 +3,20 @@
  */
 
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAgentConfig } from "../hooks/useAgentConfig";
 import { useProject } from "../hooks/useApi";
 import type { AgentInfo } from "../types/agents";
+import { LocaleSwitcher } from "../i18n/LocaleSwitcher";
+import { ThemeToggle } from "../components/theme/ThemeToggle";
+import { AppShell } from "../components/layout/AppShell";
 
 interface AgentSettingsPageProps {
   onBack: () => void;
 }
 
 export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
+  const { t } = useTranslation();
   const { projectId } = useProject();
   const { config, loading, error, refresh, update } = useAgentConfig(projectId);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
@@ -55,7 +60,7 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
             <span className="muted agent-id">{agent.name}</span>
           </div>
           <label className="agent-profile-select">
-            <span>提示词模式</span>
+            <span>{t("agent.promptMode", { ns: "settings" })}</span>
             <select
               value={profiles[agent.name] ?? "default"}
               onChange={(e) =>
@@ -72,7 +77,7 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
         </header>
 
         <div className="agent-prompt-preview">
-          <span className="field-label">当前生效 role_prompt</span>
+          <span className="field-label">{t("agent.rolePrompt", { ns: "settings" })}</span>
           <p>{agent.effective_role_prompt}</p>
           {agent.action_hint && (
             <p className="muted action-hint">行动补充：{agent.action_hint}</p>
@@ -84,7 +89,9 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
           className="btn-secondary agent-tools-toggle"
           onClick={() => setExpanded(isOpen ? null : agent.name)}
         >
-          {isOpen ? "收起工具" : `查看工具（${agent.tools.length}）`}
+          {isOpen
+            ? t("agent.collapseTools", { ns: "settings" })
+            : t("agent.expandTools", { ns: "settings", count: agent.tools.length })}
         </button>
 
         {isOpen && (
@@ -122,21 +129,29 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
   }
 
   return (
-    <div className="settings-page">
-      <header className="top-bar settings-top-bar">
+    <AppShell
+      pageClass="settings-page"
+      mainClass="settings-main agent-settings-main"
+      className="settings-top-bar"
+      title={t("agentConfig", { ns: "nav" })}
+      lead={
         <button type="button" className="btn-secondary" onClick={onBack}>
-          返回对话
+          {t("backToChat", { ns: "nav" })}
         </button>
-        <h1>Agent 配置</h1>
-      </header>
-
-      <main className="settings-main agent-settings-main">
-        {loading && <p className="muted">加载中…</p>}
+      }
+      trail={
+        <>
+          <ThemeToggle />
+          <LocaleSwitcher />
+        </>
+      }
+    >
+        {loading && <p className="muted">{t("actions.loading", { ns: "common" })}</p>}
 
         {error && (
           <div className="settings-alert error">
             <p>{error}</p>
-            <button type="button" onClick={refresh}>重试</button>
+            <button type="button" onClick={refresh}>{t("actions.retry", { ns: "common" })}</button>
           </div>
         )}
 
@@ -154,12 +169,13 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
 
             <div className="settings-actions">
               <button type="submit" disabled={saving}>
-                {saving ? "保存中…" : "保存 Agent 配置"}
+                {saving
+                  ? t("actions.saving", { ns: "common" })
+                  : t("agent.saveProfile", { ns: "settings" })}
               </button>
             </div>
           </form>
         )}
-      </main>
-    </div>
+    </AppShell>
   );
 }

@@ -3,6 +3,7 @@
  */
 
 import { useState } from "react";
+import { useAppTranslation } from "../i18n/useAppTranslation";
 import { AssetImagePreview } from "./AssetImagePreview";
 import { ImageTextAssetDetailModal } from "./ImageTextAssetDetailModal";
 import {
@@ -50,12 +51,17 @@ export function ImageTextAssetCard({
   onEdit,
   onDelete,
   manualEditEnabled = true,
+  projectId,
+  scriptId,
 }: {
   item: ImageTextAssetItem;
   onEdit?: (item: ImageTextAssetItem) => void;
   onDelete?: (item: ImageTextAssetItem) => void;
   manualEditEnabled?: boolean;
+  projectId?: string | null;
+  scriptId?: string | null;
 }) {
+  const { t } = useAppTranslation("common");
   const [detailOpen, setDetailOpen] = useState(false);
   const images = assetImages(item);
   const summary =
@@ -87,7 +93,7 @@ export function ImageTextAssetCard({
             onClick={(e) => e.stopPropagation()}
           >
             <button type="button" className="btn-secondary btn-sm" onClick={openDetail}>
-              详情
+              {t("actions.details")}
             </button>
             {manualEditEnabled && onEdit && (
               <button
@@ -95,7 +101,7 @@ export function ImageTextAssetCard({
                 className="btn-secondary btn-sm"
                 onClick={() => onEdit(item)}
               >
-                编辑
+                {t("actions.edit")}
               </button>
             )}
             {manualEditEnabled && onDelete && (
@@ -104,7 +110,7 @@ export function ImageTextAssetCard({
                 className="btn-danger btn-sm"
                 onClick={() => onDelete(item)}
               >
-                删除
+                {t("actions.delete")}
               </button>
             )}
           </div>
@@ -124,6 +130,8 @@ export function ImageTextAssetCard({
                   name={images.length > 2 ? undefined : img.name}
                   size="card"
                   checkerboard={item.type === "character" || item.type === "prop"}
+                  projectId={projectId}
+                  scriptId={scriptId}
                 />
               ) : null
             )}
@@ -139,6 +147,8 @@ export function ImageTextAssetCard({
       {detailOpen && (
         <ImageTextAssetDetailModal
           item={item}
+          projectId={projectId}
+          scriptId={scriptId}
           onClose={() => setDetailOpen(false)}
           onEdit={
             onEdit
@@ -155,5 +165,5 @@ export function ImageTextAssetCard({
 }
 
 export function isImageTextAssetType(type: string): boolean {
-  return type === "character" || type === "prop" || type === "scene";
+  return type === "character" || type === "prop" || type === "scene" || type === "frame";
 }

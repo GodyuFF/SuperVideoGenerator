@@ -1,0 +1,48 @@
+{
+  "actions": {
+    "save": "保存",
+    "saving": "保存中…",
+    "cancel": "取消",
+    "close": "关闭",
+    "retry": "重试",
+    "delete": "删除",
+    "deleting": "删除中…",
+    "edit": "编辑",
+    "create": "创建",
+    "creating": "创建中…",
+    "confirm": "确认",
+    "submit": "提交",
+    "submitting": "提交中…",
+    "download": "下载",
+    "refresh": "刷新",
+    "refreshing": "加载中…",
+    "loading": "加载中…",
+    "details": "详情",
+    "selectAll": "全选",
+    "deselectAll": "取消全选",
+    "expand": "展开",
+    "collapse": "收起",
+    "copy": "复制",
+    "duplicate": "复制",
+    "abort": "中止",
+    "aborting": "中止中…",
+    "continue": "继续",
+    "stop": "停止",
+    "play": "播放",
+    "pause": "暂停",
+    "open": "打开",
+    "regeneratePrompt": "重新生成 Prompt"
+  },
+  "view": {
+    "formatted": "格式化视图",
+    "rawJson": "原始 JSON"
+  },
+  "theme": {
+    "system": "系统",
+    "dark": "深色",
+    "light": "浅色",
+    "followSystem": "跟随系统",
+    "switchToLight": "切换为浅色",
+    "switchToDark": "切换为深色"
+  }
+}

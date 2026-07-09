@@ -74,14 +74,26 @@ export function traitEntries(item: ImageTextAssetItem): [string, string][] {
 }
 
 export function fieldFromItem(item: ImageTextAssetItem, key: string): string {
-  const top = (item as Record<string, unknown>)[key];
+  const top = (item as unknown as Record<string, unknown>)[key];
   if (typeof top === "string" && top.trim()) return top.trim();
   const c = item.content?.[key];
   return typeof c === "string" ? c.trim() : "";
 }
 
 export function assetImages(item: ImageTextAssetItem) {
-  return (item.images ?? item.media ?? []).filter(
-    (m) => m.url && !isPlaceholderUrl(m.url)
+  const fromMedia = (item.images ?? item.media ?? []).filter(
+    (m) => m.url && !isPlaceholderUrl(m.url),
   );
+  const fromVariants = (item.variants ?? [])
+    .filter((v) => v.preview_url && !isPlaceholderUrl(v.preview_url))
+    .map((v) => ({ url: v.preview_url!, name: v.label ?? "" }));
+  const seen = new Set<string>();
+  const merged: { url: string; name?: string; id?: string; type?: string }[] = [];
+  for (const img of [...fromMedia, ...fromVariants]) {
+    const key = img.url!;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(img as { url: string; name?: string; id?: string; type?: string });
+  }
+  return merged;
 }

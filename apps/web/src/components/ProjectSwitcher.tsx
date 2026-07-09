@@ -3,6 +3,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { useAppTranslation } from "../i18n/useAppTranslation";
 import type { ProjectListItem } from "../types/board";
 import {
   loadRecentProjects,
@@ -29,6 +30,7 @@ export function ProjectSwitcher({
   onCreateNew,
   disabled,
 }: ProjectSwitcherProps) {
+  const { t } = useAppTranslation(["nav", "common"]);
   const [open, setOpen] = useState(false);
   const [remoteProjects, setRemoteProjects] = useState<ProjectListItem[]>([]);
   const [recent, setRecent] = useState<LocalProjectRecord[]>([]);
@@ -93,22 +95,22 @@ export function ProjectSwitcher({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
       >
-        {current?.title ?? "当前项目"} ▾
+        {current?.title ?? t("nav:currentProject")} ▾
       </button>
       {open && (
         <div className="project-switcher-menu">
           <div className="project-menu-actions">
             <button type="button" onClick={handleCreate}>
-              ＋ 新建项目
+              {t("nav:newProject")}
             </button>
             <button type="button" onClick={refresh} disabled={loading}>
-              {loading ? "刷新中…" : "从本地存储加载列表"}
+              {loading ? t("common:actions.refreshing") : t("nav:loadFromStorage")}
             </button>
           </div>
 
           {recent.length > 0 && (
             <>
-              <p className="menu-section-title">最近打开的剧本</p>
+              <p className="menu-section-title">{t("nav:recentScripts")}</p>
               <ul>
                 {recent.filter((r) => r.scriptId).map((r) => (
                   <li key={`${r.projectId}-${r.scriptId}`}>
@@ -126,10 +128,10 @@ export function ProjectSwitcher({
             </>
           )}
 
-          <p className="menu-section-title">服务端项目</p>
+          <p className="menu-section-title">{t("nav:serverProjects")}</p>
           <ul>
             {remoteProjects.length === 0 && (
-              <li className="muted menu-empty">暂无项目，请新建</li>
+              <li className="muted menu-empty">{t("nav:noProjects")}</li>
             )}
             {remoteProjects.map((p) => (
               <li key={p.id}>
@@ -139,7 +141,7 @@ export function ProjectSwitcher({
                   onClick={() => pickProject(p.id, p.title)}
                 >
                   {p.title}
-                  <span className="muted"> · {p.script_count} 个剧本</span>
+                  <span className="muted"> · {t("nav:scriptCount", { count: p.script_count })}</span>
                 </button>
                 {p.scripts.length > 0 && (
                   <ul className="project-script-sublist">
