@@ -1,5 +1,4 @@
-data/
-.pytest_cache/
+﻿/data/`n.pytest_cache/
 __pycache__/
 *.pyc
 .env
@@ -13,14 +12,15 @@ apps/remotion/
 .venv/
 venv/
 
-# 本地运行时二进制/参考仓库
+# 鏈湴杩愯鏃朵簩杩涘埗/鍙傝€冧粨搴?
 .remotion/
 MoneyPrinterTurbo/
 
-# 构建/测试产物
+# 鏋勫缓/娴嬭瘯浜х墿
 *.egg-info/
 fake_*.mp4
 
 # IDE / Cursor
 .idea/
 .cursor/
+
