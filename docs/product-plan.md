@@ -1,7 +1,7 @@
 # SuperVideoGenerator 产品计划手册
 
 > 版本：v0.1  
-> 更新日期：2026-07-09  
+> 更新日期：2026-07-17  
 > 状态：规划阶段
 
 ---
@@ -46,6 +46,10 @@
 3. **引用即约束**：存在引用关系的资产不可删除，UI 展示引用链。
 4. **共享有边界**：仅人物、道具、场景跨剧本共享；剧情与分镜剧本私有。
 5. **手改优先**：未执行态支持全量 CRUD，便于用户微调后再交给 AI 分析生成。
+
+### 1.3 桌面分发（2026-07-17）
+
+除浏览器 + 本地 API 开发模式外，提供 **Electron 完整离线安装包**（Windows NSIS、macOS DMG），用户无需预装 Python/Node。个人开源默认**未签名**分发；用户从 [GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) 下载，并按 [`docs/desktop-packaging.md`](desktop-packaging.md) 绕过 SmartScreen / Gatekeeper。打包版通过 `electron-updater` 检查官方 Release 更新；项目数据与 API Key 保存在用户目录，升级保留。
 
 ---
 

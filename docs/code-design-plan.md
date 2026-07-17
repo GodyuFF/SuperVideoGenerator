@@ -1,6 +1,6 @@
 # SuperVideoGenerator 代码设计计划
 
-> 版本：v0.1 | 对应产品手册 v0.1 | 更新：2026-07-09（前端 i18n 双语化）
+> 版本：v0.1 | 对应产品手册 v0.1 | 更新：2026-07-17（桌面安装包打包与发版）
 
 ## 1. 目标
 
@@ -42,13 +42,26 @@ SuperVideoGenerator/
 │       ├── react_decide.py     # 运行时 ReAct 决策
 │       └── protocol.py 等      # JSON 解析、streaming、tools_schema
 ├── apps/
-│   ├── api/                    # FastAPI + WebSocket
-│   └── web/                    # Vite + React + A2UI 组件
-│       └── src/i18n/           # i18next 配置与 locales（见 docs/i18n.md）
+│   ├── api/                    # FastAPI + WebSocket（生产桌面模式挂载静态前端）
+│   ├── web/                    # Vite + React + A2UI 组件
+│   │   └── src/i18n/           # i18next 配置与 locales（见 docs/i18n.md）
+│   └── desktop/                # Electron 壳：开发快捷启动 + 打包安装包入口
+│       ├── main.cjs / preload.cjs
+│       ├── devServers.cjs      # 开发：拉起本机 API + Vite
+│       ├── prodServers.cjs     # 生产：嵌入式 Python API
+│       ├── updater.cjs         # electron-updater（GitHub Releases）
+│       ├── electron-builder.yml
+│       └── runtime/            # 构建产物（不入库）：python + web/dist + api_boot
+├── scripts/
+│   └── packaging/              # 桌面打包脚本（prepare-runtime、build-desktop）
+├── .github/workflows/
+│   └── release-desktop.yml     # tag v*.*.* → Win NSIS + Mac DMG → GitHub Release
 ├── tests/
-│   ├── unit/                   # 核心逻辑
+│   ├── unit/                   # 核心逻辑（含 test_desktop_static.py）
 │   └── api/                    # HTTP/WebSocket
 ├── docs/
+│   └── desktop-packaging.md    # 发版、未签名分发、本地构建说明
+├── requirements-desktop.txt    # 生产 pip 依赖（无 pytest；含 torch/WhisperX）
 ├── pyproject.toml
 └── requirements.txt
 ```
@@ -77,6 +90,14 @@ SuperVideoGenerator/
 - **OpenCut Hook**：`editor/opencut/i18n/useOpencutT.ts`；注册表通过 `labelKey` + `translateRegistryLabel.ts`
 - **文案文件**：`locales/{zh-CN,en}/` 下 JSON；OpenCut 独立子目录 `opencut/`
 - **详细约定与验收**：[`docs/i18n.md`](i18n.md)
+
+### 2.3 桌面安装包（`apps/desktop` + `scripts/packaging`）
+
+- **开发壳**：`dev-desktop.bat` / `apps/desktop` 的 `npm start`；复用本机 venv 与 Vite，见 [`apps/desktop/README.md`](../apps/desktop/README.md)。
+- **生产包**：`prepare-runtime.*` 组装 `apps/desktop/runtime/`（嵌入式 Python、`apps/web/dist`、`api_boot.py`）；`electron-builder` 产出未签名 NSIS / DMG。
+- **发版**：`git tag vX.Y.Z && git push origin vX.Y.Z` 触发 `release-desktop.yml`；用户文档见 [`desktop-packaging.md`](desktop-packaging.md)。
+- **自动更新**：`electron-updater` + GitHub Releases；设置页「检查更新」（仅打包版）。
+- **用户数据**：`%LOCALAPPDATA%\SuperVideoGenerator\`（Win）或 `~/Library/Application Support/SuperVideoGenerator/`（Mac）；升级不覆盖 `data/`。
 
 ## 3. Token 预估、finish_reason 与对话压缩
 
