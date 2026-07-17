@@ -6,6 +6,8 @@ __pycache__/
 node_modules/
 apps/web/dist/
 apps/web/node_modules/
+apps/desktop/runtime/
+apps/desktop/dist/
 apps/remotion/
 *.tsbuildinfo
 .venv/
