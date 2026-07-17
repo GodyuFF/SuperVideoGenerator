@@ -1,4 +1,5 @@
-﻿/data/`n.pytest_cache/
+﻿/data/
+.pytest_cache/
 __pycache__/
 *.pyc
 .env
@@ -7,20 +8,22 @@ apps/web/dist/
 apps/web/node_modules/
 apps/desktop/runtime/
 apps/desktop/dist/
+apps/desktop/node_modules/
 apps/remotion/
 *.tsbuildinfo
 .venv/
 venv/
 
-# 鏈湴杩愯鏃朵簩杩涘埗/鍙傝€冧粨搴?
+# 本地运行时二进制/参考仓库
 .remotion/
 MoneyPrinterTurbo/
 
-# 鏋勫缓/娴嬭瘯浜х墿
+# 构建/测试产物
 *.egg-info/
 fake_*.mp4
 
 # IDE / Cursor
 .idea/
 .cursor/
-
+.worktrees/
+.superpowers/
