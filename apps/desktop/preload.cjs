@@ -25,7 +25,12 @@ contextBridge.exposeInMainWorld("svfDesktop", {
   readLocalMedia: (urlOrPath) => ipcRenderer.invoke("media:readLocal", urlOrPath),
   /**
    * 桌面运行时信息。
-   * @returns {Promise<{ isDesktop: boolean; dataRoot: string; webUrl: string; repoRoot: string }>}
+   * @returns {Promise<{ isDesktop: boolean; packaged: boolean; dataRoot: string; webUrl: string; repoRoot: string; appVersion: string }>}
    */
   getInfo: () => ipcRenderer.invoke("desktop:getInfo"),
+  /**
+   * 应用版本号（与 package.json version 一致）。
+   * @returns {Promise<string>}
+   */
+  getVersion: () => ipcRenderer.invoke("desktop:getVersion"),
 });
