@@ -3,18 +3,82 @@
  */
 
 const fs = require("node:fs");
+const http = require("node:http");
 const net = require("node:net");
 const path = require("node:path");
-const {
-  probeUrl,
-  waitForAnyUrl,
-  spawnHidden,
-} = require("./devServers.cjs");
+const { spawnHidden } = require("./devServers.cjs");
 
 const API_PROBE_URL = "http://127.0.0.1:8000/health";
 const WEB_URL = "http://127.0.0.1:8000/";
 const API_PORT = 8000;
 const API_HOST = "127.0.0.1";
+
+/**
+ * 判断 HTTP 状态码是否为 /health 成功响应（2xx）。
+ * @param {number | undefined} statusCode
+ * @returns {boolean}
+ */
+function isHealthStatusOk(statusCode) {
+  const code = statusCode ?? 500;
+  return code >= 200 && code < 300;
+}
+
+/**
+ * 判断 /health JSON 响应体是否包含 status ok。
+ * @param {string} body
+ * @returns {boolean}
+ */
+function isHealthBodyOk(body) {
+  return /"status"\s*:\s*"ok"/.test(body);
+}
+
+/**
+ * GET /health，仅 2xx 且 body 含 status ok 时视为 SuperVideoGenerator API 就绪。
+ * @param {string} url
+ * @param {number} timeoutMs
+ * @returns {Promise<boolean>}
+ */
+function probeHealthOk(url, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    let settled = false;
+    /** 结束探测并返回是否健康。 */
+    const done = (ok) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    const req = http.get(url, { timeout: timeoutMs }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        done(isHealthStatusOk(res.statusCode) && isHealthBodyOk(body));
+      });
+      res.on("error", () => done(false));
+    });
+    req.on("timeout", () => {
+      req.destroy();
+      done(false);
+    });
+    req.on("error", () => done(false));
+  });
+}
+
+/**
+ * 轮询直到 /health 返回 2xx 且 status ok。
+ * @param {string} url
+ * @param {number} timeoutMs
+ * @param {number} intervalMs
+ * @returns {Promise<boolean>}
+ */
+async function waitForHealthOk(url, timeoutMs = 90_000, intervalMs = 500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await probeHealthOk(url)) return true;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return probeHealthOk(url);
+}
 
 /**
  * 解析打包资源内 runtime 目录。
@@ -105,12 +169,12 @@ async function ensureProdApi(runtimeRoot, userDataRoot, options = {}) {
   appendLog(logPath, `ensureProdApi runtime=${runtimeRoot} userData=${userDataRoot}`);
 
   if (skip) {
-    const apiReady = await waitForAnyUrl([API_PROBE_URL], 5_000);
+    const apiReady = await waitForHealthOk(API_PROBE_URL, 5_000);
     appendLog(logPath, `skip mode apiReady=${apiReady}`);
     return { apiReady, logPath, webUrl, stop() {} };
   }
 
-  if (await probeUrl(API_PROBE_URL)) {
+  if (await probeHealthOk(API_PROBE_URL)) {
     appendLog(logPath, "reusing existing API on :8000");
     return { apiReady: true, logPath, webUrl, stop() {} };
   }
@@ -141,7 +205,7 @@ async function ensureProdApi(runtimeRoot, userDataRoot, options = {}) {
     label: "prod-api",
   });
 
-  const apiReady = await waitForAnyUrl([API_PROBE_URL], 90_000);
+  const apiReady = await waitForHealthOk(API_PROBE_URL, 90_000);
   appendLog(logPath, `apiReady=${apiReady}`);
 
   return {
@@ -159,6 +223,8 @@ module.exports = {
   resolveRuntimeRoot,
   resolveEmbeddedPython,
   ensureProdApi,
+  isHealthStatusOk,
+  isHealthBodyOk,
   API_PROBE_URL,
   WEB_URL,
 };
