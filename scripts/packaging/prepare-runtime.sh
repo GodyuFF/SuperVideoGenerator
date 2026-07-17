@@ -10,10 +10,11 @@ OUT_DIR="${OUT_DIR:-$REPO_ROOT/apps/desktop/runtime}"
 SKIP_TORCH=0
 SKIP_PIP=0
 SKIP_WEB_BUILD=0
+FORCE_PYTHON_REFRESH=0
 
 usage() {
   cat <<'EOF'
-用法: prepare-runtime.sh [--repo-root PATH] [--out-dir PATH] [--skip-torch] [--skip-pip] [--skip-web-build]
+用法: prepare-runtime.sh [--repo-root PATH] [--out-dir PATH] [--skip-torch] [--skip-pip] [--skip-web-build] [--force-python-refresh]
 EOF
 }
 
@@ -24,6 +25,7 @@ while [[ $# -gt 0 ]]; do
     --skip-torch) SKIP_TORCH=1; shift ;;
     --skip-pip) SKIP_PIP=1; shift ;;
     --skip-web-build) SKIP_WEB_BUILD=1; shift ;;
+    --force-python-refresh) FORCE_PYTHON_REFRESH=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数: $1" >&2; usage; exit 1 ;;
   esac
@@ -105,30 +107,41 @@ arch="$(detect_arch)"
 asset_name="${python_tag}-${arch}-install_only.tar.gz"
 download_url="https://github.com/astral-sh/python-build-standalone/releases/download/${release_tag}/${asset_name}"
 
-step "下载嵌入式 Python: $asset_name"
-mkdir -p "$PYTHON_OUT"
-tar_path="${TMPDIR:-/tmp}/$asset_name"
-if [[ ! -f "$tar_path" ]]; then
-  curl -fsSL "$download_url" -o "$tar_path"
+py=""
+if [[ "$FORCE_PYTHON_REFRESH" -eq 0 ]] && [[ -d "$PYTHON_OUT" ]]; then
+  candidate_py="$(python_exe "$PYTHON_OUT" 2>/dev/null || true)"
+  if [[ -n "$candidate_py" && -x "$candidate_py" ]]; then
+    py="$candidate_py"
+    step "复用已有嵌入式 Python: $py"
+  fi
 fi
 
-step "解压到 $PYTHON_OUT"
-rm -rf "${PYTHON_OUT:?}/"*
-tar -xzf "$tar_path" -C "$PYTHON_OUT"
+if [[ -z "$py" ]]; then
+  step "下载嵌入式 Python: $asset_name"
+  mkdir -p "$PYTHON_OUT"
+  tar_path="${TMPDIR:-/tmp}/$asset_name"
+  if [[ ! -f "$tar_path" ]]; then
+    curl -fsSL "$download_url" -o "$tar_path"
+  fi
 
-nested_python="$PYTHON_OUT/python"
-if [[ -d "$nested_python" ]]; then
-  shopt -s dotglob
-  mv "$nested_python"/* "$PYTHON_OUT/"
-  shopt -u dotglob
-  rmdir "$nested_python"
+  step "解压到 $PYTHON_OUT"
+  rm -rf "${PYTHON_OUT:?}/"*
+  tar -xzf "$tar_path" -C "$PYTHON_OUT"
+
+  nested_python="$PYTHON_OUT/python"
+  if [[ -d "$nested_python" ]]; then
+    shopt -s dotglob
+    mv "$nested_python"/* "$PYTHON_OUT/"
+    shopt -u dotglob
+    rmdir "$nested_python"
+  fi
+
+  py="$(python_exe "$PYTHON_OUT")"
+
+  step "ensurepip + 升级 pip"
+  "$py" -m ensurepip --upgrade
+  "$py" -m pip install --upgrade pip wheel setuptools
 fi
-
-py="$(python_exe "$PYTHON_OUT")"
-
-step "ensurepip + 升级 pip"
-"$py" -m ensurepip --upgrade
-"$py" -m pip install --upgrade pip wheel setuptools
 
 if [[ "$SKIP_PIP" -eq 0 ]]; then
   step "pip install -r requirements-desktop.txt"
