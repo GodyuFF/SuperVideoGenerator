@@ -18,6 +18,7 @@ from apps.api.routes.edit_timeline import router as edit_timeline_router
 from apps.api.routes.edit_session import router as edit_session_router
 from apps.api.websocket.handler import router as ws_router
 from apps.api.state import state
+from apps.api.desktop_static import mount_desktop_static_if_configured
 
 logger = logging.getLogger("apps.api")
 
@@ -67,6 +68,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 def health():
     """健康检查。"""
     return {"status": "ok"}
+
+
+mount_desktop_static_if_configured(app)
 
 
 if __name__ == "__main__":
