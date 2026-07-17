@@ -3,13 +3,23 @@
   "private": true,
   "version": "0.1.0",
   "description": "Electron shell for SuperVideoGenerator (local API + Vite UI)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GodyuFF/SuperVideoGenerator.git"
+  },
   "main": "main.cjs",
   "scripts": {
     "start": "node start-electron.cjs",
     "ensure-electron": "node ensure-electron.cjs",
-    "test:paths": "node --test mediaPath.test.cjs ensure-electron.test.cjs devServers.test.cjs userDataPaths.test.cjs prodServers.test.cjs"
+    "test:paths": "node --test mediaPath.test.cjs ensure-electron.test.cjs devServers.test.cjs userDataPaths.test.cjs prodServers.test.cjs",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --publish never"
   },
   "devDependencies": {
-    "electron": "^33.2.0"
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   }
 }
