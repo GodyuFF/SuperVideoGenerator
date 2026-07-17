@@ -33,4 +33,36 @@ contextBridge.exposeInMainWorld("svfDesktop", {
    * @returns {Promise<string>}
    */
   getVersion: () => ipcRenderer.invoke("desktop:getVersion"),
+  /**
+   * 检查 GitHub Releases 更新。
+   * @returns {Promise<{ status: string; version?: string; message?: string }>}
+   */
+  checkForUpdates: () => ipcRenderer.invoke("desktop:checkForUpdates"),
+  /**
+   * 获取当前自动更新状态。
+   * @returns {Promise<{ status: string; currentVersion: string; version?: string; message?: string; percent?: number }>}
+   */
+  getUpdateState: () => ipcRenderer.invoke("desktop:getUpdateState"),
+  /**
+   * 退出并安装已下载更新。
+   * @returns {Promise<{ ok: boolean; message?: string }>}
+   */
+  quitAndInstall: () => ipcRenderer.invoke("desktop:quitAndInstall"),
+  /**
+   * 订阅更新状态推送。
+   * @param {(state: { status: string; currentVersion: string; version?: string; message?: string; percent?: number }) => void} callback
+   * @returns {() => void} 取消订阅
+   */
+  onUpdateState: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("desktop:update-state", listener);
+    return () => ipcRenderer.removeListener("desktop:update-state", listener);
+  },
+  /**
+   * 通知主进程生成任务是否进行中（避免强制重启）。
+   * @param {boolean} busy
+   * @returns {Promise<void>}
+   */
+  setGenerationBusy: (busy) =>
+    ipcRenderer.invoke("desktop:setGenerationBusy", busy),
 });

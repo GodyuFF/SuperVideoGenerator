@@ -11,6 +11,7 @@ files:
   - devServers.cjs
   - userDataPaths.cjs
   - mediaPath.cjs
+  - updater.cjs
   - splash-boot.html
   - icon.ico
   - icon.png

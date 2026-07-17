@@ -2,7 +2,7 @@
  * Electron 主进程：无菜单栏窗口 + 自动拉起 API/Vite + 加载前端。
  */
 
-const { app, BrowserWindow, Menu, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, dialog } = require("electron");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
@@ -14,6 +14,7 @@ const {
 const { ensureDevServers } = require("./devServers.cjs");
 const { resolveUserDataRoot } = require("./userDataPaths.cjs");
 const { ensureProdApi, resolveRuntimeRoot } = require("./prodServers.cjs");
+const { initUpdater } = require("./updater.cjs");
 
 /** 仓库根目录（apps/desktop 的上两级）。 */
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -66,6 +67,9 @@ const SPLASH_BOOT_HTML = path.join(__dirname, "splash-boot.html");
 
 /** @type {null | { stop: () => void, logPath?: string }} */
 let managedServers = null;
+
+/** @type {BrowserWindow | null} */
+let mainWindow = null;
 
 /**
  * 生成启动失败页 HTML。
@@ -121,6 +125,13 @@ function createWindow() {
   const reveal = () => {
     if (!win.isDestroyed() && !win.isVisible()) win.show();
   };
+
+  mainWindow = win;
+  win.on("closed", () => {
+    if (mainWindow === win) {
+      mainWindow = null;
+    }
+  });
 
   win.once("ready-to-show", reveal);
   setTimeout(reveal, 800);
@@ -185,6 +196,12 @@ function registerMediaIpc() {
  */
 async function boot() {
   registerMediaIpc();
+  initUpdater({
+    app,
+    dialog,
+    ipcMain,
+    getMainWindow: () => mainWindow,
+  });
   const win = createWindow();
   void win.loadFile(SPLASH_BOOT_HTML);
 

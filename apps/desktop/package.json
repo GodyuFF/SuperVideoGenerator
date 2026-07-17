@@ -11,7 +11,7 @@
   "scripts": {
     "start": "node start-electron.cjs",
     "ensure-electron": "node ensure-electron.cjs",
-    "test:paths": "node --test mediaPath.test.cjs ensure-electron.test.cjs devServers.test.cjs userDataPaths.test.cjs prodServers.test.cjs",
+    "test:paths": "node --test mediaPath.test.cjs ensure-electron.test.cjs devServers.test.cjs userDataPaths.test.cjs prodServers.test.cjs updater.test.cjs",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --publish never"
   },
