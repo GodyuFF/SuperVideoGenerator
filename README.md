@@ -2,6 +2,12 @@
 
 基于多 Agent 协作的 AI 视频生成系统。用自然语言描述创意，**超级视频大师** 以 ReAct 编排剧本、分镜、生图、配音、剪辑等子 Agent，完成从创意到成片；支持看板精修与 Edit Studio 多轨时间轴。
 
+## Project site
+
+展示站（流水线演示 · 中/EN）：发布 GitHub Pages 后访问  
+`https://godyuff.github.io/SuperVideoGenerator/`  
+（源码目录 [`site/`](site/)；开启方式见 [`site/README.md`](site/README.md)）
+
 ## Features
 
 - **对话 + 看板**：Plan 可见可审，A2UI 确认；可选 Goal 自主模式
