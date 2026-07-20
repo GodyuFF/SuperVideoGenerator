@@ -10,6 +10,7 @@ import { LocaleSwitcher } from "../i18n/LocaleSwitcher";
 import { coerceAppLocale, applyAppLocale } from "../i18n/localeSync";
 import { ThemeToggle } from "../components/theme/ThemeToggle";
 import { AppShell } from "../components/layout/AppShell";
+import { DesktopUpdateSection } from "../components/settings/DesktopUpdateSection";
 
 interface AiSettingsPageProps {
   config: AiConfig | null;
@@ -744,6 +745,8 @@ export function AiSettingsPage({
                 </button>
               ))}
             </nav>
+
+            <DesktopUpdateSection />
 
             <form className="settings-form" onSubmit={handleSubmit}>
               {tab === "llm" && (

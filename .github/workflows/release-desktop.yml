@@ -1,0 +1,268 @@
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Target platform
+        type: choice
+        default: all
+        options:
+          - all
+          - windows
+          - macos-x64
+          - macos-arm64
+
+permissions:
+  contents: write
+
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+  ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+  ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+
+jobs:
+  build-windows:
+    name: Windows x64
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.platform == 'all' ||
+         github.event.inputs.platform == 'windows'))
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\pip\Cache
+          key: pip-win-${{ hashFiles('requirements-desktop.txt', 'scripts/packaging/python-version.txt') }}
+          restore-keys: |
+            pip-win-
+
+      - uses: actions/cache@v4
+        with:
+          path: apps/web/node_modules
+          key: web-nm-${{ hashFiles('apps/web/package-lock.json') }}
+          restore-keys: |
+            web-nm-
+
+      - uses: actions/cache@v4
+        with:
+          path: apps/desktop/node_modules
+          key: desktop-nm-${{ hashFiles('apps/desktop/package-lock.json') }}
+          restore-keys: |
+            desktop-nm-
+
+      - name: Prepare runtime
+        shell: pwsh
+        run: ./scripts/packaging/prepare-runtime.ps1
+
+      - name: Build installer
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npx electron-builder --win --x64 --publish never
+
+      - name: Report artifact sizes
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path apps/desktop/dist -File -ErrorAction SilentlyContinue
+          if (-not $files) { throw "No artifacts in apps/desktop/dist" }
+          "## Windows artifacts" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $files | ForEach-Object {
+            $mb = [math]::Round($_.Length / 1MB, 1)
+            "- ``$($_.Name)``: $mb MB" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-x64
+          path: |
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.yml
+            apps/desktop/dist/*.yaml
+            apps/desktop/dist/*.blockmap
+          if-no-files-found: error
+
+  build-macos-x64:
+    name: macOS x64
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.platform == 'all' ||
+         github.event.inputs.platform == 'macos-x64'))
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-macos-${{ hashFiles('requirements-desktop.txt', 'scripts/packaging/python-version.txt') }}
+          restore-keys: |
+            pip-macos-
+
+      - uses: actions/cache@v4
+        with:
+          path: apps/web/node_modules
+          key: web-nm-${{ hashFiles('apps/web/package-lock.json') }}
+          restore-keys: |
+            web-nm-
+
+      - uses: actions/cache@v4
+        with:
+          path: apps/desktop/node_modules
+          key: desktop-nm-${{ hashFiles('apps/desktop/package-lock.json') }}
+          restore-keys: |
+            desktop-nm-
+
+      - name: Ensure packaging scripts executable
+        run: chmod +x scripts/packaging/*.sh
+
+      - name: Export macOS icon
+        run: ./scripts/packaging/export-icns.sh
+
+      - name: Prepare runtime
+        run: ./scripts/packaging/prepare-runtime.sh
+
+      - name: Build installer
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npx electron-builder --mac --x64 --publish never
+
+      - name: Report artifact sizes
+        run: |
+          {
+            echo "## macOS x64 artifacts"
+            find apps/desktop/dist -maxdepth 1 -type f -exec ls -lh {} \;
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/*.yml
+            apps/desktop/dist/*.yaml
+            apps/desktop/dist/*.blockmap
+          if-no-files-found: error
+
+  build-macos-arm64:
+    name: macOS arm64
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.platform == 'all' ||
+         github.event.inputs.platform == 'macos-arm64'))
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-macos-${{ hashFiles('requirements-desktop.txt', 'scripts/packaging/python-version.txt') }}
+          restore-keys: |
+            pip-macos-
+
+      - uses: actions/cache@v4
+        with:
+          path: apps/web/node_modules
+          key: web-nm-${{ hashFiles('apps/web/package-lock.json') }}
+          restore-keys: |
+            web-nm-
+
+      - uses: actions/cache@v4
+        with:
+          path: apps/desktop/node_modules
+          key: desktop-nm-${{ hashFiles('apps/desktop/package-lock.json') }}
+          restore-keys: |
+            desktop-nm-
+
+      - name: Ensure packaging scripts executable
+        run: chmod +x scripts/packaging/*.sh
+
+      - name: Export macOS icon
+        run: ./scripts/packaging/export-icns.sh
+
+      - name: Prepare runtime
+        run: ./scripts/packaging/prepare-runtime.sh
+
+      - name: Build installer
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npx electron-builder --mac --arm64 --publish never
+
+      - name: Report artifact sizes
+        run: |
+          {
+            echo "## macOS arm64 artifacts"
+            find apps/desktop/dist -maxdepth 1 -type f -exec ls -lh {} \;
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/*.yml
+            apps/desktop/dist/*.yaml
+            apps/desktop/dist/*.blockmap
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs:
+      - build-windows
+      - build-macos-x64
+      - build-macos-arm64
+    if: >-
+      ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && (
+        needs.build-windows.result == 'success' ||
+        needs.build-macos-x64.result == 'success' ||
+        needs.build-macos-arm64.result == 'success'
+      ) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: "*"
+          merge-multiple: true
+
+      - name: Summarize release assets
+        run: |
+          echo "## Release asset sizes" >> "$GITHUB_STEP_SUMMARY"
+          find release-assets -type f | sort | while read -r f; do
+            size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f")
+            human=$(numfmt --to=iec-i --suffix=B "$size" 2>/dev/null || echo "${size}B")
+            echo "- \`$(basename "$f")\`: $human" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/**
+          draft: false
+          prerelease: false
+          generate_release_notes: true

@@ -24,6 +24,7 @@ from apps.api.routes.ui_prefs import router as ui_prefs_router
 from apps.api.routes.generation_queue import router as generation_queue_router
 from apps.api.websocket.handler import router as ws_router
 from apps.api.state import state
+from apps.api.desktop_static import mount_desktop_static_if_configured
 
 logger = logging.getLogger("apps.api")
 
@@ -134,6 +135,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 def health():
     """健康检查。"""
     return {"status": "ok"}
+
+
+mount_desktop_static_if_configured(app)
 
 
 if __name__ == "__main__":

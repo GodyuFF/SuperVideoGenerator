@@ -2,8 +2,9 @@
  * Electron 主进程：无菜单栏窗口 + 自动拉起 API/Vite + 加载前端。
  */
 
-const { app, BrowserWindow, Menu, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, dialog } = require("electron");
 const fs = require("node:fs/promises");
+const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const {
@@ -11,6 +12,9 @@ const {
   guessMime,
 } = require("./mediaPath.cjs");
 const { ensureDevServers } = require("./devServers.cjs");
+const { resolveUserDataRoot } = require("./userDataPaths.cjs");
+const { ensureProdApi, resolveRuntimeRoot } = require("./prodServers.cjs");
+const { initUpdater } = require("./updater.cjs");
 
 /** 仓库根目录（apps/desktop 的上两级）。 */
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -22,6 +26,14 @@ const APP_ICON = path.join(__dirname, "icon.ico");
 if (process.platform === "win32") {
   app.setAppUserModelId("com.supervideogenerator.desktop");
 }
+/** 用户数据根目录（logs、.env、默认 data 父路径）。 */
+const USER_DATA_ROOT = resolveUserDataRoot(
+  process.env,
+  process.platform,
+  os.homedir(),
+  process.env.LOCALAPPDATA || "",
+);
+
 /**
  * 解析 data 根目录。
  * @returns {string}
@@ -31,18 +43,33 @@ function resolveDataRoot() {
   if (fromEnv && fromEnv.trim()) {
     return path.resolve(fromEnv.trim());
   }
+  if (app.isPackaged) {
+    return path.join(USER_DATA_ROOT, "data");
+  }
   return path.join(REPO_ROOT, "data");
 }
 
 const DATA_ROOT = resolveDataRoot();
-const WEB_URL =
+const DEV_WEB_URL =
   process.env.DESKTOP_WEB_URL || "http://localhost:5173";
+const PACKAGED_WEB_URL = "http://127.0.0.1:8000/";
+
+/**
+ * 当前运行模式下的前端入口 URL。
+ * @returns {string}
+ */
+function getActiveWebUrl() {
+  return app.isPackaged ? PACKAGED_WEB_URL : DEV_WEB_URL;
+}
 
 /** 桌面冷启动胶片动画页（与 Web 启动页视觉一致）。 */
 const SPLASH_BOOT_HTML = path.join(__dirname, "splash-boot.html");
 
 /** @type {null | { stop: () => void, logPath?: string }} */
 let managedServers = null;
+
+/** @type {BrowserWindow | null} */
+let mainWindow = null;
 
 /**
  * 生成启动失败页 HTML。
@@ -99,6 +126,13 @@ function createWindow() {
     if (!win.isDestroyed() && !win.isVisible()) win.show();
   };
 
+  mainWindow = win;
+  win.on("closed", () => {
+    if (mainWindow === win) {
+      mainWindow = null;
+    }
+  });
+
   win.once("ready-to-show", reveal);
   setTimeout(reveal, 800);
 
@@ -111,7 +145,7 @@ function createWindow() {
       );
       reveal();
       setTimeout(() => {
-        if (!win.isDestroyed()) void win.loadURL(WEB_URL);
+        if (!win.isDestroyed()) void win.loadURL(getActiveWebUrl());
       }, 1500);
     },
   );
@@ -144,11 +178,15 @@ function registerMediaIpc() {
     };
   });
 
+  ipcMain.handle("desktop:getVersion", async () => app.getVersion());
+
   ipcMain.handle("desktop:getInfo", async () => ({
     isDesktop: true,
+    packaged: app.isPackaged,
     dataRoot: DATA_ROOT,
-    webUrl: WEB_URL,
-    repoRoot: REPO_ROOT,
+    webUrl: getActiveWebUrl(),
+    repoRoot: app.isPackaged ? "" : REPO_ROOT,
+    appVersion: app.getVersion(),
   }));
 }
 
@@ -158,11 +196,39 @@ function registerMediaIpc() {
  */
 async function boot() {
   registerMediaIpc();
+  initUpdater({
+    app,
+    dialog,
+    ipcMain,
+    getMainWindow: () => mainWindow,
+  });
   const win = createWindow();
   void win.loadFile(SPLASH_BOOT_HTML);
 
   try {
-    managedServers = await ensureDevServers(REPO_ROOT, { webUrl: WEB_URL });
+    if (app.isPackaged) {
+      const runtimeRoot = resolveRuntimeRoot(process.resourcesPath);
+      managedServers = await ensureProdApi(runtimeRoot, USER_DATA_ROOT);
+      const url = PACKAGED_WEB_URL;
+      if (!managedServers.apiReady) {
+        const logHint = managedServers.logPath
+          ? `<br/><br/><code>${managedServers.logPath}</code>`
+          : "";
+        void win.loadURL(
+          `data:text/html;charset=utf-8,${encodeURIComponent(
+            errorPageHtml(
+              `本地 API（:8000）未就绪。请查看日志或重启应用。${logHint}`,
+            ),
+          )}`,
+        );
+        return;
+      }
+      console.log(`[desktop] loadURL ${url}`);
+      void win.loadURL(url);
+      return;
+    }
+
+    managedServers = await ensureDevServers(REPO_ROOT, { webUrl: DEV_WEB_URL });
     if (!managedServers.webReady) {
       const logHint = managedServers.logPath
         ? `<br/><br/><code>${managedServers.logPath}</code>`
@@ -176,8 +242,8 @@ async function boot() {
       );
       return;
     }
-    console.log(`[desktop] loadURL ${WEB_URL}`);
-    void win.loadURL(WEB_URL);
+    console.log(`[desktop] loadURL ${DEV_WEB_URL}`);
+    void win.loadURL(DEV_WEB_URL);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[desktop] 启动失败: ${message}`);

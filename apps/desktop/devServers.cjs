@@ -269,6 +269,7 @@ async function ensureDevServers(repoRoot, options = {}) {
 module.exports = {
   probeUrl,
   waitForAnyUrl,
+  spawnHidden,
   ensureDevServers,
   resolveTooling,
   viteProbeUrls,

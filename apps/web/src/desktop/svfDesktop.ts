@@ -3,7 +3,22 @@
  */
 
 import "./types";
-import type { SvfDesktopApi } from "./types";
+import type {
+  DesktopUpdateCheckResult,
+  DesktopUpdateState,
+  SvfDesktopApi,
+  SvfDesktopInfo,
+} from "./types";
+
+export type {
+  DesktopMediaBytes,
+  DesktopQuitInstallResult,
+  DesktopUpdateCheckResult,
+  DesktopUpdateState,
+  DesktopUpdateStatus,
+  SvfDesktopApi,
+  SvfDesktopInfo,
+} from "./types";
 
 /** 是否运行在 Electron 壳内。 */
 export function isSvfDesktop(): boolean {
@@ -15,4 +30,33 @@ export function getSvfDesktop(): SvfDesktopApi | null {
   const api = window.svfDesktop;
   if (!api?.isDesktop) return null;
   return api;
+}
+
+/** 取得应用版本号；非桌面环境返回 null。 */
+export async function getSvfDesktopVersion(): Promise<string | null> {
+  const api = getSvfDesktop();
+  if (!api) return null;
+  return api.getVersion();
+}
+
+/** 是否为已打包桌面应用（可检查更新）。 */
+export async function isPackagedDesktopApp(): Promise<boolean> {
+  const api = getSvfDesktop();
+  if (!api) return false;
+  const info = await api.getInfo();
+  return info.packaged;
+}
+
+/** 拉取当前自动更新状态。 */
+export async function getDesktopUpdateState(): Promise<DesktopUpdateState | null> {
+  const api = getSvfDesktop();
+  if (!api) return null;
+  return api.getUpdateState();
+}
+
+/** 触发 GitHub Releases 更新检查。 */
+export async function checkDesktopUpdates(): Promise<DesktopUpdateCheckResult | null> {
+  const api = getSvfDesktop();
+  if (!api) return null;
+  return api.checkForUpdates();
 }

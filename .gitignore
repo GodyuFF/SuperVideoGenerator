@@ -1,4 +1,4 @@
-data/
+﻿/data/
 .pytest_cache/
 __pycache__/
 *.pyc
@@ -6,6 +6,8 @@ __pycache__/
 node_modules/
 apps/web/dist/
 apps/web/node_modules/
+apps/desktop/runtime/
+apps/desktop/dist/
 apps/desktop/node_modules/
 apps/desktop/_einstall/
 apps/remotion/
@@ -20,10 +22,14 @@ MoneyPrinterTurbo/
 # 构建/测试产物
 *.egg-info/
 fake_*.mp4
+*.exe
+*.dmg
+*.blockmap
+/shot_pipeline_out.mp4
 
 # IDE / Cursor
 .idea/
 .cursor/
+.claude/
 .superpowers/
-
 .worktrees/

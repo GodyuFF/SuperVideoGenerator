@@ -1,0 +1,59 @@
+appId: com.supervideogenerator.desktop
+productName: SuperVideoGenerator
+copyright: Copyright © SuperVideoGenerator contributors
+directories:
+  output: dist
+  buildResources: build
+files:
+  - main.cjs
+  - preload.cjs
+  - prodServers.cjs
+  - devServers.cjs
+  - userDataPaths.cjs
+  - mediaPath.cjs
+  - updater.cjs
+  - splash-boot.html
+  - icon.ico
+  - icon.png
+  - package.json
+extraResources:
+  - from: runtime
+    to: runtime
+    filter:
+      - "**/*"
+forceCodeSigning: false
+generateUpdatesFilesForAllChannels: false
+win:
+  signAndEditExecutable: false
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: icon.ico
+  artifactName: SuperVideoGenerator-Setup-${version}-x64.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.video
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  artifactName: SuperVideoGenerator-${version}-${arch}.${ext}
+dmg:
+  artifactName: SuperVideoGenerator-${version}-${arch}.dmg
+publish:
+  provider: github
+  releaseType: release

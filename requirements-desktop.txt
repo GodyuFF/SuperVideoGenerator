@@ -1,0 +1,15 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+pydantic-settings>=2.2
+websockets>=12.0
+httpx>=0.27
+jsonschema>=4.21
+edge-tts>=7.2
+pydub>=0.25
+imageio-ffmpeg>=0.5.1
+openai>=1.0
+# WhisperX 强制对齐（运行时需 NVIDIA CUDA；无 GPU 时回退字数比例切分）
+torch>=2.0
+torchaudio>=2.0
+whisperx>=3.1.0

@@ -153,7 +153,31 @@ cd apps/web && npm run dev
 - **桌面（推荐）**：`create-desktop-shortcut.bat` 后双击桌面图标；或直接 `launch-desktop.vbs`。
 - **浏览器**：运行 `dev.bat` 后打开 [http://localhost:5173](http://localhost:5173)。
 
-### 4. 运行测试
+### 4. 桌面应用（可选）
+
+**开发壳**（需本机 Python + Node）：
+
+```bat
+dev-desktop.bat
+```
+
+**完整离线安装包**：从 [GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) 下载安装。个人开源默认未签名，首次打开见 [桌面打包与发版指南](docs/desktop-packaging.md)。
+
+**维护者本地打 Windows 包**：
+
+```powershell
+.\scripts\packaging\build-desktop.ps1
+```
+
+**正式发布**（对齐 `apps/desktop/package.json` 的 `version`）：
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+触发 [Release Desktop](.github/workflows/release-desktop.yml) 工作流，产出 Win NSIS + Mac DMG 并上传 GitHub Release。
+
+### 5. 运行测试
 
 ```bash
 pytest tests/ -v
@@ -183,6 +207,7 @@ pytest tests/ -v
 | [提示词架构](docs/prompt-architecture.md) | `core/llm/prompt` 固定/动态分层 |
 | [Edit Studio 规格](docs/edit-studio-plan.md) | 多轨时间轴、FFmpeg 导出 |
 | [工具参考](docs/tools-reference.md) | Tool Registry 与各域工具说明 |
+| [桌面打包与发版](docs/desktop-packaging.md) | 未签名安装包、SmartScreen/Gatekeeper、tag 发版 |
 
 ---
 
