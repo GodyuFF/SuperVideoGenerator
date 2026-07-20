@@ -182,7 +182,7 @@ export function EditorStudioContent({
           <div className="classic-load-error">
             <p className="board-error">{noTimelineHint}</p>
             <p className="muted text-sm">
-              请确认后端 API 已启动（<code>dev.bat</code> 或 <code>uvicorn apps.api.main:app --port 8000</code>），且该剧本已生成剪辑时间轴。
+              请确认后端 API 已启动（<code>launch-desktop</code> 或 <code>uvicorn apps.api.main:app --port 8000</code>），且该剧本已生成剪辑时间轴。
             </p>
             <button type="button" className="btn-secondary btn-sm" onClick={() => void fetchTimeline()}>
               {t("editor:retryLoad")}

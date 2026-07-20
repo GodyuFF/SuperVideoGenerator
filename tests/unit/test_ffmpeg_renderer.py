@@ -30,7 +30,8 @@ def enabled_export_manager() -> ExportConfigManager:
     return mgr
 
 
-def test_export_timeline_to_mp4_mock_ffmpeg(timeline_store, enabled_export_manager):
+def test_export_timeline_to_mp4_mock_ffmpeg(timeline_store, enabled_export_manager, tmp_path):
+    """mock FFmpeg 时导出应写入临时输出路径。"""
     script_id = timeline_store._test_script_id  # type: ignore[attr-defined]
     project_id = timeline_store._test_project_id  # type: ignore[attr-defined]
     plan = timeline_store.get_video_plan_for_script(script_id)
@@ -42,7 +43,7 @@ def test_export_timeline_to_mp4_mock_ffmpeg(timeline_store, enabled_export_manag
         tts_by_shot={plan.shots[0].id: timeline_store._test_audio_id},  # type: ignore[attr-defined]
     )
     timeline_store.set_edit_timeline(timeline)
-    out = Path("fake_out.mp4")
+    out = tmp_path / "fake_out.mp4"
 
     with patch("core.edit.ffmpeg_renderer._run_ffmpeg"), patch(
         "core.edit.ffmpeg_renderer.is_ffmpeg_available", return_value=True
@@ -64,7 +65,9 @@ def test_export_timeline_to_mp4_mock_ffmpeg(timeline_store, enabled_export_manag
         assert result.segment_count >= 1
 
 
-def test_export_timeline_muxes_audio_when_timeline_has_audio(timeline_store, enabled_export_manager):
+def test_export_timeline_muxes_audio_when_timeline_has_audio(
+    timeline_store, enabled_export_manager, tmp_path
+):
     """时间轴含 audio 轨时导出应混音并传入 _mux_av。"""
     script_id = timeline_store._test_script_id  # type: ignore[attr-defined]
     project_id = timeline_store._test_project_id  # type: ignore[attr-defined]
@@ -75,7 +78,7 @@ def test_export_timeline_muxes_audio_when_timeline_has_audio(timeline_store, ena
     timeline = timeline_store.get_edit_timeline_for_script(script_id)
     assert timeline
     assert timeline.tracks.get("audio")
-    out = Path("fake_audio_mux.mp4")
+    out = tmp_path / "fake_audio_mux.mp4"
 
     with patch("core.edit.ffmpeg_renderer._run_ffmpeg"), patch(
         "core.edit.ffmpeg_renderer.is_ffmpeg_available", return_value=True
@@ -112,7 +115,7 @@ def test_transform_needs_overlay_detects_scaled_transform():
     assert _transform_needs_overlay({"x": 0.5, "y": 0.5, "width": 1, "height": 1}) is False
 
 
-def test_export_timeline_burns_subtitles(timeline_store, enabled_export_manager):
+def test_export_timeline_burns_subtitles(timeline_store, enabled_export_manager, tmp_path):
     """含 subtitle 轨时导出应调用 burn_subtitles。"""
     import shutil
 
@@ -127,7 +130,7 @@ def test_export_timeline_burns_subtitles(timeline_store, enabled_export_manager)
         tts_by_shot={plan.shots[0].id: timeline_store._test_audio_id},  # type: ignore[attr-defined]
     )
     assert timeline.tracks.get("subtitle")
-    out = Path("fake_subs.mp4")
+    out = tmp_path / "fake_subs.mp4"
 
     def fake_composite(**kwargs):
         output_path = kwargs["temp_dir"] / f"slice_{kwargs['idx']:03d}.mp4"
@@ -169,7 +172,7 @@ def test_export_timeline_burns_subtitles(timeline_store, enabled_export_manager)
         burn.assert_called_once()
 
 
-def test_export_timeline_skip_subtitles(timeline_store, enabled_export_manager):
+def test_export_timeline_skip_subtitles(timeline_store, enabled_export_manager, tmp_path):
     """skip_subtitles=True 时不回填字幕轨、不调用 burn_subtitles。"""
     script_id = timeline_store._test_script_id  # type: ignore[attr-defined]
     project_id = timeline_store._test_project_id  # type: ignore[attr-defined]
@@ -184,7 +187,7 @@ def test_export_timeline_skip_subtitles(timeline_store, enabled_export_manager):
     timeline = timeline.model_copy(
         update={"tracks": {**timeline.tracks, "subtitle": []}}
     )
-    out = Path("fake_skip_subs.mp4")
+    out = tmp_path / "fake_skip_subs.mp4"
 
     with patch("core.edit.ffmpeg_renderer._run_ffmpeg"), patch(
         "core.edit.ffmpeg_renderer.is_ffmpeg_available", return_value=True
@@ -257,7 +260,10 @@ def test_compose_timeline_plan_multi_layer_slices(timeline_store):
     assert multi
 
 
-def test_export_timeline_multilayer_uses_composite_slice(timeline_store, enabled_export_manager):
+def test_export_timeline_multilayer_uses_composite_slice(
+    timeline_store, enabled_export_manager, tmp_path
+):
+    """多层时间轴导出应走 composite slice 路径。"""
     script_id = timeline_store._test_script_id  # type: ignore[attr-defined]
     project_id = timeline_store._test_project_id  # type: ignore[attr-defined]
     plan = timeline_store.get_video_plan_for_script(script_id)
@@ -294,7 +300,7 @@ def test_export_timeline_multilayer_uses_composite_slice(timeline_store, enabled
         }
     )
     timeline_store.set_edit_timeline(timeline)
-    out = Path("fake_multilayer.mp4")
+    out = tmp_path / "fake_multilayer.mp4"
 
     def fake_composite(**kwargs):
         output_path = kwargs["temp_dir"] / f"slice_{kwargs['idx']:03d}.mp4"
@@ -322,7 +328,8 @@ def test_export_timeline_multilayer_uses_composite_slice(timeline_store, enabled
     assert result.segment_count >= 1
 
 
-def test_export_timeline_rejects_missing_image(store_with_plan, enabled_export_manager):
+def test_export_timeline_rejects_missing_image(store_with_plan, enabled_export_manager, tmp_path):
+    """缺少可访问图片时应拒绝导出。"""
     from core.models.entities import EditClip, EditTimeline, EditVideoLayer
 
     script_id = store_with_plan._test_script_id  # type: ignore[attr-defined]
@@ -345,7 +352,7 @@ def test_export_timeline_rejects_missing_image(store_with_plan, enabled_export_m
             )
         ],
     )
-    out = Path("fake_no_media.mp4")
+    out = tmp_path / "fake_no_media.mp4"
     with patch("core.edit.ffmpeg_renderer.is_ffmpeg_available", return_value=True):
         with pytest.raises(FfmpegExportError, match="缺少可访问图片"):
             export_timeline_to_mp4(
@@ -360,8 +367,9 @@ def test_export_timeline_rejects_missing_image(store_with_plan, enabled_export_m
 
 
 def test_export_timeline_raises_friendly_message_when_ffmpeg_missing(
-    timeline_store, enabled_export_manager
+    timeline_store, enabled_export_manager, tmp_path
 ):
+    """未安装 FFmpeg 时应给出友好错误。"""
     script_id = timeline_store._test_script_id  # type: ignore[attr-defined]
     project_id = timeline_store._test_project_id  # type: ignore[attr-defined]
     plan = timeline_store.get_video_plan_for_script(script_id)
@@ -372,7 +380,7 @@ def test_export_timeline_raises_friendly_message_when_ffmpeg_missing(
         plan=plan,
     )
     timeline_store.set_edit_timeline(timeline)
-    out = Path("fake_out.mp4")
+    out = tmp_path / "fake_out.mp4"
 
     with patch("core.edit.ffmpeg_renderer.is_ffmpeg_available", return_value=False):
         with pytest.raises(FfmpegExportError, match="未找到 FFmpeg"):
@@ -401,7 +409,10 @@ def test_extract_ffmpeg_error_skips_version_header():
     assert "Error while opening encoder" in err
 
 
-def test_export_timeline_rejects_same_layer_overlap(store_with_plan, enabled_export_manager):
+def test_export_timeline_rejects_same_layer_overlap(
+    store_with_plan, enabled_export_manager, tmp_path
+):
+    """同层 clip 重叠时应拒绝导出。"""
     from core.edit.timeline import normalize_tracks
     from core.models.entities import EditTimeline, MediaAsset, MediaAssetType
 
@@ -463,7 +474,7 @@ def test_export_timeline_rejects_same_layer_overlap(store_with_plan, enabled_exp
             }
         ],
     )
-    out = Path("fake_overlap.mp4")
+    out = tmp_path / "fake_overlap.mp4"
     with patch("core.edit.ffmpeg_renderer.is_ffmpeg_available", return_value=True):
         with pytest.raises(FfmpegExportError, match="同层 clip 重叠"):
             export_timeline_to_mp4(

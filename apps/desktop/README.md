@@ -15,22 +15,22 @@
 
 ## 开发壳：像 exe 一样启动（推荐）
 
-仓库根目录执行一次：
+仓库根目录双击：
 
-```bat
-create-desktop-shortcut.bat
+- `launch-desktop.vbs` — 静默启动（推荐，无黑框）
+- `launch-desktop.bat` — 带日志的控制台启动
+
+可选：生成桌面快捷方式（猫头鹰图标）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\update_desktop_shortcut.ps1
 ```
 
-桌面会出现 **SuperVideoGenerator** 快捷方式（圆软小夜枭图标，与窗口/浏览器标签一致）。之后：
+之后：
 
-1. 双击该图标（内部走 `launch-desktop.vbs`，无黑框）
+1. 双击桌面图标或 `launch-desktop.vbs`
 2. Electron 自动拉起 API + Vite（若未在运行）
 3. 打开应用窗口；关闭窗口即退出（并结束本进程拉起的后台服务）
-
-也可直接双击：
-
-- `launch-desktop.vbs` — 静默启动（推荐）
-- `launch-desktop.bat` / `dev-desktop.bat` — 带日志的控制台启动
 
 > 开发壳**不是**离线安装包：不捆绑 Python/Node，依赖仓库与本机环境。
 

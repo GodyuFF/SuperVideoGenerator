@@ -3,7 +3,7 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 :: Silent-ish console launcher (logs visible). Prefer double-click launch-desktop.vbs
-:: or the Desktop shortcut created by create-desktop-shortcut.bat
+:: or Desktop shortcut via scripts\update_desktop_shortcut.ps1
 
 if not defined ELECTRON_MIRROR set "ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/"
 set "BROWSER=none"

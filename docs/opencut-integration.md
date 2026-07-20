@@ -141,8 +141,15 @@ Key 申请：<https://freesound.org/apiv2/apply>
 ## 开发启动
 
 ```bat
-dev.bat        # Windows：API + 前端（先轮询 /health 再启前端，最多 60s）
-dev.bat --web  # 仅前端 http://localhost:5173
+launch-desktop.vbs   # Windows：Electron 静默启动（自动拉 API + Vite）
+launch-desktop.bat   # 同上，显示控制台日志
+```
+
+浏览器模式（无根目录 bat）：
+
+```bash
+uvicorn apps.api.main:app --port 8000
+cd apps/web && npm run dev
 ```
 
 前端构建：`npm run build`（Vite + opencut-wasm）；类型检查：`npm run typecheck`（排除 opencut 子树，集成层文件不直接 typecheck opencut 内部）。

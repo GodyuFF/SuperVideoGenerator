@@ -92,7 +92,7 @@
 
   "failedLoadProject": "Failed to load project",
 
-  "embeddedRetryHint": "Ensure the backend API is running (dev.bat or uvicorn) and refresh the page.",
+  "embeddedRetryHint": "Ensure the backend API is running (launch-desktop or uvicorn) and refresh the page.",
 
   "retryLoad": "Retry",
 

@@ -48,13 +48,15 @@ def test_shot_multitrack_timeline_compose_and_validate(timeline_store) -> None:
     assert validation.ready
 
 
-def test_shot_multitrack_ffmpeg_export_mock(timeline_store, enabled_export_manager) -> None:
+def test_shot_multitrack_ffmpeg_export_mock(
+    timeline_store, enabled_export_manager, tmp_path
+) -> None:
     """镜内多轨投影时间轴应可走 FFmpeg 导出路径（mock subprocess）。"""
     script_id = timeline_store._test_script_id  # type: ignore[attr-defined]
     project_id = timeline_store._test_project_id  # type: ignore[attr-defined]
     timeline = timeline_store.get_edit_timeline_for_script(script_id)
     assert timeline
-    out = Path("shot_pipeline_out.mp4")
+    out = tmp_path / "shot_pipeline_out.mp4"
 
     with patch("core.edit.ffmpeg_renderer._run_ffmpeg"), patch(
         "core.edit.ffmpeg_renderer.is_ffmpeg_available", return_value=True

@@ -95,7 +95,7 @@ chmod +x scripts/packaging/*.sh
 
 | 模式 | 适用对象 | 启动方式 |
 |------|----------|----------|
-| **开发壳** | 仓库贡献者 | `dev-desktop.bat`、`create-desktop-shortcut.bat` 或 `cd apps/desktop && npm start`；依赖本机 Python venv + Node，加载 Vite `:5173` |
+| **开发壳** | 仓库贡献者 | `launch-desktop.vbs` / `launch-desktop.bat`，或 `cd apps/desktop && npm start`；可选 `scripts/update_desktop_shortcut.ps1`；依赖本机 Python venv + Node，加载 Vite `:5173` |
 | **完整安装包** | 终端用户 | 从 Releases 安装；内置嵌入式 Python + 生产前端，API 与 UI 同源 `http://127.0.0.1:8000` |
 
 详见 [`apps/desktop/README.md`](../apps/desktop/README.md)。

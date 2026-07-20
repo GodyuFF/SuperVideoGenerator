@@ -1,6 +1,6 @@
 # SuperVideoGenerator 代码设计计划
 
-> 版本：v0.1 | 对应产品手册 v0.1 | 更新：2026-07-20（video_clip 看板 preview/preview_url 分离；RAG async_bridge；桌面安装包打包与发版）
+> 版本：v0.1 | 对应产品手册 v0.1 | 更新：2026-07-20（仓库清理：根目录仅 launch-desktop；video_clip 看板 preview/preview_url 分离；RAG async_bridge；桌面安装包打包与发版）
 
 ## 1. 目标
 
@@ -97,7 +97,7 @@ SuperVideoGenerator/
 
 ### 2.3 桌面安装包（`apps/desktop` + `scripts/packaging`）
 
-- **开发壳**：`dev-desktop.bat` / `apps/desktop` 的 `npm start`；复用本机 venv 与 Vite，见 [`apps/desktop/README.md`](../apps/desktop/README.md)。
+- **开发壳**：根目录 `launch-desktop.vbs` / `launch-desktop.bat`，或 `apps/desktop` 的 `npm start`；复用本机 venv 与 Vite，见 [`apps/desktop/README.md`](../apps/desktop/README.md)。
 - **生产包**：`prepare-runtime.*` 组装 `apps/desktop/runtime/`（嵌入式 Python、`apps/web/dist`、`api_boot.py`）；`electron-builder` 产出未签名 NSIS / DMG。
 - **发版**：`git tag vX.Y.Z && git push origin vX.Y.Z` 触发 `release-desktop.yml`；用户文档见 [`desktop-packaging.md`](desktop-packaging.md)。
 - **自动更新**：`electron-updater` + GitHub Releases；设置页「检查更新」（仅打包版）。

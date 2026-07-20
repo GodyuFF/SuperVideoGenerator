@@ -102,7 +102,7 @@ apps/web/src/components/assetDetail/
 
 - **主题**：仅猫头鹰头部主体 — **圆耳 + 圆头**、镜头眼（更大珊瑚瞳 + 高光）、钝椭圆喙、轻腮红、取景器四角（圆角端点）；**无**颏下齿孔条；**不含**大圆角应用底板装饰层。
 - **Web**：[`favicon.svg`](../apps/web/public/favicon.svg)、[`icon.svg`](../apps/web/public/icon.svg)、[`icon.png`](../apps/web/public/icon.png) / [`favicon-32.png`](../apps/web/public/favicon-32.png)；`index.html` 引用 SVG + PNG + `theme-color=#080a0f`。
-- **桌面**：[`apps/desktop/icon.ico`](../apps/desktop/icon.ico) + [`icon.png`](../apps/desktop/icon.png) + 源图 [`icon-source.png`](../apps/desktop/icon-source.png)；Electron `BrowserWindow({ icon })`；`create-desktop-shortcut.bat` 写入桌面 `.lnk`。
+- **桌面**：[`apps/desktop/icon.ico`](../apps/desktop/icon.ico) + [`icon.png`](../apps/desktop/icon.png) + 源图 [`icon-source.png`](../apps/desktop/icon-source.png)；Electron `BrowserWindow({ icon })`；`scripts/update_desktop_shortcut.ps1` 写入桌面 `.lnk`。
 - **再生**：`python scripts/export_owl_icon.py`（委托 `scripts/export_owl_icon.mjs` + `apps/web` 的 sharp，从 `icon.svg` 栅格化方正深空底 PNG/ICO）。
 - **色值**：`#080a0f` / `#121826` / `#1a2233` / `#2a3347` / `#3d465c` / `#8e9aaf` / `#e0634a` / `#f4d4cc`。
 

@@ -2,7 +2,7 @@
 
 > 版本：v0.1  
 > 更新：2026-07-17 — 剧本 `title` 以 Script 实体为准；创建/设计确认后锁定，对话不得改写；顶栏与看板展示读 `Script.title`（用户 PATCH 可改）；桌面完整离线安装包分发。  
-> 更新日期：2026-07-20（分镜「剪辑轴」改为 EditTimeline 全片摘要；create_frames 支持仅 sub_shot_id；source_frame 自动绑）
+> 更新日期：2026-07-20（仓库清理：根目录仅 `launch-desktop.vbs`/`.bat`；分镜「剪辑轴」改为 EditTimeline 全片摘要；create_frames 支持仅 sub_shot_id；source_frame 自动绑）
 > 状态：规划阶段
 
 ---

@@ -92,7 +92,7 @@
 
   "failedLoadProject": "加载项目失败",
 
-  "embeddedRetryHint": "请确认后端 API 已启动（dev.bat 或 uvicorn），并刷新页面重试。",
+  "embeddedRetryHint": "请确认后端 API 已启动（launch-desktop 或 uvicorn），并刷新页面重试。",
 
   "retryLoad": "重试",
 

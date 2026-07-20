@@ -131,35 +131,32 @@ SVG_VIDEO_GEN_MODEL=doubao-seedance-2-0
 
 ### 3. 启动服务
 
-**Windows（推荐）：**
+**Windows（推荐，根目录仅此两个入口）：**
 
 ```bat
-create-desktop-shortcut.bat  # 一次：桌面生成猫头鹰图标快捷方式（之后双击即开，像 exe）
 launch-desktop.vbs           # 静默启动桌面端（无黑框；Electron 自动拉 API+Vite）
 launch-desktop.bat           # 同上，但显示控制台日志
-dev-desktop.bat              # 开发别名 → launch-desktop.bat
-dev.bat                      # 浏览器模式：只起 API + Vite，需手动打开 http://localhost:5173
-start_api.bat                # 仅后端
-start_web.bat                # 仅前端 Vite
 ```
 
-**命令行（浏览器模式）：**
+可选：一次生成桌面快捷方式（猫头鹰图标）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\update_desktop_shortcut.ps1
+```
+
+**命令行（浏览器模式，无根目录 bat）：**
 
 ```bash
-uvicorn apps.api.main:app --port 8000
+.venv\Scripts\python.exe -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
 cd apps/web && npm run dev
 ```
 
-- **桌面（推荐）**：`create-desktop-shortcut.bat` 后双击桌面图标；或直接 `launch-desktop.vbs`。
-- **浏览器**：运行 `dev.bat` 后打开 [http://localhost:5173](http://localhost:5173)。
+- **桌面（推荐）**：双击 `launch-desktop.vbs`，或使用上述快捷方式。
+- **浏览器**：API + Vite 就绪后打开 [http://localhost:5173](http://localhost:5173)。
 
 ### 4. 桌面应用（可选）
 
-**开发壳**（需本机 Python + Node）：
-
-```bat
-dev-desktop.bat
-```
+**开发壳**（需本机 Python + Node）：双击 `launch-desktop.vbs` / `launch-desktop.bat`，或 `cd apps/desktop && npm start`。
 
 **完整离线安装包**：从 [GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) 下载安装。个人开源默认未签名，首次打开见 [桌面打包与发版指南](docs/desktop-packaging.md)。
 
