@@ -43,7 +43,7 @@
           data-i18n="ctaGithub"
         ></a>
       </div>
-      <div class="viewfinder">
+      <div class="viewfinder" id="film">
         <div class="viewfinder-light" aria-hidden="true"></div>
         <video
           id="demo"
@@ -88,12 +88,6 @@
           <a class="step-final-link" href="#film" data-i18n="ctaWatch"></a>
         </article>
       </div>
-    </section>
-
-    <section id="film">
-      <h2 data-i18n="stepFinal"></h2>
-      <p data-i18n="stepFinalBody"></p>
-      <button type="button" class="btn btn-primary cta-watch" data-i18n="ctaWatch"></button>
     </section>
 
     <section class="caps">
@@ -143,6 +137,10 @@
       href="https://github.com/GodyuFF/SuperVideoGenerator/blob/main/THIRD_PARTY_NOTICES.md"
       data-i18n="footerNotices"
     ></a>
+    <div class="topbar-lang" role="group" aria-label="Language">
+      <button type="button" data-lang-set="zh" data-i18n="langZh"></button>
+      <button type="button" data-lang-set="en" data-i18n="langEn"></button>
+    </div>
   </footer>
 
   <script src="i18n.js"></script>
@@ -152,7 +150,7 @@
         var demo = document.getElementById("demo");
         if (!demo) return;
         demo.scrollIntoView({ behavior: "smooth", block: "center" });
-        demo.play();
+        demo.play().catch(function () {});
       });
     });
   </script>

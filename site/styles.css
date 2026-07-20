@@ -380,27 +380,6 @@ main > section {
   content: "→";
 }
 
-/* ── 成片区 ── */
-
-#film {
-  text-align: center;
-}
-
-#film h2 {
-  margin: 0 0 var(--space-sm);
-  font-family: var(--font-display);
-  font-size: 1.75rem;
-  font-weight: 500;
-}
-
-#film p {
-  margin: 0 0 var(--space-lg);
-  color: var(--film-muted);
-  max-width: 48ch;
-  margin-left: auto;
-  margin-right: auto;
-}
-
 /* ── 能力三格 ── */
 
 .caps-grid {
