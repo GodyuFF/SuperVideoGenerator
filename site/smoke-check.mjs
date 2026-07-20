@@ -4,7 +4,14 @@ import vm from "vm";
 import { fileURLToPath } from "url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const mustFiles = ["index.html", "styles.css", "i18n.js", "assets/demo-final.mp4", "assets/edit-timeline.png"];
+const mustFiles = [
+  "index.html",
+  "styles.css",
+  "i18n.js",
+  "assets/demo-final.mp4",
+  "assets/edit-timeline.png",
+  "assets/wechat-group-qr.png",
+];
 for (const f of mustFiles) {
   const p = path.join(root, f);
   if (!fs.existsSync(p)) {

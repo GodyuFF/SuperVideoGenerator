@@ -454,6 +454,107 @@ main > section {
   color: var(--film-accent);
 }
 
+/* ── 联系 ── */
+
+.contact-title {
+  margin: 0 0 var(--space-sm);
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 600;
+  color: var(--film-ink);
+}
+
+.contact-lead {
+  margin: 0 0 var(--space-xl);
+  max-width: 36rem;
+  color: var(--film-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.contact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.contact-card {
+  background: var(--film-surface);
+  border: 1px solid var(--film-border-subtle);
+  border-radius: 4px;
+  padding: var(--space-lg);
+}
+
+.contact-label {
+  margin: 0 0 var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--film-copper);
+}
+
+.contact-value {
+  margin: 0;
+  font-size: 1.05rem;
+  word-break: break-all;
+}
+
+.contact-value a {
+  color: var(--film-ink);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--film-accent) 45%, transparent);
+}
+
+.contact-value a:hover {
+  color: var(--film-accent);
+}
+
+.contact-mono {
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  color: var(--film-ink);
+  user-select: all;
+}
+
+.contact-hint {
+  margin: var(--space-sm) 0 0;
+  font-size: 0.8rem;
+  color: var(--film-muted);
+}
+
+.contact-card--qr {
+  text-align: center;
+}
+
+.contact-qr {
+  margin: 0;
+}
+
+.contact-qr img {
+  display: block;
+  width: min(100%, 220px);
+  height: auto;
+  margin: 0 auto;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.contact-qr figcaption {
+  margin-top: var(--space-md);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--film-muted);
+  text-align: left;
+}
+
+@media (max-width: 900px) {
+  .contact-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── 按钮 ── */
 
 .btn {
