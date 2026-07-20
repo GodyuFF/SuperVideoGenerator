@@ -1,4 +1,4 @@
-"""AI 视频生成配置（环境变量 SVG_VIDEO_GEN_*，支持 Agnes / 火山方舟 SeedDance）。"""
+"""AI 视频生成配置（环境变量 SVG_VIDEO_GEN_*，支持多 Provider）。"""
 
 from __future__ import annotations
 
@@ -7,9 +7,17 @@ from typing import Any
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core.llm.tools.shared.media_capability import list_video_provider_capabilities
 from core.llm.tools.volcengine.ark_common import DEFAULT_ARK_BASE_URL, DEFAULT_SEEDANCE_MODEL
 
-VIDEO_PROVIDERS = ("agnes", "volcengine")
+VIDEO_PROVIDERS = ("agnes", "volcengine", "kling", "runway", "fal")
+
+DEFAULT_KLING_BASE_URL = "https://api.klingai.com/v1"
+DEFAULT_KLING_MODEL = "kling-v3-omni-video"
+DEFAULT_RUNWAY_BASE_URL = "https://api.dev.runwayml.com/v1"
+DEFAULT_RUNWAY_MODEL = "gen4.5"
+DEFAULT_FAL_VIDEO_BASE_URL = "https://fal.run"
+DEFAULT_FAL_VIDEO_MODEL = "fal-ai/kling-video/v2.1/master/image-to-video"
 
 
 class VideoGenSettings(BaseSettings):
@@ -33,6 +41,8 @@ class VideoGenSettings(BaseSettings):
     # 默认串行，避免多 clip 叠压状态查询
     max_concurrency: int = 1
     trust_env: bool = False
+    fallback_provider: str = ""
+    fallback_model: str = ""
 
     model_config = SettingsConfigDict(
         env_prefix="SVG_VIDEO_GEN_",
@@ -55,7 +65,16 @@ class VideoGenConfigManager:
         s = self._settings
         if s.api_key and s.api_key.strip():
             return s.api_key.strip()
-        for env_name in ("SVG_VIDEO_GEN_API_KEY", "AGNES_API_KEY", "ARK_API_KEY"):
+        for env_name in (
+            "SVG_VIDEO_GEN_API_KEY",
+            "AGNES_API_KEY",
+            "ARK_API_KEY",
+            "KLING_API_KEY",
+            "KLING_ACCESS_KEY",
+            "RUNWAY_API_KEY",
+            "FAL_KEY",
+            "FAL_API_KEY",
+        ):
             val = os.getenv(env_name)
             if val and val.strip():
                 return val.strip()
@@ -71,11 +90,18 @@ class VideoGenConfigManager:
             "enabled": s.enabled,
             "provider": s.provider,
             "provider_label": (
-                "火山方舟 SeedDance" if s.provider == "volcengine" else "Agnes AI"
+                "火山方舟 SeedDance" if s.provider == "volcengine"
+                else "Kling AI" if s.provider == "kling"
+                else "Runway" if s.provider == "runway"
+                else "fal.ai" if s.provider == "fal"
+                else "Agnes AI"
             ),
             "available_providers": [
                 {"id": "agnes", "label": "Agnes AI"},
                 {"id": "volcengine", "label": "火山方舟 SeedDance"},
+                {"id": "kling", "label": "Kling AI"},
+                {"id": "runway", "label": "Runway"},
+                {"id": "fal", "label": "fal.ai"},
             ],
             "model": s.model,
             "base_url": s.base_url,
@@ -90,6 +116,9 @@ class VideoGenConfigManager:
             "max_concurrency": s.max_concurrency,
             "has_api_key": bool(self.resolved_api_key()),
             "active": self.is_available(),
+            "fallback_provider": s.fallback_provider,
+            "fallback_model": s.fallback_model,
+            "capabilities": list_video_provider_capabilities(),
         }
 
     def update(
@@ -107,6 +136,8 @@ class VideoGenConfigManager:
         create_min_interval_sec: float | None = None,
         create_max_attempts: int | None = None,
         max_concurrency: int | None = None,
+        fallback_provider: str | None = None,
+        fallback_model: str | None = None,
     ) -> dict[str, Any]:
         """更新视频生成运行时配置。"""
         if enabled is not None:
@@ -118,9 +149,34 @@ class VideoGenConfigManager:
             if provider == "volcengine" and self._settings.model == "agnes-video-v2.0":
                 self._settings.model = DEFAULT_SEEDANCE_MODEL
                 self._settings.base_url = DEFAULT_ARK_BASE_URL
+                self._settings.poll_interval_sec = max(self._settings.poll_interval_sec, 3.0)
+                self._settings.create_min_interval_sec = 0.0
             elif provider == "agnes" and self._settings.model == DEFAULT_SEEDANCE_MODEL:
                 self._settings.model = "agnes-video-v2.0"
                 self._settings.base_url = "https://apihub.agnes-ai.com/v1"
+                self._settings.poll_interval_sec = max(self._settings.poll_interval_sec, 15.0)
+                self._settings.create_min_interval_sec = max(self._settings.create_min_interval_sec, 60.0)
+            elif provider == "kling":
+                if self._settings.model in ("", "agnes-video-v2.0", DEFAULT_SEEDANCE_MODEL):
+                    self._settings.model = DEFAULT_KLING_MODEL
+                if not (self._settings.base_url or "").strip() or "agnes-ai.com" in (self._settings.base_url or ""):
+                    self._settings.base_url = DEFAULT_KLING_BASE_URL
+                self._settings.poll_interval_sec = max(self._settings.poll_interval_sec, 10.0)
+                self._settings.create_min_interval_sec = max(self._settings.create_min_interval_sec, 5.0)
+            elif provider == "runway":
+                if self._settings.model in ("", "agnes-video-v2.0", DEFAULT_SEEDANCE_MODEL, DEFAULT_KLING_MODEL):
+                    self._settings.model = DEFAULT_RUNWAY_MODEL
+                if not (self._settings.base_url or "").strip() or "agnes-ai.com" in (self._settings.base_url or ""):
+                    self._settings.base_url = DEFAULT_RUNWAY_BASE_URL
+                self._settings.poll_interval_sec = max(self._settings.poll_interval_sec, 10.0)
+                self._settings.create_min_interval_sec = max(self._settings.create_min_interval_sec, 5.0)
+            elif provider == "fal":
+                if self._settings.model in ("", "agnes-video-v2.0", DEFAULT_SEEDANCE_MODEL):
+                    self._settings.model = DEFAULT_FAL_VIDEO_MODEL
+                if not (self._settings.base_url or "").strip() or "agnes-ai.com" in (self._settings.base_url or ""):
+                    self._settings.base_url = DEFAULT_FAL_VIDEO_BASE_URL
+                self._settings.poll_interval_sec = max(self._settings.poll_interval_sec, 10.0)
+                self._settings.create_min_interval_sec = max(self._settings.create_min_interval_sec, 5.0)
         if model is not None:
             self._settings.model = model
         if api_key is not None:
@@ -145,6 +201,13 @@ class VideoGenConfigManager:
             self._settings.create_max_attempts = max(1, int(create_max_attempts))
         if max_concurrency is not None:
             self._settings.max_concurrency = max(1, int(max_concurrency))
+        if fallback_provider is not None:
+            fb = fallback_provider.strip().lower()
+            if fb and fb not in VIDEO_PROVIDERS:
+                raise ValueError(f"不支持的 fallback 视频服务商: {fb}")
+            self._settings.fallback_provider = fb
+        if fallback_model is not None:
+            self._settings.fallback_model = fallback_model.strip()
         return self.get_public_config()
 
 

@@ -1,5 +1,5 @@
 /**
- * 单条子镜卡片：可挂接多画面 / 多视频（各带时段），并提供剪辑轴入口。
+ * 单条子镜卡片：可挂接多画面 / 多视频（各带时段）；有 EditTimeline 时展示全片剪辑轴摘要。
  * 子镜槽位不挂角色资产；角色仅出现在配音幕（角色语音）。
  */
 
@@ -18,10 +18,12 @@ import {
   type StyleVideoGenMode,
   produceModeToVideoGenMode,
   resolveSubShotDisplayRange,
-  subShotHasBoundTimeline,
   subShotHasBoundVideo,
   syncSubShotPrimaryImageFields,
 } from "../../utils/shotSegmentUtils";
+import type { EditTimelineStripSummary } from "../../utils/editTimelineSummary";
+import { shouldShowShotEditTimelineSection } from "../../utils/editTimelineSummary";
+import { ShotEditTimelineStrip } from "./ShotEditTimelineStrip";
 import { ShotSubShotVideoPicker } from "./ShotSubShotVideoPicker";
 import {
   SubShotMediaLane,
@@ -42,7 +44,11 @@ interface ShotSubShotCardProps {
   onRemove?: () => void;
   onNavigateAsset?: (id: string, kind: string) => void;
   onRegenerateDone?: () => void;
-  /** 跳转全片剪辑 Tab（剪辑轴特殊编辑模式）。 */
+  /** 剧本是否已有真正的 EditTimeline（门控剪辑轴区块）。 */
+  hasEditTimeline?: boolean;
+  /** 全片剪辑轴迷你摘要；有 EditTimeline 时传入。 */
+  editTimelineSummary?: EditTimelineStripSummary | null;
+  /** 跳转全片剪辑 Tab；仅 hasEditTimeline 时生效。 */
   onOpenEditTimeline?: () => void;
   /** 镜内配音幕，用于子镜展示时段优先级解析。 */
   voiceActs?: ShotVoiceActView[];
@@ -97,6 +103,8 @@ export function ShotSubShotCard({
   onRemove,
   onNavigateAsset,
   onRegenerateDone,
+  hasEditTimeline = false,
+  editTimelineSummary = null,
   onOpenEditTimeline,
   voiceActs = [],
   styleVideoModes,
@@ -114,6 +122,10 @@ export function ShotSubShotCard({
   const showVideoSection = Boolean(editable || subShotHasBoundVideo(visual));
   const showFrameRegen = Boolean(regenerateEnabled && !editable && hasFrameBinding(visual));
   const showVideoRegen = Boolean(regenerateEnabled && !editable && subShotHasBoundVideo(visual));
+  const showTimeline =
+    shouldShowShotEditTimelineSection(hasEditTimeline) && Boolean(editTimelineSummary);
+  const openTimeline =
+    showTimeline && onOpenEditTimeline ? onOpenEditTimeline : undefined;
 
   /** 子镜内画面/视频时段条数据。 */
   const laneSegments = useMemo((): SubShotMediaLaneSegment[] => {
@@ -136,7 +148,6 @@ export function ShotSubShotCard({
     }));
     return [...frames, ...videos];
   }, [visual.images, visual.videos, visual.startMs, visual.endMs, t]);
-  const showTimeline = subShotHasBoundTimeline(visual);
   const showDescription = editable || Boolean(visual.description.trim());
   const showDurationSourceInHeader =
     editable ||
@@ -330,31 +341,13 @@ export function ShotSubShotCard({
             onRegenerateDone={onRegenerateDone}
           />
 
-          {showTimeline && visual.timelineClip ? (
-            <section className="shot-subshot-content shot-subshot-content--timeline">
-              <div className="shot-subshot-content__head">
-                <span className="shot-subshot-content__eyebrow">
-                  {t("storyboard.subShot.timelineSection")}
-                </span>
-              </div>
-              <p className="muted tabular-nums">
-                {formatMs(visual.timelineClip.startMs)}–{formatMs(visual.timelineClip.endMs)}
-              </p>
-              {visual.timelineClip.url ? (
-                <MediaPreview
-                  kind="video"
-                  url={visual.timelineClip.url}
-                  label={t("storyboard.subShot.timelinePreview")}
-                  projectId={projectId}
-                  scriptId={scriptId}
-                />
-              ) : null}
-              {onOpenEditTimeline ? (
-                <button type="button" className="btn-secondary btn-sm" onClick={onOpenEditTimeline}>
-                  {t("storyboard.subShot.openEditTimeline")}
-                </button>
-              ) : null}
-            </section>
+          {showTimeline && editTimelineSummary ? (
+            <div onClick={(e) => e.stopPropagation()}>
+              <ShotEditTimelineStrip
+                summary={editTimelineSummary}
+                onOpenEditTimeline={openTimeline}
+              />
+            </div>
           ) : null}
         </div>
       ) : (
@@ -549,36 +542,13 @@ export function ShotSubShotCard({
             </section>
           ) : null}
 
-          {showTimeline && visual.timelineClip ? (
-            <section className="shot-subshot-content shot-subshot-content--timeline">
-              <span className="shot-subshot-content__eyebrow">
-                {t("storyboard.subShot.timelineSection")}
-              </span>
-              <p className="muted tabular-nums">
-                {formatMs(visual.timelineClip.startMs)}–{formatMs(visual.timelineClip.endMs)}
-              </p>
-              {visual.timelineClip.url ? (
-                <MediaPreview
-                  kind="video"
-                  url={visual.timelineClip.url}
-                  label={t("storyboard.subShot.timelinePreview")}
-                  projectId={projectId}
-                  scriptId={scriptId}
-                />
-              ) : null}
-              {onOpenEditTimeline ? (
-                <button
-                  type="button"
-                  className="btn-secondary btn-sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenEditTimeline();
-                  }}
-                >
-                  {t("storyboard.subShot.openEditTimeline")}
-                </button>
-              ) : null}
-            </section>
+          {showTimeline && editTimelineSummary ? (
+            <div onClick={(e) => e.stopPropagation()}>
+              <ShotEditTimelineStrip
+                summary={editTimelineSummary}
+                onOpenEditTimeline={openTimeline}
+              />
+            </div>
           ) : null}
 
           {!showFrameSection &&

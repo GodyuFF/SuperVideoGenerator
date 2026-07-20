@@ -63,6 +63,41 @@ def append_sub_shot_video(sub: ShotSubShot, video: ShotSubShotVideo) -> ShotSubS
     return sub.model_copy(update={"videos": [*sub.videos, video]})
 
 
+def link_sub_shot_frame(sub: ShotSubShot, image: ShotSubShotImage) -> ShotSubShot:
+    """将 frame 写入首个空 images 槽；无空槽则追加。保留占位时段与 id。"""
+    for idx, existing in enumerate(sub.images):
+        if (existing.frame_asset_id or "").strip():
+            continue
+        merged = image.model_copy(
+            update={
+                "id": existing.id,
+                "start_ms": int(existing.start_ms or 0) or int(image.start_ms or 0),
+                "end_ms": int(existing.end_ms or 0) or int(image.end_ms or 0),
+                "kind": existing.kind or image.kind,
+            }
+        )
+        return upsert_sub_shot_image(sub, merged, image_idx=idx)
+    return append_sub_shot_image(sub, image)
+
+
+def link_sub_shot_video(sub: ShotSubShot, video: ShotSubShotVideo) -> ShotSubShot:
+    """将 video_clip 写入首个空 videos 槽；无空槽则追加。保留占位时段与 id。"""
+    for idx, existing in enumerate(sub.videos):
+        if (existing.video_clip_asset_id or "").strip():
+            continue
+        merged = video.model_copy(
+            update={
+                "id": existing.id,
+                "start_ms": int(existing.start_ms or 0) or int(video.start_ms or 0),
+                "end_ms": int(existing.end_ms or 0) or int(video.end_ms or 0),
+                "source_kind": existing.source_kind or video.source_kind,
+                "camera_motion": video.camera_motion or existing.camera_motion,
+            }
+        )
+        return upsert_sub_shot_video(sub, merged, video_idx=idx)
+    return append_sub_shot_video(sub, video)
+
+
 def find_video_index_by_clip(sub: ShotSubShot, video_clip_asset_id: str) -> int | None:
     """在子镜 videos 中按 video_clip_asset_id 定位索引。"""
     cid = video_clip_asset_id.strip()

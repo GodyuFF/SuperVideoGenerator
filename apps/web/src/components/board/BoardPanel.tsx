@@ -29,6 +29,7 @@ import {
   parseStoryboardShots,
 } from "./storyboardShared";
 import type { StyleVideoGenMode } from "../../utils/shotSegmentUtils";
+import { buildEditTimelineStripSummary } from "../../utils/editTimelineSummary";
 import {
   BOARD_TABS,
   boardMatchesTab,
@@ -620,9 +621,19 @@ export const BoardPanel = memo(function BoardPanel({
     !isProjectMode && activeTab === "storyboard" && Boolean(projectId && scriptId);
   const needVideoPlan =
     Boolean(projectId && scriptId) && (isStoryboardTab || Boolean(shotDetail));
+  const hasEditTimeline = Boolean(scriptMeta?.has_edit_timeline);
+  const needEditTimelineForShot =
+    Boolean(projectId && scriptId) && Boolean(shotDetail) && hasEditTimeline;
   const editTimelineApi = useEditTimeline(projectId ?? "", scriptId ?? "", {
-    enabled: isEditTab,
+    enabled: isEditTab || needEditTimelineForShot,
   });
+  const editTimelineSummary = useMemo(
+    () =>
+      hasEditTimeline
+        ? buildEditTimelineStripSummary(editTimelineApi.timeline)
+        : null,
+    [hasEditTimeline, editTimelineApi.timeline],
+  );
   const videoPlanApi = useVideoPlan(projectId, scriptId, {
     enabled: needVideoPlan,
   });
@@ -1051,10 +1062,16 @@ export const BoardPanel = memo(function BoardPanel({
           onClose={() => setShotDetail(null)}
           onNavigateAsset={handleNavigateAsset}
           onSelectShot={setShotDetail}
-          onOpenEditTimeline={() => {
-            setShotDetail(null);
-            onTabChange("edit");
-          }}
+          onOpenEditTimeline={
+            hasEditTimeline
+              ? () => {
+                  setShotDetail(null);
+                  onTabChange("edit");
+                }
+              : undefined
+          }
+          hasEditTimeline={hasEditTimeline}
+          editTimelineSummary={editTimelineSummary}
           styleVideoModes={styleVideoModes}
         />
       )}

@@ -1,6 +1,6 @@
 # 提示词架构（core/llm/prompt）
 
-> 更新日期：2026-07-20（新增内置风格 `frame_i2v` / PromptProfile；frame+video_clip 双轨；I2V 只认 frame）
+> 更新日期：2026-07-20（create_frames/create_video_clips：`sub_shot_id` 全局反查；observation 回传 links；source_frame 自动绑）
 
 本文档描述 SuperVideoGenerator 中 Agent 提示词的 **固定区 / 动态区** 分层设计，参考 Claude Code 的 system prompt 组装模式。主编排末条 user 的 `## 当前编排状态` JSON **字段级组装逻辑**见 [orchestration-state.md](orchestration-state.md)。
 
@@ -74,7 +74,9 @@ ReAct 一轮 canonical / wire：assistant（thinking + tool_use）→ `role: too
 | `user` | `user` + text blocks |
 | `system` | **不进入 messages**（由 `LlmRequest.system` 顶层承载） |
 
-**HTTP**：`POST {base_url}/v1/messages`；认证 `x-api-key` + `anthropic-version: 2023-06-01`。Provider 仅 **DeepSeek**（`https://api.deepseek.com/anthropic`）与 **Anthropic**。
+**HTTP（Anthropic 协议）**：`POST {base_url}/v1/messages`；认证 `x-api-key` + `anthropic-version: 2023-06-01`。Provider：**DeepSeek**（`https://api.deepseek.com/anthropic`）、**Anthropic**。
+
+**HTTP（OpenAI 协议）**：`POST {base_url}/chat/completions`；认证 `Authorization: Bearer`。Provider：**OpenAI**、**OpenRouter**、**Moonshot**、**智谱**、**通义千问**（DashScope 兼容模式）。wire 实现：`core/llm/client/wire_openai.py`。
 
 **ReAct 决策与行动执行**：`LLMClient.complete_tool_calls(LlmRequest)` + `core/llm/prompt/tools/registry.py`；`tool_choice` 意图为 `{"type":"any"}`（ReAct）或 `{"type":"tool","name":action}`（单 action 强制）。**Thinking 模型**（如 `deepseek-reasoner` / `deepseek-v4-*`）在 `LLMClient` 层自动降为 `{"type":"auto"}`，避免 API 400；可通过 `SVG_LLM_THINKING_MODE` 或配置 `thinking_mode` 强制开关。
 
@@ -337,6 +339,7 @@ Schema 单源：[`schema_builders.py`](../core/llm/prompt/tools/schema_builders.
 | 日期 | 变更 |
 |------|------|
 | 2026-07-14 | **关联资产动态提示词**：生图 `resolve_frame_generation_prompt` / 生视频 `compose_video_clip_prompt` 在最终请求中拼接 `【关联资产上下文】`（`linked_assets_prompt.py`），辅助模型理解角色/空镜/物品；不覆盖用户主提示词 |
+| 2026-07-20 | **实际生成提示词预览**：`GET .../assets/{id}/resolved-prompt`（`core/assets/resolved_prompt.py`）与生图/生视频路径一致；详情页提示词旁小眼睛弹层展示 |
 | 2026-07-14 | **frame / video_clip 字段收敛**：`create_frames` 必填 `image_prompt`+`element_refs`（可选 `summary`/`notes`）；`create_video_clips` 必填 `video_prompt`+`element_refs`；工作台草稿与 `compose_frame_image_prompt` 以 `image_prompt` 为主；`notes` 不进提示词 |
 | 2026-07-14 | **子镜产出意图 + 画面时段**：`build_sub_shot_schema` 增 `produce_mode`/`produce_rationale`；`images[]` 增 `start_ms`/`end_ms`；`create_shots`/`review_shot` 写入；`llm_action` + `sub_shot_produce` 回填与校验 |
 | 2026-07-14 | **产出意图三值收敛**：`produce_mode` 改为 `still`/`text2video`/`img2video`（静图视频/文生/图生）；字幕生成强制非重叠；子镜挂接 UI 对齐剧本画面 Tab |
@@ -352,7 +355,8 @@ Schema 单源：[`schema_builders.py`](../core/llm/prompt/tools/schema_builders.
 | 2026-07-03 | Plan 模式：注入 `execution_plan` / `plan_slice`；LLM 回写 `plan_status` + `remaining_plan`；`plan_updated` WS 事件 |
 | 2026-07-01 | `list_text_assets` 专用 input（`types`/`include_content`）与嵌套 output schema；observation 恢复完整 JSON；资产项含 `linked`/`counts_by_type` |
 | 2026-07-01 | 引入 `core/tools/` MCP 语义 Registry（`list_tools`/`call_tool`）；各 tool 含 `output_schema` 运行时校验；`create_*` 强校验结构化 content；ReAct 决策阶段 write/ad_hoc 使用完整 `input_schema`；`tool_structured` 写入 agent_react_observation |
-| 2026-06-29 | LLM wire 全面切换 Anthropic Messages API；仅保留 DeepSeek（`/anthropic`）与 Anthropic provider；`tool_choice` 为 `any`/`tool` |
+| 2026-07-20 | LLM 双 wire：Anthropic Messages + OpenAI Chat Completions；新增 openai/openrouter/moonshot/zhipu/dashscope provider |
+| 2026-07-20 | 生图扩充 openai/fal/gemini；生视频扩充 kling/runway/fal；Provider 能力矩阵与 fallback 降级链 |
 | 2026-07-10 | 移除历史兼容：`tracks.video` 双写、`parse_react_json`、7-role 会话 migrate、text→thinking wire 自动升级；时间轴单源 `video_layers` |
 | 2026-06-29 | A2UI 内嵌聊天展示；`ask_user_question` OBSERVATION 含 `user_values` JSON；ACTION 持久化 JSON；委派 `task_brief` 优先 session 用户补充 |
 | 2026-06-29 | `complete_tool_calls` 全量记录 response（content/tool_calls/finish_reason/usage）；缺 tool_calls 自动重试一次；思考流仅在 tool_calls 成功后推送 |
@@ -379,6 +383,7 @@ Schema 单源：[`schema_builders.py`](../core/llm/prompt/tools/schema_builders.
 | 2026-07-12 | **子镜 Agent/Tools 升级**：`visuals` → `sub_shots`；`build_sub_shot_schema`（`images[]`/`videos[]`）；`create_frames.sub_shot_id` 必填；persist 校验每子镜 frame；`get_shot_details` 输出 `image_gap_sub_shots` |
 | 2026-07-13 | **单镜复核 + 384K 输出**：新增 `review_shot`（镜维度增量 patch）；`max_tokens` 上限 393216；`storyboard_refine_agent` 流水线改为逐镜 `review_shot`；跨镜仍用 `review_and_restructure` |
 | 2026-07-20 | **画面图生视频（frame_i2v）**：第三种内置风格；`role.frame_i2v.md` / `hint.frame_i2v.md`；分镜 create_frames + create_video_clips；`frame_i2v_spec.py` I2V 只认 frame |
+| 2026-07-20 | **分镜子镜定位修复**：`create_frames`/`create_video_clips` 支持仅用 `sub_shot_id` 全局反查；空槽 upsert；observation 回传 `frame_links`/`video_clip_links`；`create_video_clips` 自动绑 `source_frame_asset_id`；`get_plan`/`serialize_shots_for_agent` 暴露资产映射 |
 | 2026-07-13 | **下线动态漫画/营销视频 AI**：保留 `storybook` / `ai_video` / `frame_i2v` 内置风格；`style_profile_sync` 移除 `dynamic_comic`/`marketing_*`；历史 id 迁移为 `storybook` |
 | 2026-07-13 | **Agent 职责边界**：script_agent 仅 plot/character/scene/prop；storyboard_agent 负责 element_refs + create_frames/create_video_clips；video_agent 仅 scan/generate_video_clips；按 style_mode 过滤分镜/视频 pipeline |
 | 2026-07-13 | **ReAct 同轮多 tool 并行**：`parse_react_tool_calls_batch` + `validate_tool_call_batch`；子 Agent / 主编排 `asyncio.gather` 并行 act；`add_react_turn_batch` 落盘；WS `agent_react_action_batch` / `react_action_batch`；默认上限 `SVG_REACT_MAX_PARALLEL_TOOLS=16` |

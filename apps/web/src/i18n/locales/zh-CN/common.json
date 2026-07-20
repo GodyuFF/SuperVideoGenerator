@@ -82,5 +82,15 @@
     "followSystem": "跟随系统",
     "switchToLight": "切换为浅色",
     "switchToDark": "切换为深色"
+  },
+  "resolvedPrompt": {
+    "viewAria": "查看实际生成提示词",
+    "title": "实际生成提示词",
+    "hintDiffers": "含关联资产上下文等，未写回资产字段",
+    "hintSame": "与存档提示词一致",
+    "loadFailed": "加载失败",
+    "copied": "已复制",
+    "empty": "（空）",
+    "negativeLabel": "负向："
   }
 }

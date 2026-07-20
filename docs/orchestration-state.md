@@ -124,6 +124,19 @@ flowchart TD
 
 **注意**：`inferred_completed_steps` 反映 Store 事实；`completed_actions` 反映本对话是否允许再委派该步。二者可因用户重开意图而不同。
 
+### 4.3 Plan 终态解析（2026-07-20）
+
+`core/llm/master/plan_resolution.py` 负责执行结束时的 Plan 展示与 `ScriptStatus` 判定：
+
+| 规则 | 说明 |
+|------|------|
+| **同 type 取末次** | 每种 `step.type` 以计划中**最后一次出现**的状态为准 |
+| **已恢复失败** | 某步 `failed` 且后续存在同 type 的 `completed/skipped` → 视为已被重试覆盖，不阻塞完成 |
+| **实质完成** | 所有 type 的末次状态均为 `completed/skipped` → `ScriptStatus.COMPLETED` |
+| **前端展示** | 工作条进度将已恢复失败计入完成数；步骤 badge 显示 `superseded`（已恢复） |
+
+`MasterReActEngine._finalize` 与 PlanPanel/Workbench 顶栏均使用上述规则，避免「中间 image_gen 失败 + 后续重试成功」仍显示整单失败。
+
 ---
 
 ## 5. pipeline_progress
@@ -219,6 +232,7 @@ flowchart TD
 | `core/llm/prompt/builder.py` | `build_react_state_json`、`filter_available_actions`、turn 拼装 |
 | `core/llm/prompt/chat_messages.py` | `MASTER_STATE_HEADER` / `MASTER_STATE_INSTRUCTIONS` |
 | `core/llm/master/master_react.py` | 启动 seed + 每轮刷新 progress/readiness 后调用 decide |
+| `core/llm/master/plan_resolution.py` | Plan 终态解析：中间失败但同 type 后续成功视为已恢复 |
 
 ---
 

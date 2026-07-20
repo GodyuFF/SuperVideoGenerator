@@ -3073,6 +3073,20 @@ button:disabled {
   color: var(--svf-danger, #e05252);
 }
 
+.plan-step-badge.status-superseded,
+.plan-step-card.status-superseded {
+  opacity: 0.82;
+}
+
+.plan-step-badge.status-superseded {
+  background: var(--svf-success, #4dbb8a)18;
+  color: var(--svf-text-soft, #b8c0d0);
+}
+
+.plan-step-card.status-superseded .plan-step-error {
+  color: var(--svf-text-soft, #b8c0d0);
+}
+
 .plan-step-badge.status-awaiting_confirmation {
   background: var(--svf-awaiting-bg);
   color: var(--svf-gold);
@@ -4052,6 +4066,78 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.shot-edit-timeline-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.5rem;
+}
+
+.shot-edit-timeline-strip__lead {
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.shot-edit-timeline-strip__duration {
+  margin: 0.1rem 0 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.shot-edit-timeline-strip__ruler {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.15rem;
+}
+
+.shot-edit-timeline-strip__row {
+  display: grid;
+  grid-template-columns: 2.75rem 1fr;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.shot-edit-timeline-strip__label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.shot-edit-timeline-strip__lane {
+  position: relative;
+  min-height: 1.1rem;
+  background: var(--svf-timeline-lane, rgba(255, 255, 255, 0.06));
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.shot-edit-timeline-strip__empty {
+  font-size: 0.7rem;
+  padding-left: 0.25rem;
+}
+
+.shot-edit-timeline-strip__clip {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 3px;
+  min-width: 2px;
+}
+
+.shot-edit-timeline-strip__clip--video {
+  background: color-mix(in srgb, var(--svf-accent, #e0634a) 70%, transparent);
+}
+
+.shot-edit-timeline-strip__clip--audio {
+  background: color-mix(in srgb, var(--svf-accent, #e0634a) 45%, #6b8cae);
+}
+
+.shot-edit-timeline-strip__clip--subtitle {
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
 }
 
 .edit-timeline-ruler {

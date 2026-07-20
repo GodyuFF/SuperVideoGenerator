@@ -27,6 +27,7 @@ import { useAssetGeneration } from "../context/AssetGenerationContext";
 import { AssetDetailShell } from "./assetDetail/AssetDetailShell";
 import { AssetDetailHeader } from "./assetDetail/AssetDetailHeader";
 import { AssetDetailSection } from "./assetDetail/AssetDetailSection";
+import { ResolvedPromptPreview } from "./assetDetail/ResolvedPromptPreview";
 import { LinkedAssetRefsSection } from "./LinkedAssetRefsSection";
 import type { ImageTextAssetItem } from "./ImageTextAssetCard";
 import {
@@ -124,6 +125,16 @@ export function ImageTextAssetDetailModal({
   const variantRefs = variantRefsFromItem(resolved);
   const hasElementRefs = Object.values(elementRefs).some((ids) => (ids ?? []).length > 0);
   const regenerateKind = isVideoClip ? "video" : "image";
+  const canPreviewResolvedPrompt = Boolean(
+    projectId && (clipPrompt || imagePrompt || hasElementRefs),
+  );
+  const resolvedPromptActions = canPreviewResolvedPrompt ? (
+    <ResolvedPromptPreview
+      projectId={projectId}
+      assetId={resolved.id}
+      enabled={canPreviewResolvedPrompt}
+    />
+  ) : null;
 
   return (
     <AssetDetailShell titleId="asset-detail-title" onClose={onClose}>
@@ -195,7 +206,7 @@ export function ImageTextAssetDetailModal({
               )}
             </AssetDetailSection>
 
-            <AssetDetailSection title="提示词">
+            <AssetDetailSection title="提示词" actions={resolvedPromptActions}>
               {clipPrompt ? (
                 <pre className="prompt-pre">{clipPrompt}</pre>
               ) : (
@@ -266,8 +277,8 @@ export function ImageTextAssetDetailModal({
               </AssetDetailSection>
             )}
 
-            {(promptHint || imagePrompt || negativePrompt) && (
-              <AssetDetailSection title="生图提示词">
+            {(promptHint || imagePrompt || negativePrompt || canPreviewResolvedPrompt) && (
+              <AssetDetailSection title="生图提示词" actions={resolvedPromptActions}>
                 <div className="prompt-block">
                   {promptHint && (
                     <p>

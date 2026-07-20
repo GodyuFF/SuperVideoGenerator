@@ -137,6 +137,9 @@ def resolve_frame_i2v_clip_spec(
     sid = shot_id or str(content.get("shot_id") or "").strip() or shot.id
     ord_val = order if order else shot.order
 
+    from core.llm.tools.video.shot_spec import validate_video_gen_mode_for_provider
+
+    validate_video_gen_mode_for_provider(mode)
     return ShotVideoGenSpec(
         shot_id=sid,
         order=ord_val,

@@ -22,6 +22,8 @@
     "failed": "失败",
     "paused": "已暂停",
     "skipped": "已跳过",
+    "superseded": "已恢复",
     "awaiting_confirmation": "待确认"
-  }
+  },
+  "supersededStepNote": "该步骤失败后已由后续重试成功覆盖"
 }

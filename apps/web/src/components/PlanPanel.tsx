@@ -7,7 +7,7 @@ import { MediaPreview } from "./MediaPreview";
 import { ImageGenProgressInline } from "./ImageGenProgressInline";
 import { useAppTranslation } from "../i18n/useAppTranslation";
 import type { PlanViewState } from "../types";
-import { planProgress, scriptStatusLabel, stepStatusLabel } from "../utils/planLabels";
+import { planProgress, scriptStatusLabel, stepStatusLabel, effectiveScriptStatus, displayStepStatus } from "../utils/planLabels";
 import { resolveMediaPlayUrl } from "../utils/mediaUrl";
 
 interface PlanPanelProps {
@@ -32,6 +32,7 @@ export const PlanPanel = memo(function PlanPanel({
 }: PlanPanelProps) {
   const { t } = useAppTranslation(["common", "nav", "plan"]);
   const { done, total, percent } = planProgress(plan.steps);
+  const displayScriptStatus = effectiveScriptStatus(scriptStatus, plan.steps);
   const hasSteps = plan.steps.length > 0;
   const summary = plan.runtime_summary?.trim();
   const history = plan.plan_status_history.filter((h) => h.trim());
@@ -60,8 +61,8 @@ export const PlanPanel = memo(function PlanPanel({
               {isAborting ? t("common:actions.aborting") : t("nav:abortExecution")}
             </button>
           )}
-          <span className={`plan-script-badge status-${scriptStatus}`}>
-            {scriptStatusLabel(scriptStatus)}
+          <span className={`plan-script-badge status-${displayScriptStatus}`}>
+            {scriptStatusLabel(displayScriptStatus)}
           </span>
         </div>
       </div>
@@ -115,17 +116,19 @@ export const PlanPanel = memo(function PlanPanel({
 
       {hasSteps && (
         <ol className="plan-step-timeline">
-          {plan.steps.map((step, index) => (
+          {plan.steps.map((step, index) => {
+            const shownStatus = displayStepStatus(plan.steps, index);
+            return (
             <li
               key={step.id}
-              className={`plan-step-card status-${step.status}`}
+              className={`plan-step-card status-${shownStatus}`}
             >
               <div className="plan-step-index">{index + 1}</div>
               <div className="plan-step-body">
                 <div className="plan-step-title-row">
                   <span className="plan-step-title">{step.title}</span>
-                  <span className={`plan-step-badge status-${step.status}`}>
-                    {stepStatusLabel(step.status)}
+                  <span className={`plan-step-badge status-${shownStatus}`}>
+                    {stepStatusLabel(shownStatus)}
                   </span>
                 </div>
                 <div className="plan-step-meta muted">
@@ -138,8 +141,11 @@ export const PlanPanel = memo(function PlanPanel({
                 {step.description && (
                   <p className="plan-step-desc muted">{step.description}</p>
                 )}
-                {step.error && (
+                {step.error && shownStatus !== "superseded" && (
                   <p className="plan-step-error">{step.error}</p>
+                )}
+                {step.error && shownStatus === "superseded" && (
+                  <p className="plan-step-error muted">{t("plan:supersededStepNote")}</p>
                 )}
                 {step.image_gen_progress && step.image_gen_progress.total > 0 && (
                   <ImageGenProgressInline
@@ -183,7 +189,8 @@ export const PlanPanel = memo(function PlanPanel({
                 )}
               </div>
             </li>
-          ))}
+            );
+          })}
         </ol>
       )}
     </section>

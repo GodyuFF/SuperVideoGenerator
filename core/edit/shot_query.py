@@ -195,23 +195,45 @@ def _serialize_shot_tracks(shot: Shot) -> dict[str, Any]:
 
 
 def serialize_shots_for_agent(shots: list[Shot]) -> list[dict[str, Any]]:
-    """序列化镜头摘要供 Agent 获取 shot_id / sub_shot_id（create_shots 后 create_frames 用）。"""
+    """序列化镜头摘要：shot/sub_shot ID，以及已关联的 frame / video_clip / source_frame。"""
     payload: list[dict[str, Any]] = []
     for shot in sorted(shots, key=lambda s: s.order):
+        sub_payload: list[dict[str, Any]] = []
+        for sub in shot.sub_shots:
+            images = [
+                {"frame_asset_id": fid}
+                for img in sub.images
+                if (fid := (img.frame_asset_id or "").strip())
+            ]
+            videos = []
+            for vid in sub.videos:
+                clip_id = (vid.video_clip_asset_id or "").strip()
+                src_id = (vid.source_frame_asset_id or "").strip()
+                if not clip_id and not src_id:
+                    continue
+                videos.append(
+                    {
+                        "video_clip_asset_id": clip_id,
+                        "source_frame_asset_id": src_id,
+                    }
+                )
+            block: dict[str, Any] = {
+                "id": sub.id,
+                "start_ms": sub.start_ms,
+                "end_ms": sub.end_ms,
+                "description": (sub.description or "")[:120],
+            }
+            if images:
+                block["images"] = images
+            if videos:
+                block["videos"] = videos
+            sub_payload.append(block)
         payload.append(
             {
                 "id": shot.id,
                 "order": shot.order,
                 "duration_ms": shot.duration_ms,
-                "sub_shots": [
-                    {
-                        "id": sub.id,
-                        "start_ms": sub.start_ms,
-                        "end_ms": sub.end_ms,
-                        "description": (sub.description or "")[:120],
-                    }
-                    for sub in shot.sub_shots
-                ],
+                "sub_shots": sub_payload,
             }
         )
     return payload

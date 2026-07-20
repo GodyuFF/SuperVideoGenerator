@@ -240,6 +240,24 @@ def test_pipeline_board_accepts_string_style_mode(sample_store: MemoryStore):
     assert view.stats.get("style_mode") == VideoStyleMode.STORYBOOK.value
 
 
+def test_script_tab_visibility_has_edit_timeline(sample_store: MemoryStore):
+    """有 EditTimeline 时 script meta 的 has_edit_timeline 为真（分镜剪辑轴门控依据）。"""
+    builder = BoardBuilder(sample_store)
+    script = next(iter(sample_store.scripts.values()))
+    stats_before = builder._script_tab_visibility_stats(script.id)
+    assert stats_before["has_edit_timeline"] is False
+
+    plan = sample_store.get_video_plan_for_script(script.id)
+    assert plan is not None
+    timeline = compile_timeline_from_shots(
+        sample_store, script_id=script.id, plan=plan
+    )
+    sample_store.set_edit_timeline(timeline)
+
+    stats_after = builder._script_tab_visibility_stats(script.id)
+    assert stats_after["has_edit_timeline"] is True
+
+
 def test_edit_board_shows_timeline_tracks(sample_store: MemoryStore):
     project_id = list(sample_store.projects.keys())[0]
     script_id = list(sample_store.scripts.keys())[0]

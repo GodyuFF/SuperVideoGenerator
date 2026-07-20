@@ -22,6 +22,8 @@
     "failed": "Failed",
     "paused": "Paused",
     "skipped": "Skipped",
+    "superseded": "Recovered",
     "awaiting_confirmation": "Awaiting confirmation"
-  }
+  },
+  "supersededStepNote": "This failed step was superseded by a later successful retry"
 }

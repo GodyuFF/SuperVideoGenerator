@@ -42,6 +42,7 @@ import {
 } from "../context/GenerationQueueContext";
 import { useChatStore } from "../stores/chatStore";
 import { usePlanStore } from "../stores/planStore";
+import { effectiveScriptStatus, scriptStatusLabel } from "../utils/planLabels";
 import { useWorkbenchWs } from "../hooks/useWorkbenchWs";
 import type { ConversationSummary } from "../types/conversation";
 import {
@@ -174,6 +175,10 @@ function WorkbenchPage({
   const resetPlanView = usePlanStore((s) => s.resetPlanView);
   const loadPlanFromStore = usePlanStore((s) => s.loadPlanFromApi);
   const [scriptStatus, setScriptStatus] = useState("draft");
+  const displayScriptStatus = useMemo(
+    () => effectiveScriptStatus(scriptStatus, planView.steps),
+    [scriptStatus, planView.steps],
+  );
   const [styleMode, setStyleMode] = useState<StyleMode>("storybook");
   const [styleLocked, setStyleLocked] = useState(false);
   const [styleHints, setStyleHints] = useState<StyleHints>({});
@@ -1060,7 +1065,9 @@ function WorkbenchPage({
             <span className={`status-badge ${aiBadgeClass}`}>{aiBadgeText}</span>
             {isScriptMode && (
               <>
-                <span className="status-badge">{scriptStatus}</span>
+                <span className={`status-badge status-${displayScriptStatus}`}>
+                  {scriptStatusLabel(displayScriptStatus)}
+                </span>
                 {activeScriptTitle && (
                   <span className="status-badge muted-badge">{activeScriptTitle}</span>
                 )}

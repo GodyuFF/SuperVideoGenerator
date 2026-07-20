@@ -392,7 +392,11 @@
       "videoMediaPlaceholder": "（选择已生成视频）",
       "timelineSection": "剪辑轴",
       "timelinePreview": "剪辑轴片段",
-      "timelineEditHint": "剪辑轴在全片剪辑 Tab 中编辑，可调整裁切、转场与多层合成。",
+      "timelineEditHint": "以下为全片剪辑计划稿（EditTimeline）摘要，非子镜短视频。可前往剪辑 Tab 调整裁切、转场与多层合成。",
+      "timelineDuration": "全片时长 {{duration}}",
+      "timelineTrackVideo": "视频",
+      "timelineTrackAudio": "音频",
+      "timelineTrackSubtitle": "字幕",
       "openEditTimeline": "前往剪辑 Tab",
       "noContent": "暂无关联内容",
       "genMode": {

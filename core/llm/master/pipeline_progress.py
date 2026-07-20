@@ -109,7 +109,8 @@ def _image_gen_complete(store: MemoryStore, script_id: str) -> bool:
     assets = scan.get("assets") or []
     visual = [a for a in assets if a.get("type") in _IMAGE_TEXT_VISUAL]
     if not visual:
-        return _frames_cover_all_shots(store, script_id)
+        # 尚无角色/场景/道具/frame 时绝不能视为配图已完成（空剧本会误标 step:image_gen）
+        return False
     pending = int(scan.get("pending_count", 0))
     if pending > 0:
         return False

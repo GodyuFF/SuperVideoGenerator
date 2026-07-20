@@ -13,10 +13,17 @@ _log = logging.getLogger(__name__)
 
 DEFAULT_AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1"
 DEFAULT_AGNES_IMAGE_MODEL = "agnes-image-2.1-flash"
+DEFAULT_OPENAI_IMAGE_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-1"
+DEFAULT_FAL_BASE_URL = "https://fal.run"
+DEFAULT_FAL_IMAGE_MODEL = "fal-ai/flux-pro/v1.1"
+DEFAULT_GEMINI_IMAGE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+DEFAULT_GEMINI_IMAGE_MODEL = "gemini-2.0-flash-preview-image-generation"
 DEFAULT_SD_BASE_URL = "http://127.0.0.1:7860"
 DEFAULT_IMAGE_SIZE = "1024x768"
 
 from core.llm.tools.volcengine.ark_common import DEFAULT_ARK_BASE_URL, DEFAULT_SEEDREAM_MODEL
+from core.llm.tools.shared.media_capability import list_image_provider_capabilities
 
 IMAGE_SIZE_OPTIONS = ("1024x768", "1024x1024", "768x1024")
 # 火山 SeedDream 推荐尺寸（总像素 ≥ 3686400；对齐官方 2K/4K 推荐表）
@@ -37,7 +44,7 @@ SEEDREAM_SIZE_OPTIONS = (
     "5504x3040",  # 4K 16:9
     "3040x5504",  # 4K 9:16
 )
-IMAGE_PROVIDERS = ("agnes", "local_sd", "bailian", "volcengine")
+IMAGE_PROVIDERS = ("agnes", "local_sd", "bailian", "volcengine", "openai", "fal", "gemini")
 _CUSTOM_SIZE_RE = re.compile(r"^(\d{2,5})[x×](\d{2,5})$", re.IGNORECASE)
 SD_SAMPLER_OPTIONS = (
     "Euler a",
@@ -128,6 +135,8 @@ class ImageGenSettings(BaseSettings):
     bailian_workspace_id: str = ""
     bailian_txt2img_model: str = "wanx2.5-t2i-turbo"
     bailian_img2img_model: str = "qwen-image-2.0-pro"
+    fallback_provider: str = ""
+    fallback_model: str = ""
 
     model_config = SettingsConfigDict(
         env_prefix="SVG_IMAGE_GEN_",
@@ -172,7 +181,16 @@ class ImageGenConfigManager:
         s = self._settings
         if s.api_key and s.api_key.strip():
             return s.api_key.strip()
-        for env_name in ("SVG_IMAGE_GEN_API_KEY", "AGNES_API_KEY", "ARK_API_KEY"):
+        for env_name in (
+            "SVG_IMAGE_GEN_API_KEY",
+            "AGNES_API_KEY",
+            "ARK_API_KEY",
+            "OPENAI_API_KEY",
+            "FAL_KEY",
+            "FAL_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+        ):
             val = os.getenv(env_name)
             if val and val.strip():
                 return val.strip()
@@ -188,7 +206,7 @@ class ImageGenConfigManager:
             return True
         if s.provider == "bailian":
             return bool(self.resolved_api_key() and s.bailian_workspace_id.strip())
-        if s.provider == "volcengine":
+        if s.provider in ("volcengine", "openai", "fal", "gemini"):
             return bool(self.resolved_api_key())
         return bool(self.resolved_api_key())
 
@@ -201,6 +219,9 @@ class ImageGenConfigManager:
             "provider_label": (
                 "阿里云百炼" if s.provider == "bailian"
                 else "火山方舟 SeedDream" if s.provider == "volcengine"
+                else "OpenAI" if s.provider == "openai"
+                else "fal.ai FLUX" if s.provider == "fal"
+                else "Google Gemini" if s.provider == "gemini"
                 else "Stable Diffusion (本地)" if s.provider == "local_sd"
                 else "Agnes AI"
             ),
@@ -209,6 +230,9 @@ class ImageGenConfigManager:
                 {"id": "local_sd", "label": "Stable Diffusion (本地)"},
                 {"id": "bailian", "label": "阿里云百炼"},
                 {"id": "volcengine", "label": "火山方舟 SeedDream"},
+                {"id": "openai", "label": "OpenAI GPT Image"},
+                {"id": "fal", "label": "fal.ai FLUX"},
+                {"id": "gemini", "label": "Google Gemini"},
             ],
             "model": s.model,
             "base_url": s.base_url,
@@ -241,6 +265,9 @@ class ImageGenConfigManager:
             "bailian_workspace_id": s.bailian_workspace_id,
             "bailian_txt2img_model": s.bailian_txt2img_model,
             "bailian_img2img_model": s.bailian_img2img_model,
+            "fallback_provider": s.fallback_provider,
+            "fallback_model": s.fallback_model,
+            "capabilities": list_image_provider_capabilities(),
         }
 
     def update(
@@ -266,6 +293,8 @@ class ImageGenConfigManager:
         bailian_workspace_id: str | None = None,
         bailian_txt2img_model: str | None = None,
         bailian_img2img_model: str | None = None,
+        fallback_provider: str | None = None,
+        fallback_model: str | None = None,
     ) -> dict[str, Any]:
         if enabled is not None:
             self._settings.enabled = enabled
@@ -290,6 +319,27 @@ class ImageGenConfigManager:
                     self._settings.model = DEFAULT_AGNES_IMAGE_MODEL
                 if "volces.com" in (self._settings.base_url or ""):
                     self._settings.base_url = DEFAULT_AGNES_BASE_URL
+                if self._settings.default_size in SEEDREAM_SIZE_OPTIONS:
+                    self._settings.default_size = DEFAULT_IMAGE_SIZE
+            elif provider == "openai":
+                if self._settings.model in ("", DEFAULT_AGNES_IMAGE_MODEL, DEFAULT_SEEDREAM_MODEL, DEFAULT_FAL_IMAGE_MODEL):
+                    self._settings.model = DEFAULT_OPENAI_IMAGE_MODEL
+                if not (self._settings.base_url or "").strip() or "agnes-ai.com" in self._settings.base_url or "volces.com" in self._settings.base_url:
+                    self._settings.base_url = DEFAULT_OPENAI_IMAGE_BASE_URL
+                if self._settings.default_size in SEEDREAM_SIZE_OPTIONS:
+                    self._settings.default_size = DEFAULT_IMAGE_SIZE
+            elif provider == "fal":
+                if self._settings.model in ("", DEFAULT_AGNES_IMAGE_MODEL, DEFAULT_SEEDREAM_MODEL, DEFAULT_OPENAI_IMAGE_MODEL):
+                    self._settings.model = DEFAULT_FAL_IMAGE_MODEL
+                if not (self._settings.base_url or "").strip() or "agnes-ai.com" in (self._settings.base_url or "") or "openai.com" in (self._settings.base_url or ""):
+                    self._settings.base_url = DEFAULT_FAL_BASE_URL
+                if self._settings.default_size in SEEDREAM_SIZE_OPTIONS:
+                    self._settings.default_size = DEFAULT_IMAGE_SIZE
+            elif provider == "gemini":
+                if self._settings.model in ("", DEFAULT_AGNES_IMAGE_MODEL, DEFAULT_SEEDREAM_MODEL):
+                    self._settings.model = DEFAULT_GEMINI_IMAGE_MODEL
+                if not (self._settings.base_url or "").strip() or "agnes-ai.com" in (self._settings.base_url or ""):
+                    self._settings.base_url = DEFAULT_GEMINI_IMAGE_BASE_URL
                 if self._settings.default_size in SEEDREAM_SIZE_OPTIONS:
                     self._settings.default_size = DEFAULT_IMAGE_SIZE
             # 切换 provider 时清除旧的 SD 检测结果，让下次检测重新判断
@@ -351,6 +401,13 @@ class ImageGenConfigManager:
             self._settings.bailian_txt2img_model = bailian_txt2img_model.strip()
         if bailian_img2img_model is not None:
             self._settings.bailian_img2img_model = bailian_img2img_model.strip()
+        if fallback_provider is not None:
+            fb = fallback_provider.strip().lower()
+            if fb and fb not in IMAGE_PROVIDERS:
+                raise ValueError(f"不支持的 fallback 生图服务商: {fb}")
+            self._settings.fallback_provider = fb
+        if fallback_model is not None:
+            self._settings.fallback_model = fallback_model.strip()
         return self.get_public_config()
 
 

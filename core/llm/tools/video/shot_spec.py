@@ -20,6 +20,15 @@ from core.store.memory import MemoryStore
 VideoGenMode = Literal["text2video", "img2video", "keyframes"]
 
 
+def validate_video_gen_mode_for_provider(mode: VideoGenMode) -> None:
+    """校验当前视频 Provider 是否支持目标生视频子模式。"""
+    from core.llm.tools.shared.media_capability import assert_video_mode_supported
+    from core.llm.tools.video.settings import get_video_gen_manager
+
+    provider = get_video_gen_manager().get_settings().provider
+    assert_video_mode_supported(provider, mode)
+
+
 @dataclass
 class ShotVideoGenSpec:
     """单镜视频生成参数。"""
@@ -90,6 +99,7 @@ def resolve_video_clip_gen_spec(
             raise ValueError(
                 f"当前视频风格不支持 {mode}，允许：{', '.join(allowed_modes)}"
             )
+    validate_video_gen_mode_for_provider(mode)
     return ShotVideoGenSpec(
         shot_id=sid,
         order=order,
@@ -348,6 +358,7 @@ def resolve_shot_video_gen_spec(
                 f"当前视频风格不支持 {mode}，允许：{', '.join(allowed_modes)}"
             )
 
+    validate_video_gen_mode_for_provider(mode)
     return ShotVideoGenSpec(
         shot_id=shot.id,
         order=shot.order,

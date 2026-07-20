@@ -1,6 +1,6 @@
 # Tools 参考手册
 
-> 更新日期：2026-07-20（`frame_i2v` 画面图生视频；persist 双校验；I2V 只认 frame）
+> 更新日期：2026-07-20（`sub_shot_id` 全局反查；observation 回传 frame/video_clip links；source_frame 自动绑）
 
 本文档描述 SuperVideoGenerator 中 **MCP 语义 Tool Registry**（`core/llm/tools/`）与各 Agent 可调用的 action。主编排 ReAct 的 `delegate_agent` / `tool_*` 见文末「主编排专用」。
 
@@ -128,9 +128,9 @@
 |--------|--------------|------|------|---------|
 | `load_context` | storyboard.load_context | 读写 | 加载剧本正文、plots、图文资产、**voice_speakers**（旁白+角色）与已链接图片；**必传 `script_id`**（须与会话一致） | `storyboard/context.py` / `timeline_handler.py` |
 | `create_shots` | storyboard.create_shots | 读写 | 设计镜内多轨 Shot；`sub_shots[]` 含 `produce_mode`、可选 `produce_rationale`、各 `images[].start_ms/end_ms`（相对镜起点）；**voice clip 须按说话人拆分**（旁白 character_ref 空，对白填 txt_*） | `storyboard/handler.py` |
-| `create_frames` | storyboard.create_frames | 读写 | **故事书 / 画面图生视频**：每子镜创建 frame（必填 `image_prompt` + `element_refs`，可选 `summary`/`notes`）并关联 sub_shots[].images[] | `storyboard/handler.py` |
-| `create_video_clips` | storyboard.create_video_clips | 读写 | **AI 视频 / 画面图生视频**：每子镜创建 video_clip（必填 `video_prompt` + `element_refs`，可选 `summary`/`notes`）并关联 sub_shots[].videos[]；**frame_i2v** 须设 `source_frame_asset_id` | `storyboard/handler.py` |
-| `get_plan` | storyboard.get_plan | 只读 | 读取计划稿；persist 前返回 pending 及 sub_shots[].id | `storyboard/handler.py` |
+| `create_frames` | storyboard.create_frames | 读写 | **故事书 / 画面图生视频**：每子镜创建 frame（必填 `sub_shot_id` + `image_prompt` + `element_refs`；`sub_shot_id` 全局唯一可单独定位；可选 `summary`/`notes`）；回填 `sub_shots[].images[]`；observation 含 `frame_links` | `storyboard/handler.py` |
+| `create_video_clips` | storyboard.create_video_clips | 读写 | **AI 视频 / 画面图生视频**：每子镜创建 video_clip（必填 `sub_shot_id` + `video_prompt` + `element_refs`；可选 `source_frame_asset_id`，缺省自动取同子镜 frame）；回填 `videos[]`；observation 含 `video_clip_links` | `storyboard/handler.py` |
+| `get_plan` | storyboard.get_plan | 只读 | 读取计划稿；persist 前返回 pending 的 shot/sub_shot ID 及已关联 frame/video_clip/source_frame | `storyboard/handler.py` |
 | `persist_plan` | storyboard.persist_plan | 读写 | 保存 VideoPlan；故事书校验 frame；AI 视频校验 video_clip；**frame_i2v 双校验** | `storyboard/handler.py` |
 
 > **职责边界**：video_clip / frame 的**创建与镜内关联**仅由 storyboard_agent 负责；video_agent 只消费 video_clip 生成 mp4。
@@ -332,7 +332,12 @@ Registry 名格式 `mcp.{server_id}.{tool_name}`，`source=mcp`。配置见 `dat
 
 | 能力 | provider | 默认模型 | API Key 环境变量 |
 |------|----------|----------|------------------|
-| 生图 | `agnes` / `local_sd` / `bailian` / **`volcengine`** | `doubao-seedream-5-0-pro`（火山；接入点 ID 可带日期后缀） | `SVG_IMAGE_GEN_API_KEY` 或 `ARK_API_KEY` |
-| 生视频 | `agnes` / **`volcengine`** | `doubao-seedance-2-0`（火山） | `SVG_VIDEO_GEN_API_KEY` 或 `ARK_API_KEY` |
+| **LLM 编排** | `deepseek` / `anthropic` / `openai` / `openrouter` / `moonshot` / `zhipu` / `dashscope` | 见各 provider 预设 | `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` 等 |
+| 生图 | `agnes` / `local_sd` / `bailian` / **`volcengine`** / **`openai`** / **`fal`** / **`gemini`** | `doubao-seedream-5-0-pro`（火山） | `SVG_IMAGE_GEN_API_KEY` 或 provider 专用 Key |
+| 生视频 | `agnes` / **`volcengine`** / **`kling`** / **`runway`** / **`fal`** | `doubao-seedance-2-0`（火山） | `SVG_VIDEO_GEN_API_KEY` 或 provider 专用 Key |
+
+LLM wire 协议：`anthropic`（DeepSeek/Anthropic）与 `openai`（OpenAI/OpenRouter/Moonshot/智谱/通义）。实现：`core/llm/client/wire.py`、`core/llm/client/wire_openai.py`。
+
+Provider 能力矩阵：`core/llm/tools/shared/media_capability.py`。主 Provider 失败（429/5xx）时可配置 `fallback_provider` / `fallback_model` 自动降级。
 
 火山方舟 Base URL：`https://ark.cn-beijing.volces.com/api/v3`。控制台：[SeedDream](https://console.volcengine.com/ark/region:cn-beijing/model/detail?name=doubao-seedream-5-0-pro) · [SeedDance](https://console.volcengine.com/ark/region:cn-beijing/model/detail?name=doubao-seedance-2-0)。实现：`core/llm/tools/image/ark_client.py`、`core/llm/tools/video/ark_client.py`、`core/llm/tools/video/provider.py`。

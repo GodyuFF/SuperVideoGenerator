@@ -3,7 +3,7 @@
 > 版本：v0.1  
 > 更新：2026-07-17 — 剧本 `title` 以 Script 实体为准；创建/设计确认后锁定，对话不得改写；顶栏与看板展示读 `Script.title`（用户 PATCH 可改）。  
 
-> 更新日期：2026-07-20（video_clip 详情关联视频去重：preview 与 preview_url 分离；RAG/分镜预览等既有修复保留）
+> 更新日期：2026-07-20（分镜「剪辑轴」改为 EditTimeline 全片摘要；create_frames 支持仅 sub_shot_id；source_frame 自动绑）
 > 状态：规划阶段
 
 ---
@@ -301,7 +301,7 @@ interface TextAsset {
 | 生图策略 | **scene**：空镜背景板（establishing plate），无人物/动物/独立道具主体；`key_objects` 仅环境固定陈设（非 prop 资产）；**character/prop**：绿幕 `#00FF00` 生图后 FFmpeg colorkey 抠透明 PNG（`core/assets/chroma_key.py`） |
 | 手动新建 + AI 草稿 | 剧本看板「新建角色/空镜/物品/画面/视频」（`CreateTextAssetDialog`）：角色/空镜/物品可填全部 content；**frame / video_clip 五块**（名称、摘要、关联资产 `element_refs` + 可选子形象 `variant_refs`、提示词 `image_prompt`/`video_prompt`、备注 `notes` 供 AI 编排自用），可只填摘要后 **AI 一键生成**（`POST .../assets/generate-draft`，工作台专用，**不**注册 Agent 工具） |
 | 画面/视频 UI 精简 | `ImageTextAssetEditor` / `ImageTextAssetDetailModal` 对 `frame`/`video_clip` 仅展示上述五块（详情另保留关联图片/视频与谱系）；`notes` 不进入生图/生视频提示词组装；存储层多余字段不删，仅前端不展示 |
-| 关联资产动态提示词 | 生图/生视频时由 `element_refs` 展开 `【关联资产上下文】`（见 `core/assets/linked_assets_prompt.py`），拼接到最终请求 prompt，**不写回**用户锁存的 `image_prompt`/`video_prompt` |
+| 关联资产动态提示词 | 生图/生视频时由 `element_refs` 展开 `【关联资产上下文】`（见 `core/assets/linked_assets_prompt.py`），拼接到最终请求 prompt，**不写回**用户锁存的 `image_prompt`/`video_prompt`；详情页提示词旁「小眼睛」可预览实际生成全文（`GET .../resolved-prompt`） |
 
 旧键 `appearance` 加载时合并入 `description`。图片仍通过 `MediaAsset` + `generates` 关联；`primary_media_id` 固定指向 base 变体 media。
 
@@ -439,7 +439,7 @@ interface ProjectConfig {
 | **AI 视频模式** | `ai_video` | 必须 | 按镜头 | AI 视频片段 + 配音 + 合成 |
 | **画面图生视频** | `frame_i2v` | 必须 | 必须 | 实体+frame 合成配图 → 以 frame 为唯一图生源 I2V → 配音 + 合成 |
 
-> **更新 2026-07-20**：新增第三种内置风格 **画面图生视频**（`frame_i2v`）：分镜同时创建 `frame` + `video_clip`；`image_agent` 两阶段生图；`video_agent` 以 frame 图片为 I2V 输入，`video_clip` 仅承载 motion prompt。
+> **更新 2026-07-20**：新增第三种内置风格 **画面图生视频**（`frame_i2v`）：分镜同时创建 `frame` + `video_clip`；`image_agent` 两阶段生图；`video_agent` 以 frame 图片为 I2V 输入，`video_clip` 仅承载 motion prompt。`_image_gen_complete` 在尚无视觉文字资产时返回 false（禁止空剧本误标 `step:image_gen`）；`frame_i2v` 下 `video_gen` 在配图未齐时带 soft_blocker，避免跳过 `image_agent`。
 
 > **更新 2026-07-13**：下线「动态漫画模式」（`dynamic_comic`）与历史「营销视频 AI」（`marketing_video` / `marketing`）；持久化数据自动迁移为 `storybook`。现保留故事书、AI 视频、画面图生视频三种内置风格。
 
@@ -484,7 +484,7 @@ interface ProjectConfig {
 |------|------|
 | 图片完善 | `image_agent`：`generate_images` 或 `search_images`；**仅搜图**后 `sync_text_from_image` 白名单 auto-patch（`color_palette` 等），生图产出无需 sync；`description/summary` 重大变更需 `apply_major_changes` 或 `update_*` |
 | 配图 | `image_agent` 两阶段（单次委派）：`character/prop/scene` 文生图 → `frame` 多参考图生图（分镜创建 frame 后） |
-| 分镜 | `storyboard_agent`：`create_shots`（`sub_shots` 子镜轨 + `audio_tracks` + `subtitles`）→ `create_frames`（**每子镜 1 frame**，`sub_shot_id` 必填）→ `persist_plan` |
+| 分镜 | `storyboard_agent`：`create_shots`（`sub_shots` 子镜轨 + `audio_tracks` + `subtitles`）→ `create_frames`（**每子镜 1 frame**，`sub_shot_id` 必填且可单独定位）→ `persist_plan` |
 | 分镜复核 | `storyboard_refine_agent`（TTS + 生图后；**AI 视频另须 video_gen 完成**）：`get_shot_details` → `get_shot_asset_timing` → `sync_actual_assets` → `review_and_restructure` → `update_frames` → `persist_review`；**剪辑前最后一步** |
 | 主编排顺序 | **完整成片**遵守 canonical：故事书 `…→tts→shot_detail→edit`；AI 视频 `…→video→tts→shot_detail→edit`。局部请求可跳步；`remaining_plan` 禁止复核后再生视频 |
 | 剪辑计划 + 成片 | **分镜复核之后** `editing_agent`：`load_edit_context` → `plan_edit_timeline` → …；`plan_edit_timeline` 可从分镜投影生成时间轴；OpenCut 手改经 `apply_timeline_edits_to_shots` 回写 |
@@ -912,7 +912,7 @@ interface ReuseDecision {
   - **画面列表**（与剧本 Tab「画面」同一实体）：以**画面卡片**为单元，内含预览、关联资产（空镜/角色/物品）、**本图时段**（`start_ms`–`end_ms`，未设置时显示「= 子镜时段」）、成片模式；子镜头部展示 **产出意图**（`produce_mode` 芯片 + 可选 `produce_rationale` 摘要）；可新增/删除多条关联
   - **视频列表**：可选**源画面**、关联已有成片，或一键**生成视频**（图生视频）
   - 字幕行、展示说明、谱系；支持上一镜/下一镜与复制旁白（合并多幕文案）
-  - **编辑模式**：`ShotSegmentEditor` 可增删配音幕与子镜；子镜可编辑 `produce_mode` 下拉与可选 `produce_rationale`；每张关联画面可编辑 `start_ms`/`end_ms`（须落在子镜区间内）；表单仅在切换镜头时从 plan 初始化，编辑中不被 video-plan / 媒体索引刷新冲掉本地文案；抽屉在 `editing` 期间也不用远端 plan 覆盖 `planShot`；**视频**选择器始终可见以便添加；**剪辑轴**仅当镜内 `video_tracks` 存在 `source_kind=video`、已绑定媒体且与子镜 `[start_ms,end_ms]` 有交集的 clip 时展示（静图 `still` 占位不展示剪辑轴）
+  - **编辑模式**：`ShotSegmentEditor` 可增删配音幕与子镜；子镜可编辑 `produce_mode` 下拉与可选 `produce_rationale`；每张关联画面可编辑 `start_ms`/`end_ms`（须落在子镜区间内）；表单仅在切换镜头时从 plan 初始化，编辑中不被 video-plan / 媒体索引刷新冲掉本地文案；抽屉在 `editing` 期间也不用远端 plan 覆盖 `planShot`；**视频**选择器始终可见以便添加；**剪辑轴**仅当剧本已有真正的 `EditTimeline`（`has_edit_timeline`）时展示全片多轨摘要（非子镜 `video_tracks` 短视频复制），并提供「前往剪辑 Tab」；无时间轴时不展示该区块
   - 分镜 Tab 胶片条随右侧 `script-panel-scroll` 纵向滚动（执行计划 + 看板内容一体滚动）
 - TTS 试听 URL 统一为 `/api/.../assets/media/`（绝对本地路径自动映射）；打开分镜/剪辑 Tab 时自动刷新 TTS 时长（**不写**剪辑时间轴）
 - 视图偏好持久化：`localStorage` 键 `svg.storyboard.view`

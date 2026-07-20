@@ -1380,7 +1380,9 @@ class MasterReActEngine:
                 script = self._store.get_script(script_id)
                 if script and script.status == ScriptStatus.EXECUTING:
                     script.status = ScriptStatus.FAILED
-                if not any(s.status == StepStatus.FAILED for s in plan.steps):
+                from core.llm.master.plan_resolution import has_blocking_plan_failures
+
+                if not has_blocking_plan_failures(plan.steps):
                     await self._emit(
                         script_id,
                         "execution_failed",
@@ -1463,9 +1465,12 @@ class MasterReActEngine:
         if not script:
             return
 
-        if plan.steps and all(
-            s.status.value in ("completed", "skipped") for s in plan.steps
-        ):
+        from core.llm.master.plan_resolution import (
+            has_blocking_plan_failures,
+            is_plan_effectively_complete,
+        )
+
+        if plan.steps and is_plan_effectively_complete(plan.steps):
             script.status = ScriptStatus.COMPLETED
             final_url = ""
             for step in plan.steps:
@@ -1480,7 +1485,7 @@ class MasterReActEngine:
             )
             return
 
-        if any(s.status == StepStatus.FAILED for s in plan.steps):
+        if has_blocking_plan_failures(plan.steps):
             script.status = ScriptStatus.FAILED
             await self._emitter.emit({"type": "execution_failed", "script_id": script_id})
             return

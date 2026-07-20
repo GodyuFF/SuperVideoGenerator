@@ -116,7 +116,10 @@ def handle_get_plan(store: MemoryStore, ctx: AgentRunContext, args: dict) -> Too
 
             "shots": shots,
 
-            "message": "计划稿尚未 persist_plan；以下为 create_shots 后系统生成的 shot/sub_shot ID。",
+            "message": (
+                "计划稿尚未 persist_plan；以下为系统生成的 shot/sub_shot ID，"
+                "以及已关联的 frame_asset_id / video_clip_asset_id / source_frame_asset_id（若有）。"
+            ),
 
         }
 

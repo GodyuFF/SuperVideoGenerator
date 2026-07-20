@@ -668,15 +668,22 @@ def build_shots_array_schema(*, require_voice: bool = False) -> dict[str, Any]:
 
 
 def build_frame_item_schema() -> dict[str, Any]:
+    """单条 frame 创建项 schema；sub_shot_id 全局唯一即可定位，shot_id/order 可选。"""
     return _object_schema(
         {
-            "shot_id": {"type": "string", "description": "关联 Shot.id"},
-            "order": {"type": "integer", "description": "镜头序号（shot_id 缺失时用于定位镜头）"},
+            "shot_id": {
+                "type": "string",
+                "description": "关联 Shot.id（可选；缺省时系统按 sub_shot_id 全局反查）",
+            },
+            "order": {
+                "type": "integer",
+                "description": "镜头序号（可选；shot_id 缺失时用于定位镜头）",
+            },
             "sub_shot_id": {
                 "type": "string",
                 "description": (
-                    "子镜 ShotSubShot.id；须使用 create_shots/get_plan 返回 JSON 中的值，"
-                    "禁止自造 ID（如 shot_0_sub_0）"
+                    "子镜 ShotSubShot.id（必填优先）；须使用 create_shots/get_plan 返回 JSON 中的值，"
+                    "禁止自造 ID（如 shot_0_sub_0）；全局唯一，可单独定位父镜"
                 ),
             },
             "sub_shot_index": {
@@ -703,7 +710,7 @@ def build_frame_item_schema() -> dict[str, Any]:
                 "description": "多参考图顺序，默认 scene→character→prop→frame",
             },
         },
-        required=["image_prompt", "element_refs"],
+        required=["sub_shot_id", "image_prompt", "element_refs"],
         additional_properties=True,
     )
 
@@ -720,16 +727,22 @@ def build_frames_array_schema() -> dict[str, Any]:
 
 
 def build_video_clip_item_schema() -> dict[str, Any]:
-    """单条 video_clip 创建项 schema（AI 视频管线）。"""
+    """单条 video_clip 创建项 schema；sub_shot_id 可全局定位；可传 source_frame_asset_id。"""
     return _object_schema(
         {
-            "shot_id": {"type": "string", "description": "关联 Shot.id"},
-            "order": {"type": "integer", "description": "镜头序号（shot_id 缺失时用于定位镜头）"},
+            "shot_id": {
+                "type": "string",
+                "description": "关联 Shot.id（可选；缺省时系统按 sub_shot_id 全局反查）",
+            },
+            "order": {
+                "type": "integer",
+                "description": "镜头序号（可选；shot_id 缺失时用于定位镜头）",
+            },
             "sub_shot_id": {
                 "type": "string",
                 "description": (
-                    "子镜 ShotSubShot.id；须使用 create_shots/get_plan 返回 JSON 中的值，"
-                    "禁止自造 ID（如 shot_0_sub_0）"
+                    "子镜 ShotSubShot.id（必填优先）；须使用 create_shots/get_plan 返回 JSON 中的值，"
+                    "禁止自造 ID（如 shot_0_sub_0）；全局唯一，可单独定位父镜"
                 ),
             },
             "sub_shot_index": {
@@ -746,6 +759,13 @@ def build_video_clip_item_schema() -> dict[str, Any]:
                 "type": "string",
                 "description": "AI 编排自用备注，不进入生视频提示词",
             },
+            "source_frame_asset_id": {
+                "type": "string",
+                "description": (
+                    "图生视频源 frame 文字资产 id；frame_i2v 建议填写。"
+                    "缺省时系统自动取同子镜已关联的 frame_asset_id"
+                ),
+            },
             "element_refs": _shot_element_refs_schema(),
             "media_refs": {
                 "type": "array",
@@ -761,7 +781,7 @@ def build_video_clip_item_schema() -> dict[str, Any]:
                 "description": "多参考图顺序，默认 scene→character→prop→frame→media",
             },
         },
-        required=["video_prompt", "element_refs"],
+        required=["sub_shot_id", "video_prompt", "element_refs"],
         additional_properties=True,
     )
 

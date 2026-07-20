@@ -84,10 +84,11 @@ apps/desktop/
 apps/web/src/components/assetDetail/
   AssetDetailShell.tsx     ← Modal 遮罩 + 面板
   AssetDetailHeader.tsx    ← 类型徽章 + 标题 + actions
-  AssetDetailSection.tsx   ← 取景器卡片区块
+  AssetDetailSection.tsx   ← 取景器卡片区块（可选 `actions`，如提示词旁小眼睛）
+  ResolvedPromptPreview.tsx ← 实际生成提示词预览弹层
 ```
 
-**规则**：新建详情类 UI 必须复用 `assetDetail/*` 壳层，不得再复制 overlay/panel 结构。
+**规则**：新建详情类 UI 必须复用 `assetDetail/*` 壳层，不得再复制 overlay/panel 结构。`AssetDetailSection` 可通过 `actions` 在标题行右侧挂轻量操作（如 `ResolvedPromptPreview`）。
 
 ### 3.1 冷启动加载页
 

@@ -24,7 +24,7 @@ SuperVideoGenerator/
 │   ├── store/                  # 内存/SQLite 仓储
 │   ├── super_video_master/     # 薄入口：run_from_message、summary
 │   ├── conversation/           # 主/子 Agent 会话隔离
-│   ├── assets/                 # 图文资产 PATCH、image_prompt、lineage 谱系查询
+│   ├── assets/                 # 图文资产 PATCH、image_prompt、lineage、resolved_prompt 预览
 │   ├── rag/                    # 共享池 RAG：embedder、向量索引、retriever、reuse_judge、resolver、async_bridge（事件循环内同步包装）
 │   ├── generation/             # 图片/视频统一串行队列（入队、工人、runner、Agent 批拆条）
 │   ├── board/                  # 看板构建
@@ -487,6 +487,7 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 | POST | `/api/projects/{id}/scripts/{sid}/assets/generate-draft` | 工作台 AI 生成文字资产草稿（`character`/`scene`/`prop`/`frame`/`video_clip`；body：`asset_type`、`summary`、可选 `name`/`hints`；返回 `{name, content}` JSON） |
 | DELETE | `/api/projects/{id}/scripts/{sid}/assets/{asset_id}` | 用户手动删除文字资产（含 `frame` 画面）；被分镜/剪辑/外部引用时 409 + `references` |
 | GET | `/api/projects/{id}/assets/{asset_id}/lineage` | 单资产谱系（incoming/outgoing） |
+| GET | `/api/projects/{id}/assets/{asset_id}/resolved-prompt` | 实际生成提示词预览（authored + resolved + negative；含关联资产上下文，只读） |
 | GET | `/api/projects/{id}/scripts/{sid}/graph` | 剧本级关系子图 nodes/edges/stats |
 | PATCH | `/api/projects/{id}/scripts/{sid}` | 用户手动更新剧本标题/正文 |
 | PATCH | `/api/projects/{id}/assets/{asset_id}` | 用户手动更新图文资产 |

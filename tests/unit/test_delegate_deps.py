@@ -10,6 +10,8 @@ from core.llm.master.delegate_tool import DELEGATE_AGENT_ACTION
 from core.models.entities import (
     Project,
     Script,
+    TextAsset,
+    TextAssetType,
     VideoPlan,
     Shot,
     VideoStyleMode,
@@ -102,3 +104,54 @@ def test_shot_detail_soft_blocks_without_video_on_ai_video():
     }
     blockers = rows["shot_detail"]["soft_blockers"]
     assert any("video_gen" in b or "video" in b for b in blockers)
+
+
+def test_frame_i2v_video_gen_soft_blocks_without_image_gen():
+    """frame_i2v 在配图未完成时，video_agent 应有 soft_blocker。"""
+    store = MemoryStore()
+    project = Project(title="p")
+    store.add_project(project)
+    script = Script(
+        project_id=project.id,
+        title="s1",
+        duration_sec=30,
+        content_md="# 测",
+        style_mode=VideoStyleMode.FRAME_I2V,
+    )
+    store.add_script(script)
+    from tests.support.shot_fixtures import make_shot
+    from core.models.entities import ShotSubShotImage, ShotSubShotVideo
+
+    shot = make_shot(order=0, duration_ms=3000, text="旁白")
+    frame = TextAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=TextAssetType.FRAME,
+        name="画面",
+        content={"image_prompt": "a cat"},
+    )
+    store.add_text_asset(frame)
+    clip = TextAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=TextAssetType.VIDEO_CLIP,
+        name="片段",
+        content={"video_prompt": "slow pan"},
+    )
+    store.add_text_asset(clip)
+    shot.sub_shots[0].images = [
+        ShotSubShotImage(kind="static", frame_asset_id=frame.id, media_id="")
+    ]
+    shot.sub_shots[0].videos = [
+        ShotSubShotVideo(video_clip_asset_id=clip.id, media_id="")
+    ]
+    store.set_video_plan(
+        VideoPlan(script_id=script.id, mode=VideoStyleMode.FRAME_I2V, shots=[shot])
+    )
+    rows = {
+        r["step_type"]: r
+        for r in resolve_delegate_readiness(store, script.id, VideoStyleMode.FRAME_I2V)
+    }
+    blockers = rows["video_gen"]["soft_blockers"]
+    assert any("image_gen" in b for b in blockers)
+    assert rows["video_gen"]["ready"] is False

@@ -176,6 +176,27 @@ def test_shot_detail_incomplete_blocks_edit_ready():
     assert any("shot_detail" in g for g in progress["gaps"])
 
 
+def test_image_gen_incomplete_when_no_visual_assets():
+    """空剧本（无视觉文字资产）不得推断 image_gen 已完成。"""
+    store = MemoryStore()
+    project = Project(title="空剧本")
+    store.add_project(project)
+    script = Script(
+        project_id=project.id,
+        title="草稿",
+        duration_sec=60,
+        content_md="# 标题\n\n尚无角色。",
+        style_mode=VideoStyleMode.FRAME_I2V,
+    )
+    store.add_script(script)
+    completed = infer_completed_step_types(
+        store, script.id, VideoStyleMode.FRAME_I2V
+    )
+    assert "image_gen" not in completed
+    progress = build_pipeline_progress(store, script.id, VideoStyleMode.FRAME_I2V)
+    assert "image_gen" not in progress["inferred_completed_steps"]
+
+
 def test_image_gen_incomplete_when_frame_refs_ready_but_no_image():
     store = MemoryStore()
     project = Project(title="frame 测试")

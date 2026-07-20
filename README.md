@@ -47,7 +47,7 @@
 - **固定区 / 动态区** 提示词分层（`core/llm/prompt`），参考 Claude Code 的 system prompt 组装模式。
 - **MCP 语义 Tool Registry**：工具 schema 单源，ReAct 决策与 Action 执行共用。
 - **Token 预估与对话压缩**：调用前分项预估 token 占比，超长上下文自动摘要压缩，交互日志可审计。
-- **多 Provider**：DeepSeek、OpenAI、Moonshot、智谱、通义、OpenRouter、Anthropic 等可切换。
+- **多 Provider**：DeepSeek、Anthropic、OpenAI、OpenRouter、Moonshot、智谱、通义等 LLM；生图/生视频支持火山、百炼、OpenAI、fal.ai、Gemini、Kling、Runway 等。
 
 ### 6. 可观测、可测试、可扩展
 

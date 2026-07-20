@@ -392,7 +392,11 @@
       "videoMediaPlaceholder": "(Select generated video)",
       "timelineSection": "Edit timeline",
       "timelinePreview": "Timeline clip",
-      "timelineEditHint": "Edit timeline clips in the Edit tab (trim, transitions, layers).",
+      "timelineEditHint": "Full-script EditTimeline summary (not the sub-shot video). Open the Edit tab to trim, add transitions, and layer clips.",
+      "timelineDuration": "Total duration {{duration}}",
+      "timelineTrackVideo": "Video",
+      "timelineTrackAudio": "Audio",
+      "timelineTrackSubtitle": "Subtitle",
       "openEditTimeline": "Open Edit tab",
       "noContent": "No linked content",
       "genMode": {

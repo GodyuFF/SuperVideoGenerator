@@ -6,7 +6,7 @@ from typing import Any, Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.llm.client.providers import DEFAULT_PROVIDER_ID, PROVIDER_PRESETS
+from core.llm.client.providers import DEFAULT_PROVIDER_ID, PROVIDER_PRESETS, resolved_protocol
 from core.models.entities import ImageSourceMode, ImageTextConfig
 
 # 输出 Token 上限：384k = 384 * 1024
@@ -126,6 +126,7 @@ class LLMConfigManager:
         result = {
             "provider": s.provider,
             "provider_label": preset.label if preset else s.provider,
+            "protocol": resolved_protocol(s.provider),
             "model": self.resolved_model(),
             "base_url": self.resolved_base_url(),
             "temperature": s.temperature,
@@ -137,7 +138,12 @@ class LLMConfigManager:
             "has_api_key": bool(self.resolved_api_key()),
             "llm_active": self.is_llm_available(),
             "available_providers": [
-                {"id": p.id, "label": p.label, "default_model": p.default_model}
+                {
+                    "id": p.id,
+                    "label": p.label,
+                    "default_model": p.default_model,
+                    "protocol": p.protocol,
+                }
                 for p in PROVIDER_PRESETS.values()
             ],
             "image_text_defaults": self.get_image_text_defaults().model_dump(),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from core.edit.shot_query import serialize_shots_for_agent
@@ -24,6 +25,7 @@ def apply_agent_action(
     agent: str,
     action: str,
 ) -> ToolResult:
+    """执行 Agent 写操作，并将关键映射 JSON 写入 observation 供 LLM 下一轮使用。"""
     from core.llm.agent.llm_action import apply_action_result
 
     outputs_before = list(ctx.outputs)
@@ -37,7 +39,11 @@ def apply_agent_action(
         links = ctx.work_context.get("_frame_links")
         if isinstance(links, list) and links:
             structured["frame_links"] = links
-    if action in ("create_shots", "create_frames", "persist_plan"):
+    if action == "create_video_clips":
+        links = ctx.work_context.get("_video_clip_links")
+        if isinstance(links, list) and links:
+            structured["video_clip_links"] = links
+    if action in ("create_shots", "create_frames", "create_video_clips", "persist_plan"):
         pending = ctx.work_context.get("_pending_shots")
         if isinstance(pending, list):
             structured["shot_count"] = len(pending)
@@ -45,7 +51,8 @@ def apply_agent_action(
             if action == "create_shots":
                 structured["source"] = "pending"
                 structured["message"] = (
-                    "create_shots 已解析镜头；请用下方 sub_shots[].id 作为 create_frames.sub_shot_id，"
+                    "create_shots 已解析镜头；请用下方 sub_shots[].id 作为 "
+                    "create_frames / create_video_clips 的 sub_shot_id（全局唯一，可仅传该字段）；"
                     "勿自造 ID。"
                 )
         elif action == "persist_plan":
@@ -59,9 +66,12 @@ def apply_agent_action(
         structured["output_count"] = len(new_outputs)
         structured["asset_ids"] = [o.asset_id for o in new_outputs if o.asset_id]
     obs_out = observation
-    if action == "create_shots" and structured.get("shots"):
-        import json
-
+    dump_actions = ("create_shots", "create_frames", "create_video_clips")
+    if action in dump_actions and (
+        structured.get("shots")
+        or structured.get("frame_links")
+        or structured.get("video_clip_links")
+    ):
         msg = structured.get("message") or observation
         obs_out = f"{msg}\n\n{json.dumps(structured, ensure_ascii=False, indent=2)}"
     return ToolResult(
@@ -78,13 +88,17 @@ def read_media_list(
     *,
     media_type: MediaAssetType,
 ) -> ToolResult:
+    """列出指定类型媒体资产。"""
     payload = build_media_list_payload(store, ctx.script_id, media_type)
     observation = format_media_list_payload(payload)
     return ToolResult(observation=observation, structured=payload)
 
 
 def make_write_handler(agent: str, action: str):
+    """生成绑定 agent/action 的写操作 handler。"""
+
     def handler(store, ctx, args):
+        """转发到 apply_agent_action。"""
         return apply_agent_action(store, ctx, args, agent=agent, action=action)
 
     return handler

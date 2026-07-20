@@ -62,9 +62,9 @@ from core.models.entities import (
     new_id,
 )
 from core.edit.sub_shot_helpers import (
-    append_sub_shot_image,
-    append_sub_shot_video,
     first_sub_shot_image,
+    link_sub_shot_frame,
+    link_sub_shot_video,
     sub_shot_has_frame_link,
     sub_shot_has_video_clip_link,
 )
@@ -310,6 +310,8 @@ def _parse_sub_shot_videos(raw_item: dict[str, Any]) -> list[ShotSubShotVideo]:
                 end_ms=max(0, int(item.get("end_ms", 0))),
                 source_kind=kind if kind in ("video", "still") else "video",  # type: ignore[arg-type]
                 camera_motion=_normalize_shot_camera_motion(item.get("camera_motion")),
+                source_frame_asset_id=str(item.get("source_frame_asset_id") or "").strip(),
+                video_clip_asset_id=str(item.get("video_clip_asset_id") or "").strip(),
             )
         )
     return out
@@ -557,6 +559,90 @@ def parse_shots_from_data(
     return normalize_shot_orders(shots) if shots else []
 
 
+def _resolve_shot_and_sub_index(
+    raw: dict[str, Any],
+    shots_map: dict[str, Shot],
+    shots_by_order: dict[int, str],
+    *,
+    action: str,
+) -> tuple[Shot, int]:
+    """按 shot_id / order / 全局 sub_shot_id 定位父镜与子镜下标；失败时抛出可读错误。"""
+    shot_id = str(raw.get("shot_id", "")).strip()
+    shot: Shot | None = shots_map.get(shot_id) if shot_id else None
+    if shot is None and raw.get("order") is not None:
+        try:
+            oid = shots_by_order.get(int(raw.get("order")))
+        except (TypeError, ValueError):
+            oid = None
+        if oid:
+            shot = shots_map.get(oid)
+
+    target_sub_shot_id = str(
+        raw.get("sub_shot_id") or raw.get("visual_id") or ""
+    ).strip()
+
+    if shot is None and target_sub_shot_id:
+        for candidate in shots_map.values():
+            for idx, v in enumerate(candidate.sub_shots):
+                if v.id == target_sub_shot_id:
+                    return candidate, idx
+
+    if shot is None or not shot.sub_shots:
+        if target_sub_shot_id:
+            raise ValueError(
+                f"{action} 未能定位子镜 {target_sub_shot_id}："
+                "请使用 create_shots/get_plan 返回的 sub_shots[].id"
+                "（可选同时传 shot_id 或 order）"
+            )
+        raise ValueError(
+            f"{action} 未能关联到有效镜头：请提供 shot_id/order，"
+            "或提供 create_shots/get_plan 返回的 sub_shot_id"
+        )
+
+    target_idx: int | None = None
+    if target_sub_shot_id:
+        for idx, v in enumerate(shot.sub_shots):
+            if v.id == target_sub_shot_id:
+                target_idx = idx
+                break
+    if target_idx is None and raw.get("sub_shot_index") is not None:
+        try:
+            sub_idx = int(raw.get("sub_shot_index"))
+        except (TypeError, ValueError):
+            sub_idx = -1
+        if 0 <= sub_idx < len(shot.sub_shots):
+            target_idx = sub_idx
+            if target_sub_shot_id:
+                get_logger(__name__).warning(
+                    "%s 未识别 sub_shot_id=%s，改用 sub_shot_index=%s（镜%s）",
+                    action,
+                    target_sub_shot_id,
+                    sub_idx,
+                    shot.order + 1,
+                )
+    if target_idx is None:
+        if not target_sub_shot_id:
+            raise ValueError(
+                f"{action} 缺少 sub_shot_id（镜{shot.order + 1}）；"
+                "请从 create_shots/get_plan 返回 JSON 读取 sub_shots[].id，"
+                "或提供 order + sub_shot_index"
+            )
+        raise ValueError(
+            f"{action} 未找到子镜 {target_sub_shot_id}（镜{shot.order + 1}）；"
+            "请调用 get_plan 获取系统生成的 sub_shot_id，或使用 order + sub_shot_index"
+        )
+    return shot, target_idx
+
+
+def _first_frame_asset_id(sub: ShotSubShot) -> str:
+    """取子镜首个非空 frame_asset_id。"""
+    for img in sub.images:
+        fid = (img.frame_asset_id or "").strip()
+        if fid:
+            return fid
+    return ""
+
+
 def _create_frame_assets_from_data(
     store: MemoryStore,
     ctx: AgentRunContext,
@@ -577,50 +663,20 @@ def _create_frame_assets_from_data(
     shots_by_order = {s.order: s.id for s in pending_shots}
     created: list[TextAsset] = []
     frame_links: list[dict[str, str]] = []
+    errors: list[str] = []
 
     for raw in frames_data:
         if not isinstance(raw, dict):
             continue
-        shot_id = str(raw.get("shot_id", "")).strip()
-        shot: Shot | None = shots_map.get(shot_id) if shot_id else None
-        if shot is None and raw.get("order") is not None:
-            oid = shots_by_order.get(int(raw.get("order")))
-            if oid:
-                shot = shots_map.get(oid)
-        if shot is None or not shot.sub_shots:
-            continue
-
-        target_sub_shot_id = str(
-            raw.get("sub_shot_id") or raw.get("visual_id") or ""
-        ).strip()
-        target_idx = None
-        if target_sub_shot_id:
-            for idx, v in enumerate(shot.sub_shots):
-                if v.id == target_sub_shot_id:
-                    target_idx = idx
-                    break
-        if target_idx is None and raw.get("sub_shot_index") is not None:
-            sub_idx = int(raw.get("sub_shot_index"))
-            if 0 <= sub_idx < len(shot.sub_shots):
-                target_idx = sub_idx
-                if target_sub_shot_id:
-                    get_logger(__name__).warning(
-                        "create_frames 未识别 sub_shot_id=%s，改用 sub_shot_index=%s（镜%s）",
-                        target_sub_shot_id,
-                        sub_idx,
-                        shot.order + 1,
-                    )
-        if target_idx is None:
-            if not target_sub_shot_id:
-                raise ValueError(
-                    f"create_frames 缺少 sub_shot_id（镜{shot.order + 1}）；"
-                    "请从 create_shots/get_plan 返回 JSON 读取 sub_shots[].id，"
-                    "或提供 order + sub_shot_index"
-                )
-            raise ValueError(
-                f"create_frames 未找到子镜 {target_sub_shot_id}（镜{shot.order + 1}）；"
-                "请调用 get_plan 获取系统生成的 sub_shot_id，或使用 order + sub_shot_index"
+        try:
+            shot, target_idx = _resolve_shot_and_sub_index(
+                raw, shots_map, shots_by_order, action="create_frames"
             )
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        # 使用 shots_map 中的最新副本（前面条目可能已更新）
+        shot = shots_map[shot.id]
         sub = shot.sub_shots[target_idx]
 
         element_refs = _parse_element_refs(raw.get("element_refs")) or dict(sub.element_refs)
@@ -666,11 +722,17 @@ def _create_frame_assets_from_data(
             }
         )
 
-        # 回填子镜图片引用的 frame_asset_id
         new_image = ShotSubShotImage(frame_asset_id=asset.id)
         new_sub_shots = list(shot.sub_shots)
-        new_sub_shots[target_idx] = append_sub_shot_image(sub, new_image)
+        new_sub_shots[target_idx] = link_sub_shot_frame(sub, new_image)
         shots_map[shot.id] = shot.model_copy(update={"sub_shots": new_sub_shots})
+
+    if errors and not created:
+        raise ValueError("；".join(errors[:5]))
+    if errors and created:
+        get_logger(__name__).warning(
+            "create_frames 部分失败：%s", "；".join(errors[:5])
+        )
 
     updated = normalize_shot_orders([shots_map[s.id] for s in pending_shots if s.id in shots_map])
     return created, updated, frame_links
@@ -696,50 +758,19 @@ def _create_video_clip_assets_from_data(
     shots_by_order = {s.order: s.id for s in pending_shots}
     created: list[TextAsset] = []
     clip_links: list[dict[str, str]] = []
+    errors: list[str] = []
 
     for raw in clips_data:
         if not isinstance(raw, dict):
             continue
-        shot_id = str(raw.get("shot_id", "")).strip()
-        shot: Shot | None = shots_map.get(shot_id) if shot_id else None
-        if shot is None and raw.get("order") is not None:
-            oid = shots_by_order.get(int(raw.get("order")))
-            if oid:
-                shot = shots_map.get(oid)
-        if shot is None or not shot.sub_shots:
-            continue
-
-        target_sub_shot_id = str(
-            raw.get("sub_shot_id") or raw.get("visual_id") or ""
-        ).strip()
-        target_idx = None
-        if target_sub_shot_id:
-            for idx, v in enumerate(shot.sub_shots):
-                if v.id == target_sub_shot_id:
-                    target_idx = idx
-                    break
-        if target_idx is None and raw.get("sub_shot_index") is not None:
-            sub_idx = int(raw.get("sub_shot_index"))
-            if 0 <= sub_idx < len(shot.sub_shots):
-                target_idx = sub_idx
-                if target_sub_shot_id:
-                    get_logger(__name__).warning(
-                        "create_video_clips 未识别 sub_shot_id=%s，改用 sub_shot_index=%s（镜%s）",
-                        target_sub_shot_id,
-                        sub_idx,
-                        shot.order + 1,
-                    )
-        if target_idx is None:
-            if not target_sub_shot_id:
-                raise ValueError(
-                    f"create_video_clips 缺少 sub_shot_id（镜{shot.order + 1}）；"
-                    "请从 create_shots/get_plan 返回 JSON 读取 sub_shots[].id，"
-                    "或提供 order + sub_shot_index"
-                )
-            raise ValueError(
-                f"create_video_clips 未找到子镜 {target_sub_shot_id}（镜{shot.order + 1}）；"
-                "请调用 get_plan 获取系统生成的 sub_shot_id，或使用 order + sub_shot_index"
+        try:
+            shot, target_idx = _resolve_shot_and_sub_index(
+                raw, shots_map, shots_by_order, action="create_video_clips"
             )
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        shot = shots_map[shot.id]
         sub = shot.sub_shots[target_idx]
 
         element_refs = _parse_element_refs(raw.get("element_refs")) or dict(sub.element_refs)
@@ -752,6 +783,13 @@ def _create_video_clip_assets_from_data(
         video_prompt = str(
             raw.get("video_prompt") or raw.get("description", "") or sub.description
         ).strip()
+        source_frame = str(raw.get("source_frame_asset_id") or "").strip()
+        if not source_frame:
+            frame_refs = element_refs.get("frame") if isinstance(element_refs, dict) else None
+            if isinstance(frame_refs, list) and frame_refs:
+                source_frame = str(frame_refs[0] or "").strip()
+        if not source_frame:
+            source_frame = _first_frame_asset_id(sub)
         content: dict[str, Any] = {
             "summary": str(raw.get("summary", "")).strip() or video_prompt[:80],
             "video_prompt": video_prompt,
@@ -764,6 +802,7 @@ def _create_video_clip_assets_from_data(
             or ["scene", "character", "prop", "frame", "media"],
             "shot_id": shot.id,
             "sub_shot_id": sub.id,
+            "source_frame_asset_id": source_frame,
             "prompt_locked": True,
         }
         name = str(raw.get("name", "")).strip() or f"视频片段·镜{shot.order + 1}"
@@ -789,16 +828,25 @@ def _create_video_clip_assets_from_data(
                 "shot_id": shot.id,
                 "sub_shot_id": sub.id,
                 "video_clip_asset_id": asset.id,
+                "source_frame_asset_id": source_frame,
             }
         )
 
         new_video = ShotSubShotVideo(
             video_clip_asset_id=asset.id,
+            source_frame_asset_id=source_frame,
             camera_motion=content.get("camera_motion") or sub.camera_motion,
         )
         new_sub_shots = list(shot.sub_shots)
-        new_sub_shots[target_idx] = append_sub_shot_video(sub, new_video)
+        new_sub_shots[target_idx] = link_sub_shot_video(sub, new_video)
         shots_map[shot.id] = shot.model_copy(update={"sub_shots": new_sub_shots})
+
+    if errors and not created:
+        raise ValueError("；".join(errors[:5]))
+    if errors and created:
+        get_logger(__name__).warning(
+            "create_video_clips 部分失败：%s", "；".join(errors[:5])
+        )
 
     updated = normalize_shot_orders([shots_map[s.id] for s in pending_shots if s.id in shots_map])
     return created, updated, clip_links
@@ -1462,7 +1510,14 @@ def apply_action_result(
             observation = f"已为 {len(created)} 个子镜创建 video_clip 文字资产。"
             if clip_links:
                 mapping = ", ".join(
-                    f"{x['sub_shot_id'][:8]}→{x['video_clip_asset_id'][:8]}"
+                    (
+                        f"{x['sub_shot_id'][:8]}→{x['video_clip_asset_id'][:8]}"
+                        + (
+                            f"(src={x['source_frame_asset_id'][:8]})"
+                            if x.get("source_frame_asset_id")
+                            else ""
+                        )
+                    )
                     for x in clip_links[:6]
                 )
                 observation += f" 映射：{mapping}"

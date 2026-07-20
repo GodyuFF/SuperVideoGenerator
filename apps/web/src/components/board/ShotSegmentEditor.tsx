@@ -28,6 +28,7 @@ import { ShotSubShotCard } from "./ShotSubShotCard";
 import { ShotVoiceActCard } from "./ShotVoiceActCard";
 import { SubtitleSegmentEditor } from "./SubtitleSegmentEditor";
 import { useVoiceActCharacters } from "../../hooks/useVoiceActCharacters";
+import type { EditTimelineStripSummary } from "../../utils/editTimelineSummary";
 
 interface ShotSegmentEditorProps {
   projectId: string;
@@ -40,6 +41,10 @@ interface ShotSegmentEditorProps {
   /** media_id → 实测时长（毫秒），用于自动推算镜时长。 */
   mediaDurationById?: Record<string, number>;
   onOpenEditTimeline?: () => void;
+  /** 剧本是否已有真正的 EditTimeline。 */
+  hasEditTimeline?: boolean;
+  /** 全片剪辑轴迷你摘要。 */
+  editTimelineSummary?: EditTimelineStripSummary | null;
   onSave: (body: PatchVideoPlanShotBody) => Promise<void>;
   onCancel: () => void;
   styleVideoModes?: StyleVideoGenMode[];
@@ -57,6 +62,8 @@ export function ShotSegmentEditor({
   mediaMetaById,
   mediaDurationById,
   onOpenEditTimeline,
+  hasEditTimeline = false,
+  editTimelineSummary = null,
   onSave,
   onCancel,
   styleVideoModes,
@@ -374,6 +381,8 @@ export function ShotSegmentEditor({
               editable
               onChange={(patch) => updateSubShot(vis.id, patch)}
               onOpenEditTimeline={onOpenEditTimeline}
+              hasEditTimeline={hasEditTimeline}
+              editTimelineSummary={editTimelineSummary}
               voiceActs={voiceActs}
               styleVideoModes={styleVideoModes}
               onRemove={

@@ -36,6 +36,16 @@ const ARK_SEEDREAM_MODEL = "doubao-seedream-5-0-pro";
 const ARK_SEEDANCE_MODEL = "doubao-seedance-2-0";
 const AGNES_IMAGE_BASE_URL = "https://apihub.agnes-ai.com/v1";
 const AGNES_VIDEO_BASE_URL = "https://apihub.agnes-ai.com/v1";
+const OPENAI_IMAGE_BASE_URL = "https://api.openai.com/v1";
+const OPENAI_IMAGE_MODEL = "gpt-image-1";
+const FAL_IMAGE_BASE_URL = "https://fal.run";
+const FAL_IMAGE_MODEL = "fal-ai/flux-pro/v1.1";
+const GEMINI_IMAGE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+const GEMINI_IMAGE_MODEL = "gemini-2.0-flash-preview-image-generation";
+const KLING_VIDEO_BASE_URL = "https://api.klingai.com/v1";
+const KLING_VIDEO_MODEL = "kling-v3-omni-video";
+const RUNWAY_VIDEO_BASE_URL = "https://api.dev.runwayml.com/v1";
+const RUNWAY_VIDEO_MODEL = "gen4.5";
 
 /** 自定义尺寸在下拉中的哨兵值。 */
 const CUSTOM_SIZE_VALUE = "__custom__";
@@ -157,6 +167,42 @@ function imageDefaultsForProvider(
         current.baseUrl.includes("volces.com") ? AGNES_IMAGE_BASE_URL : current.baseUrl,
     };
   }
+  if (provider === "openai") {
+    return {
+      model:
+        !current.model || current.model.startsWith("agnes-") || current.model.startsWith("doubao-")
+          ? OPENAI_IMAGE_MODEL
+          : current.model,
+      baseUrl:
+        !current.baseUrl || current.baseUrl.includes("agnes-ai.com") || current.baseUrl.includes("volces.com")
+          ? OPENAI_IMAGE_BASE_URL
+          : current.baseUrl,
+    };
+  }
+  if (provider === "fal") {
+    return {
+      model:
+        !current.model || current.model.startsWith("agnes-") || current.model.startsWith("doubao-")
+          ? FAL_IMAGE_MODEL
+          : current.model,
+      baseUrl:
+        !current.baseUrl || current.baseUrl.includes("agnes-ai.com") || current.baseUrl.includes("openai.com")
+          ? FAL_IMAGE_BASE_URL
+          : current.baseUrl,
+    };
+  }
+  if (provider === "gemini") {
+    return {
+      model:
+        !current.model || current.model.startsWith("agnes-") || current.model.startsWith("doubao-")
+          ? GEMINI_IMAGE_MODEL
+          : current.model,
+      baseUrl:
+        !current.baseUrl || current.baseUrl.includes("agnes-ai.com")
+          ? GEMINI_IMAGE_BASE_URL
+          : current.baseUrl,
+    };
+  }
   return current;
 }
 
@@ -183,6 +229,42 @@ function videoDefaultsForProvider(
         current.model === ARK_SEEDANCE_MODEL ? "agnes-video-v2.0" : current.model,
       baseUrl:
         current.baseUrl.includes("volces.com") ? AGNES_VIDEO_BASE_URL : current.baseUrl,
+    };
+  }
+  if (provider === "kling") {
+    return {
+      model:
+        !current.model || current.model.startsWith("agnes-") || current.model.startsWith("doubao-")
+          ? KLING_VIDEO_MODEL
+          : current.model,
+      baseUrl:
+        !current.baseUrl || current.baseUrl.includes("agnes-ai.com") || current.baseUrl.includes("volces.com")
+          ? KLING_VIDEO_BASE_URL
+          : current.baseUrl,
+    };
+  }
+  if (provider === "runway") {
+    return {
+      model:
+        !current.model || current.model.startsWith("agnes-") || current.model.startsWith("doubao-")
+          ? RUNWAY_VIDEO_MODEL
+          : current.model,
+      baseUrl:
+        !current.baseUrl || current.baseUrl.includes("agnes-ai.com") || current.baseUrl.includes("volces.com")
+          ? RUNWAY_VIDEO_BASE_URL
+          : current.baseUrl,
+    };
+  }
+  if (provider === "fal") {
+    return {
+      model:
+        !current.model || current.model.startsWith("agnes-") || current.model.startsWith("doubao-")
+          ? "fal-ai/kling-video/v2.1/master/image-to-video"
+          : current.model,
+      baseUrl:
+        !current.baseUrl || current.baseUrl.includes("agnes-ai.com")
+          ? FAL_IMAGE_BASE_URL
+          : current.baseUrl,
     };
   }
   return current;
@@ -834,7 +916,7 @@ export function AiSettingsPage({
               {tab === "image" && (
                 <>
                   <p className="muted settings-intro">
-                    选择生图服务商：Agnes AI、火山方舟 SeedDream、百炼或本地 Stable Diffusion。
+                    选择生图服务商：Agnes AI、火山 SeedDream、百炼、OpenAI、fal.ai FLUX、Gemini 或本地 SD。
                   </p>
                   <label className="settings-field checkbox-row">
                     <input

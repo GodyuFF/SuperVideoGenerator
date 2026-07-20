@@ -41,6 +41,17 @@ from core.llm.tools.image.ark_client import (
     ark_img2img,
     ark_txt2img,
 )
+from core.llm.tools.image.fal_client import FalImageGenerationError, fal_img2img, fal_txt2img
+from core.llm.tools.image.gemini_image_client import (
+    GeminiImageGenerationError,
+    gemini_img2img,
+    gemini_txt2img,
+)
+from core.llm.tools.image.openai_image_client import (
+    OpenAIImageGenerationError,
+    openai_img2img,
+    openai_txt2img,
+)
 from core.llm.tools.image.reference_url import resolve_reference_url_for_media
 from core.llm.tools.image.variants import collect_variant_generation_items
 from core.llm.tools.image.frames import collect_frame_generation_items, collect_reference_media_ids
@@ -49,6 +60,7 @@ from core.llm.tools.image.settings import (
     get_image_gen_settings,
     is_image_gen_available,
 )
+from core.llm.tools.shared.provider_fallback import build_fallback_settings, is_retryable_provider_error
 from core.models.entities import StyleConfig, TextAssetType
 from core.models.image_text_asset import (
     ImageVariant,
@@ -450,18 +462,23 @@ async def _generate_one_item(
         last_error = ""
         ref_mids = item.get("reference_media_ids")
         ref_mid = str(item.get("reference_media_id", "")).strip()
-        is_sd = settings.provider == "local_sd"
-        is_bailian = settings.provider == "bailian"
-        is_volcengine = settings.provider == "volcengine"
+        active_settings = settings
+        fallback_used = False
 
         # SD 生图时使用英文 trait 标签重新组装 prompt，提升生图质量
         image_prompt = item["image_prompt"]
-        if is_sd:
+        if active_settings.provider == "local_sd":
             en_prompt = _recompose_prompt_in_english(store, item)
             if en_prompt:
                 image_prompt = en_prompt
 
         for attempt in range(1, IMAGE_GEN_MAX_ATTEMPTS + 1):
+            is_sd = active_settings.provider == "local_sd"
+            is_bailian = active_settings.provider == "bailian"
+            is_volcengine = active_settings.provider == "volcengine"
+            is_openai = active_settings.provider == "openai"
+            is_fal = active_settings.provider == "fal"
+            is_gemini = active_settings.provider == "gemini"
             try:
                 if is_bailian and isinstance(ref_mids, list) and ref_mids:
                     # 百炼多参考图融合合成（frame 画面生成）
@@ -472,20 +489,20 @@ async def _generate_one_item(
                     image_url = await bailian_img2img(
                         image_prompt,
                         ref_urls,
-                        settings=settings,
+                        settings=active_settings,
                     )
                 elif is_bailian and ref_mid:
                     ref_url = resolve_reference_url_for_media(store, ref_mid)
                     image_url = await bailian_img2img(
                         image_prompt,
                         [ref_url],
-                        settings=settings,
+                        settings=active_settings,
                     )
                 elif is_bailian:
                     # 百炼纯文生图
                     image_url = await bailian_txt2img(
                         image_prompt,
-                        settings=settings,
+                        settings=active_settings,
                     )
                 elif is_sd and isinstance(ref_mids, list) and ref_mids:
                     # SD 多参考图：取第一张作为 init_image
@@ -494,7 +511,7 @@ async def _generate_one_item(
                     image_url = await sd_img2img(
                         image_prompt,
                         init_b64,
-                        settings=settings,
+                        settings=active_settings,
                     )
                 elif is_sd and ref_mid:
                     ref_url = resolve_reference_url_for_media(store, ref_mid)
@@ -502,13 +519,13 @@ async def _generate_one_item(
                     image_url = await sd_img2img(
                         image_prompt,
                         init_b64,
-                        settings=settings,
+                        settings=active_settings,
                     )
                 elif is_sd:
                     # SD 纯文生图
                     image_url = await sd_txt2img(
                         image_prompt,
-                        settings=settings,
+                        settings=active_settings,
                     )
                 elif is_volcengine and isinstance(ref_mids, list) and ref_mids:
                     ref_urls = [
@@ -518,19 +535,73 @@ async def _generate_one_item(
                     image_url = await ark_img2img(
                         image_prompt,
                         ref_urls,
-                        settings=settings,
+                        settings=active_settings,
                     )
                 elif is_volcengine and ref_mid:
                     ref_url = resolve_reference_url_for_media(store, ref_mid)
                     image_url = await ark_img2img(
                         image_prompt,
                         [ref_url],
-                        settings=settings,
+                        settings=active_settings,
                     )
                 elif is_volcengine:
                     image_url = await ark_txt2img(
                         image_prompt,
-                        settings=settings,
+                        settings=active_settings,
+                    )
+                elif is_openai and isinstance(ref_mids, list) and ref_mids:
+                    ref_urls = [
+                        resolve_reference_url_for_media(store, str(m))
+                        for m in ref_mids
+                    ]
+                    image_url = await openai_img2img(
+                        image_prompt,
+                        ref_urls,
+                        settings=active_settings,
+                    )
+                elif is_openai and ref_mid:
+                    ref_url = resolve_reference_url_for_media(store, ref_mid)
+                    image_url = await openai_img2img(
+                        image_prompt,
+                        [ref_url],
+                        settings=active_settings,
+                    )
+                elif is_openai:
+                    image_url = await openai_txt2img(
+                        image_prompt,
+                        settings=active_settings,
+                    )
+                elif is_fal and (isinstance(ref_mids, list) and ref_mids or ref_mid):
+                    ref_urls = (
+                        [resolve_reference_url_for_media(store, str(m)) for m in ref_mids]
+                        if isinstance(ref_mids, list) and ref_mids
+                        else [resolve_reference_url_for_media(store, ref_mid)]
+                    )
+                    image_url = await fal_img2img(
+                        image_prompt,
+                        ref_urls,
+                        settings=active_settings,
+                    )
+                elif is_fal:
+                    image_url = await fal_txt2img(
+                        image_prompt,
+                        settings=active_settings,
+                    )
+                elif is_gemini and (isinstance(ref_mids, list) and ref_mids or ref_mid):
+                    ref_urls = (
+                        [resolve_reference_url_for_media(store, str(m)) for m in ref_mids]
+                        if isinstance(ref_mids, list) and ref_mids
+                        else [resolve_reference_url_for_media(store, ref_mid)]
+                    )
+                    image_url = await gemini_img2img(
+                        image_prompt,
+                        ref_urls,
+                        settings=active_settings,
+                    )
+                elif is_gemini:
+                    image_url = await gemini_txt2img(
+                        image_prompt,
+                        settings=active_settings,
                     )
                 elif isinstance(ref_mids, list) and ref_mids:
                     ref_urls = [
@@ -540,21 +611,44 @@ async def _generate_one_item(
                     image_url = await generate_images_with_references_async(
                         item["image_prompt"],
                         ref_urls,
-                        settings=settings,
+                        settings=active_settings,
                     )
                 elif ref_mid:
                     ref_url = resolve_reference_url_for_media(store, ref_mid)
                     image_url = await generate_image_with_reference_async(
                         item["image_prompt"],
                         ref_url,
-                        settings=settings,
+                        settings=active_settings,
                     )
                 else:
                     image_url = await generate_text_to_image_async(
-                        item["image_prompt"], settings=settings
+                        item["image_prompt"], settings=active_settings
                     )
-            except (AgnesImageGenerationError, SdImageGenerationError, BailianImageGenerationError, ArkImageGenerationError) as e:
+            except (
+                AgnesImageGenerationError,
+                SdImageGenerationError,
+                BailianImageGenerationError,
+                ArkImageGenerationError,
+                OpenAIImageGenerationError,
+                FalImageGenerationError,
+                GeminiImageGenerationError,
+            ) as e:
                 last_error = str(e)
+                if (
+                    not fallback_used
+                    and is_retryable_provider_error(e)
+                    and active_settings.fallback_provider
+                    and active_settings.fallback_provider != active_settings.provider
+                ):
+                    fb_settings = build_fallback_settings(
+                        active_settings,
+                        fallback_provider=active_settings.fallback_provider,
+                        fallback_model=active_settings.fallback_model,
+                    )
+                    if fb_settings is not None:
+                        active_settings = fb_settings
+                        fallback_used = True
+                        continue
                 # 检查是否为提示词不合规错误，若是则尝试修改提示词后重试
                 error_info = parse_agnes_api_error_body(
                     getattr(e, "http_status", 500) or 500,

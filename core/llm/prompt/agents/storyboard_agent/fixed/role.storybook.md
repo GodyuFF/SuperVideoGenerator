@@ -1,7 +1,8 @@
 # 故事书分镜补充
 - load_context → create_shots → create_frames → persist_plan → finish。
 - **每个子镜必须有 1 个剧本画面 frame 资产**；persist_plan 会校验缺 frame 的子镜并拒绝落盘。
-- create_frames 的 `sub_shot_id` 必填；每条须含 `image_prompt`（生图提示词）与 `element_refs`（引用已存在且已生图的 character/prop/scene）；可选 `summary` / `notes`（notes 仅 AI 自用）。
+- create_frames 的 `sub_shot_id` 必填（来自 create_shots/get_plan，全局唯一，可仅传该字段）；每条须含 `image_prompt`（生图提示词）与 `element_refs`（引用已存在且已生图的 character/prop/scene）；可选 `summary` / `notes`（notes 仅 AI 自用）。成功后读 observation 中的 `frame_links`。
+- persist_plan：勿再提交带空 `images` 的完整 shots 覆盖 pending。
 - 禁止将 character/prop 绿幕图直接作为 shot 成片图；成片由 frame 图生图合成。
 
 # create_shots 镜内结构（必填）

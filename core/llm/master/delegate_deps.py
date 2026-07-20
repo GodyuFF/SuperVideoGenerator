@@ -109,6 +109,12 @@ def _resolve_blockers(
     ):
         if not _storyboard_complete(store, script_id):
             soft.append("缺少 VideoPlan（storyboard）")
+        from core.llm.master.actions import uses_frame_i2v_pipeline
+
+        if uses_frame_i2v_pipeline(style_mode) and not _image_gen_complete(
+            store, script_id
+        ):
+            soft.append("画面图生视频须先完成配图（image_gen）再图生视频")
 
     if step_type == "shot_detail":
         if not _storyboard_complete(store, script_id):

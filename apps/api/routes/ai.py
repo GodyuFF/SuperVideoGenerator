@@ -314,6 +314,33 @@ async def test_image_generation(body: TestImageRequest):
                 body.prompt,
                 settings=settings,
             )
+        elif settings.provider == "openai":
+            from core.llm.tools.image.openai_image_client import (
+                OpenAIImageGenerationError,
+                openai_txt2img,
+            )
+
+            image_url = await openai_txt2img(
+                body.prompt,
+                settings=settings,
+            )
+        elif settings.provider == "fal":
+            from core.llm.tools.image.fal_client import FalImageGenerationError, fal_txt2img
+
+            image_url = await fal_txt2img(
+                body.prompt,
+                settings=settings,
+            )
+        elif settings.provider == "gemini":
+            from core.llm.tools.image.gemini_image_client import (
+                GeminiImageGenerationError,
+                gemini_txt2img,
+            )
+
+            image_url = await gemini_txt2img(
+                body.prompt,
+                settings=settings,
+            )
         else:
             image_url = await generate_text_to_image_async(
                 body.prompt,
@@ -327,6 +354,12 @@ async def test_image_generation(body: TestImageRequest):
         raise HTTPException(502, detail=f"百炼生图失败：{e}") from e
     except ArkImageGenerationError as e:
         raise HTTPException(502, detail=f"SeedDream 生图失败：{e}") from e
+    except OpenAIImageGenerationError as e:
+        raise HTTPException(502, detail=f"OpenAI 生图失败：{e}") from e
+    except FalImageGenerationError as e:
+        raise HTTPException(502, detail=f"fal.ai 生图失败：{e}") from e
+    except GeminiImageGenerationError as e:
+        raise HTTPException(502, detail=f"Gemini 生图失败：{e}") from e
     except Exception as e:
         raise HTTPException(502, detail=f"生图失败：{e}") from e
 

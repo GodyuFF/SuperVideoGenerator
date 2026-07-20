@@ -1,4 +1,4 @@
-"""Anthropic Messages API 客户端（DeepSeek / Anthropic）。"""
+"""LLM HTTP 客户端（Anthropic Messages API / OpenAI Chat Completions）。"""
 
 import time
 from collections.abc import Callable
@@ -36,11 +36,13 @@ from core.llm.client.tokens import (
 )
 from core.llm.client.tool_calls import ToolCallResult
 from core.llm.model.llm_request import LlmRequest
+from core.llm.client.providers import LLMProtocol, resolved_protocol
 from core.llm.client.wire import (
     llm_request_to_anthropic_payload,
     llm_request_to_log_body,
     llm_request_to_wire_messages,
 )
+from core.llm.client.wire_openai import llm_request_to_openai_payload
 from core.logging.perf import llm_slow_threshold_ms, log_perf
 from core.logging.setup import get_logger, log_stage
 
@@ -69,8 +71,62 @@ def _anthropic_headers(api_key: str) -> dict[str, str]:
     }
 
 
+def _openai_headers(api_key: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+
 def _messages_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/v1/messages"
+
+
+def _chat_completions_url(base_url: str) -> str:
+    root = base_url.rstrip("/")
+    if root.endswith("/v1"):
+        return f"{root}/chat/completions"
+    return f"{root}/v1/chat/completions"
+
+
+def _build_llm_payload(
+    request: LlmRequest,
+    *,
+    protocol: LLMProtocol,
+    model: str,
+    temperature: float,
+    max_tokens: int,
+    stream: bool = True,
+) -> dict[str, Any]:
+    """按 wire 协议构建 HTTP 请求 body。"""
+    if protocol == "openai":
+        return llm_request_to_openai_payload(
+            request,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=stream,
+        )
+    return llm_request_to_anthropic_payload(
+        request,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=stream,
+    )
+
+
+def _resolve_llm_transport(
+    config: LLMConfigManager,
+    api_key: str,
+) -> tuple[str, dict[str, str], LLMProtocol]:
+    """解析 LLM 请求的 URL、鉴权头与 wire 协议。"""
+    settings = config.get_settings()
+    protocol = resolved_protocol(settings.provider)
+    base_url = config.resolved_base_url()
+    if protocol == "openai":
+        return _chat_completions_url(base_url), _openai_headers(api_key), protocol
+    return _messages_url(base_url), _anthropic_headers(api_key), protocol
 
 
 def _estimate_request_breakdown(request: LlmRequest, max_tokens: int) -> TokenBreakdown:
@@ -171,7 +227,7 @@ def _tool_calls_response_log_body(
 
 
 class LLMClient:
-    """Anthropic Messages API 客户端：仅负责 HTTP 流式调用与响应解析。"""
+    """LLM HTTP 客户端：负责流式调用与 tool_calls 响应解析。"""
 
     def __init__(
         self,
@@ -251,8 +307,10 @@ class LLMClient:
                 agent_name=str(ctx.get("agent_name", "")),
             )
 
-        payload = llm_request_to_anthropic_payload(
+        protocol = resolved_protocol(settings.provider)
+        payload = _build_llm_payload(
             request,
+            protocol=protocol,
             model=model,
             temperature=settings.temperature,
             max_tokens=settings.max_tokens,
@@ -264,6 +322,7 @@ class LLMClient:
             temperature=settings.temperature,
             max_tokens=settings.max_tokens,
             stream=True,
+            protocol=protocol,
         )
 
         log_stage(
@@ -272,6 +331,7 @@ class LLMClient:
             f"{summary_prefix} 流式请求",
             provider=settings.provider,
             model=model,
+            protocol=protocol,
         )
 
         if self._recorder:
@@ -487,9 +547,8 @@ class LLMClient:
             raise RuntimeError("未配置 LLM API Key")
 
         settings = self._config.get_settings()
-        url = _messages_url(self._config.resolved_base_url())
+        url, headers, _protocol = _resolve_llm_transport(self._config, api_key)
         model = self._config.resolved_model()
-        headers = _anthropic_headers(api_key)
         request = self._adapt_request_tool_choice(request)
 
         return await self._stream_messages(
@@ -560,9 +619,8 @@ class LLMClient:
             raise RuntimeError("未配置 LLM API Key")
 
         settings = self._config.get_settings()
-        url = _messages_url(self._config.resolved_base_url())
+        url, headers, protocol = _resolve_llm_transport(self._config, api_key)
         model = self._config.resolved_model()
-        headers = _anthropic_headers(api_key)
 
         current_request = self._adapt_request_tool_choice(request)
         last_result: ToolCallResult | None = None
@@ -590,8 +648,9 @@ class LLMClient:
                     agent_name=str(ctx.get("agent_name", "")),
                 )
 
-            payload = llm_request_to_anthropic_payload(
+            payload = _build_llm_payload(
                 current_request,
+                protocol=protocol,
                 model=model,
                 temperature=settings.temperature,
                 max_tokens=settings.max_tokens,
@@ -604,6 +663,7 @@ class LLMClient:
                 max_tokens=settings.max_tokens,
                 stream=True,
                 attempt=attempt + 1,
+                protocol=protocol,
             )
 
             if attempt == 0:

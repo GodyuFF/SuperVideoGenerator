@@ -34,6 +34,7 @@ import {
 } from "./storyboardShared";
 import type { StyleVideoGenMode } from "../../utils/shotSegmentUtils";
 import { clampVisualVideoGenMode } from "../../utils/shotSegmentUtils";
+import type { EditTimelineStripSummary } from "../../utils/editTimelineSummary";
 
 export type { ShotDetailItem } from "./storyboardShared";
 
@@ -75,6 +76,10 @@ interface ShotDetailDrawerProps {
   onSelectShot?: (shot: ShotDetailItem) => void;
   /** 跳转全片剪辑 Tab。 */
   onOpenEditTimeline?: () => void;
+  /** 剧本是否已有真正的 EditTimeline。 */
+  hasEditTimeline?: boolean;
+  /** 全片剪辑轴迷你摘要。 */
+  editTimelineSummary?: EditTimelineStripSummary | null;
   /** 当前剧本视频风格允许的 AI 生视频子模式。 */
   styleVideoModes?: StyleVideoGenMode[];
 }
@@ -100,6 +105,8 @@ export function ShotDetailDrawer({
   onNavigateAsset,
   onSelectShot,
   onOpenEditTimeline,
+  hasEditTimeline = false,
+  editTimelineSummary = null,
   styleVideoModes = [],
 }: ShotDetailDrawerProps) {
   const { t } = useAppTranslation("board");
@@ -522,6 +529,8 @@ export function ShotDetailDrawer({
               mediaMetaById={mediaMetaById}
               mediaDurationById={mediaDurationById}
               onOpenEditTimeline={onOpenEditTimeline}
+              hasEditTimeline={hasEditTimeline}
+              editTimelineSummary={editTimelineSummary}
               onSave={handleSave}
               onCancel={() => setEditing(false)}
               styleVideoModes={styleVideoModes}
@@ -644,6 +653,8 @@ export function ShotDetailDrawer({
                         onNavigateAsset={onNavigateAsset}
                         onRegenerateDone={() => void handleRegenDone()}
                         onOpenEditTimeline={onOpenEditTimeline}
+                        hasEditTimeline={hasEditTimeline}
+                        editTimelineSummary={editTimelineSummary}
                         voiceActs={voiceActs}
                         styleVideoModes={styleVideoModes}
                       />
