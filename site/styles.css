@@ -586,7 +586,7 @@ main > section {
     animation: film-fade-in 0.5s ease 0.65s forwards;
   }
 
-  .hero .viewfinder {
+  .hero .viewfinder video {
     opacity: 0;
     animation: film-fade-in 0.7s ease 0.85s forwards;
   }
