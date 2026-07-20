@@ -74,17 +74,46 @@
 
   "exportNleExporting": "正在导出 PR 工程…",
 
+  "exportSaving": "正在保存到本机…",
+
+  "exportSavedAndRevealed": "已保存，并已在资源管理器中定位导出文件",
+
+  "exportNleSavedAndRevealed": "PR 工程已保存，并已在资源管理器中定位 ZIP",
+
+  "exportSavedRevealFailed": "文件已保存，但无法打开所在文件夹：{{error}}",
+
+  "exportRevealUnknown": "未知错误",
+
+  "exportSaveCancelled": "已取消保存",
+
   "studioExportNlePremiere": "导出 PR 工程",
 
   "mediaHydrationFailedAll": "视频媒体加载失败，无法预览。请检查网络后刷新重试。",
 
   "mediaHydrationFailedPartial": "部分视频媒体加载失败，预览可能不完整。",
+  "mediaHydrationBlockedExport": "媒体尚未完全加载，请待加载成功后再导出。",
+
+  "audioHydrationFailedAll": "音频媒体加载失败，预览将无声。请检查网络后刷新重试。",
+
+  "audioHydrationFailedPartial": "部分音频媒体加载失败，预览可能无声或不完整。",
 
   "cinemaMonitor": "监视器",
 
   "cinemaExport": "导出",
 
+  "tabExportSlot": "浏览器导出成片",
+
+  "reloadTimeline": "重新加载",
+
+  "reloadTimelineTitle": "从服务器重新拉取剪辑时间轴",
+
+  "studioMore": "更多",
+
   "cinemaStudio": "工作室",
+
+  "exportViaEditorHint": "成片导出请在剪辑助手内使用顶栏「导出」按钮（浏览器渲染），不再使用服务端 FFmpeg 合成。",
+
+  "exportViaEditorShort": "成片请用编辑器「导出」",
 
   "classicStage": {
 

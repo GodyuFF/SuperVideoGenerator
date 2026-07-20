@@ -31,7 +31,7 @@ def list_text_assets_output_schema() -> dict[str, Any]:
             "status": {"type": "string"},
         },
         required=["id", "type", "name", "url", "status"],
-        additional_properties=False,
+        additional_properties=True,
     )
     script_block = _object_schema(
         {
@@ -50,7 +50,7 @@ def list_text_assets_output_schema() -> dict[str, Any]:
             "id": {"type": "string"},
             "type": {
                 "type": "string",
-                "enum": ["character", "scene", "prop", "plot"],
+                "enum": ["character", "scene", "prop", "plot", "frame"],
             },
             "name": {"type": "string"},
             "scope": {"type": "string"},
@@ -301,12 +301,39 @@ def edit_timeline_board_output_schema() -> dict[str, Any]:
 
 def analyze_edit_timeline_output_schema() -> dict[str, Any]:
     """analyze_edit_timeline 输出 schema。"""
+    clip_detail = _object_schema(
+        {
+            "id": {"type": "string"},
+            "track": {"type": "string"},
+            "layer_id": {"type": ["string", "null"]},
+            "start_ms": {"type": "integer"},
+            "end_ms": {"type": "integer"},
+            "duration_ms": {"type": "integer"},
+            "label": {"type": "string"},
+            "asset_ref": {"type": ["string", "null"]},
+            "shot_id": {"type": "string"},
+            "partial": {"type": "boolean"},
+            "visible_range": {"type": "object"},
+            "edit_description": {"type": "string"},
+            "motion": {"type": ["string", "null"]},
+            "motion_detail": {"type": ["object", "null"]},
+            "transition_in": {"type": ["object", "null"]},
+            "transition_out": {"type": ["object", "null"]},
+            "background": {"type": ["object", "null"]},
+            "transform": {"type": ["object", "null"]},
+            "source_refs": {"type": ["object", "null"]},
+            "metadata": {"type": "object"},
+            "resolved": {"type": ["object", "null"]},
+        },
+        required=["id", "track", "start_ms", "end_ms"],
+        additional_properties=True,
+    )
     return _object_schema(
         {
             "action": {"type": "string"},
             "script_id": {"type": "string"},
             "range": {"type": "object"},
-            "clips_in_range": {"type": "array"},
+            "clips_in_range": {"type": "array", "items": clip_detail},
             "gaps": {"type": "array"},
             "overlaps": {"type": "array"},
             "warnings": {"type": "array", "items": {"type": "string"}},
@@ -515,6 +542,195 @@ def sync_text_from_image_output_schema() -> dict[str, Any]:
         },
         required=["asset_id"],
         additional_properties=True,
+    )
+
+
+def shot_sync_output_schema() -> dict[str, Any]:
+    """sync_actual_assets 输出 schema。"""
+    return _object_schema(
+        {
+            "plan_id": {"type": "string"},
+            "shot_count": {"type": "integer"},
+            "synced_shot_count": {"type": "integer"},
+            "duration_diffs": {"type": "array"},
+            "detail_revision": {"type": "integer"},
+            "act_segment_count": {"type": "integer"},
+            "motion_normalized": {"type": "boolean"},
+            "av_sync": {"type": "object"},
+            "av_sync_error": {"type": "string"},
+        },
+        required=["shot_count"],
+        additional_properties=True,
+    )
+
+
+def av_sync_analyze_output_schema() -> dict[str, Any]:
+    """analyze_av_sync 输出 schema。"""
+    return _object_schema(
+        {
+            "script_id": {"type": "string"},
+            "shot_count": {"type": "integer"},
+            "results": {"type": "array"},
+            "need_regen_shot_ids": {"type": "array", "items": {"type": "string"}},
+            "needs_user_choice_shot_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "auto_applied_count": {"type": "integer"},
+            "detail_revision": {"type": "integer"},
+        },
+        required=["shot_count", "results"],
+        additional_properties=True,
+    )
+
+
+def shot_frame_update_output_schema() -> dict[str, Any]:
+    """update_frames 输出 schema。"""
+    return _object_schema(
+        {"updated_frame_count": {"type": "integer"}},
+        required=["updated_frame_count"],
+    )
+
+
+def shot_refine_mutation_output_schema() -> dict[str, Any]:
+    """review_and_restructure 输出 schema。"""
+    return _object_schema(
+        {
+            "action": {"type": "string"},
+            "summary": {"type": "string"},
+            "plan_id": {"type": "string"},
+            "detail_revision": {"type": "integer"},
+            "shot_count": {"type": "integer"},
+            "restructure_op_count": {"type": "integer"},
+            "patched_shot_count": {"type": "integer"},
+            "need_regen_shot_ids": {"type": "array", "items": {"type": "string"}},
+        },
+        required=["action", "detail_revision", "shot_count"],
+        additional_properties=True,
+    )
+
+
+def shot_persist_output_schema() -> dict[str, Any]:
+    """persist_review 输出 schema。"""
+    return _object_schema(
+        {
+            "action": {"type": "string"},
+            "summary": {"type": "string"},
+            "plan_id": {"type": "string"},
+            "detail_revision": {"type": "integer"},
+        },
+        required=["action", "plan_id", "detail_revision"],
+        additional_properties=True,
+    )
+
+
+def refine_plan_output_schema() -> dict[str, Any]:
+    """get_refine_plan 输出 schema（含 shot_detail，不含 action）。"""
+    return _object_schema(
+        {
+            "plan_id": {"type": "string"},
+            "mode": {"type": "string"},
+            "detail_revision": {"type": "integer"},
+            "shot_count": {"type": "integer"},
+            "shots": {"type": "array"},
+            "message": {"type": "string"},
+        },
+        required=["shot_count", "shots"],
+    )
+
+
+def shot_details_query_output_schema() -> dict[str, Any]:
+    """get_shot_details 输出 schema。"""
+    return _object_schema(
+        {
+            "script_id": {"type": "string"},
+            "plan_id": {"type": "string"},
+            "detail_revision": {"type": "integer"},
+            "shot_count": {"type": "integer"},
+            "shots": {"type": "array"},
+            "image_gap_shot_ids": {"type": "array", "items": {"type": "string"}},
+            "image_gap_sub_shots": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "shot_id": {"type": "string"},
+                        "sub_shot_id": {"type": "string"},
+                        "missing_frame": {"type": "boolean"},
+                        "missing_media": {"type": "boolean"},
+                    },
+                },
+            },
+            "review_ready": {"type": "boolean"},
+            "warnings": {"type": "array", "items": {"type": "string"}},
+        },
+        required=["script_id", "shot_count", "shots"],
+        additional_properties=True,
+    )
+
+
+def shot_asset_timing_output_schema() -> dict[str, Any]:
+    """get_shot_asset_timing 输出 schema。"""
+    return _object_schema(
+        {
+            "script_id": {"type": "string"},
+            "plan_id": {"type": "string"},
+            "detail_revision": {"type": "integer"},
+            "shot_count": {"type": "integer"},
+            "asset_kind": {"type": "string"},
+            "shots": {"type": "array"},
+            "warnings": {"type": "array", "items": {"type": "string"}},
+        },
+        required=["script_id", "shot_count", "shots"],
+        additional_properties=True,
+    )
+
+
+def export_status_output_schema() -> dict[str, Any]:
+    """get_export_status 输出 schema（对齐 job_to_dict）。"""
+    return _object_schema(
+        {
+            "job_id": {"type": "string"},
+            "project_id": {"type": "string"},
+            "script_id": {"type": "string"},
+            "status": {"type": "string"},
+            "progress": {"type": "number"},
+            "message": {"type": "string"},
+            "result": {"type": "object"},
+            "error": {"type": "string"},
+            "created_at": {"type": "string"},
+            "updated_at": {"type": "string"},
+        },
+        required=["job_id", "status", "progress"],
+    )
+
+
+def opencut_clip_mutation_output_schema() -> dict[str, Any]:
+    """OpenCut 片段变更 tool（add/update/remove/apply_effect/set_keyframe）通用输出。"""
+    return _object_schema(
+        {
+            "action": {"type": "string"},
+            "clip_id": {"type": "string"},
+            "track": {"type": "string"},
+            "revision": {"type": "integer"},
+            "effect_type": {"type": "string"},
+            "params": {"type": "object"},
+            "time_ms": {"type": "integer"},
+            "properties": {"type": "object"},
+            "error": {"type": "string"},
+        },
+        required=["action", "clip_id"],
+    )
+
+
+def export_timeline_output_schema() -> dict[str, Any]:
+    """export_timeline 输出 schema。"""
+    return _object_schema(
+        {
+            "action": {"type": "string"},
+            "job_id": {"type": "string"},
+        },
+        required=["action", "job_id"],
     )
 
 

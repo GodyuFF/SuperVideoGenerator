@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 from core.llm.a2ui.schemas import (
     A2UIComponent,
@@ -19,9 +20,23 @@ if TYPE_CHECKING:
 
 logger = get_logger("core.a2ui")
 
+ResolveReason = Literal["expired", "already_resolved", "unknown"]
+
+
+@dataclass(frozen=True)
+class ResolveResult:
+    """WebSocket resolve 结果：是否唤醒挂起 Future，以及失败原因。"""
+
+    resolved: bool
+    reason: ResolveReason | None = None
+
 
 class ConfirmationTimeoutError(Exception):
     """用户未在时限内完成 A2UI 确认。"""
+
+    def __init__(self, confirmation_id: str) -> None:
+        self.confirmation_id = confirmation_id
+        super().__init__("用户确认超时，未收到回答")
 
 
 class ConfirmationRejectedError(Exception):
@@ -43,12 +58,14 @@ class ConfirmationManager:
         self._default_timeout = default_timeout
         self._sqlite = sqlite_store
         self._pending: dict[str, asyncio.Future[A2UIConfirmationResponse]] = {}
+        self._expired_ids: set[str] = set()
 
     def has_pending(self) -> bool:
         """是否存在尚未 resolve 的 A2UI 确认。"""
         return bool(self._pending)
 
     def set_sqlite_store(self, sqlite_store: ConversationSqliteStore) -> None:
+        """注入或替换 SQLite 持久化仓储。"""
         self._sqlite = sqlite_store
 
     async def _emit_execution_paused(
@@ -57,6 +74,7 @@ class ConfirmationManager:
         *,
         conversation_id: str | None,
     ) -> None:
+        """推送执行暂停事件。"""
         await self._emitter.emit(
             {
                 "type": "execution_paused",
@@ -73,6 +91,7 @@ class ConfirmationManager:
         *,
         conversation_id: str | None = None,
     ) -> None:
+        """推送执行恢复事件。"""
         await self._emitter.emit(
             {
                 "type": "execution_resumed",
@@ -81,10 +100,38 @@ class ConfirmationManager:
             }
         )
 
+    async def _emit_confirmation_expired(
+        self,
+        confirmation_id: str,
+        *,
+        conversation_id: str | None = None,
+    ) -> None:
+        """推送确认过期事件，供前端将卡片标为不可提交。"""
+        await self._emitter.emit(
+            {
+                "type": "a2ui_confirmation_expired",
+                "confirmation_id": confirmation_id,
+                "conversation_id": conversation_id,
+            }
+        )
+
     def _effective_timeout(self, timeout: float | None) -> float | None:
+        """合并调用方 timeout 与默认超时。"""
         if timeout is not None:
             return timeout
         return self._default_timeout
+
+    def _persist_expired(self, confirmation_id: str) -> None:
+        """将超时确认写入 SQLite，避免刷新后仍显示 pending。"""
+        if not self._sqlite:
+            return
+        self._sqlite.resolve_a2ui(
+            A2UIConfirmationResponse(
+                confirmation_id=confirmation_id,
+                approved=False,
+                values={"intent": "expired"},
+            )
+        )
 
     async def request(
         self,
@@ -115,6 +162,7 @@ class ConfirmationManager:
         loop = asyncio.get_event_loop()
         future: asyncio.Future[A2UIConfirmationResponse] = loop.create_future()
         self._pending[request.confirmation_id] = future
+        self._expired_ids.discard(request.confirmation_id)
 
         if self._sqlite and conversation_id:
             self._sqlite.append_a2ui_request(conversation_id, request)
@@ -137,6 +185,12 @@ class ConfirmationManager:
                 response = await asyncio.wait_for(future, timeout=effective_timeout)
             except asyncio.TimeoutError:
                 self._pending.pop(request.confirmation_id, None)
+                self._expired_ids.add(request.confirmation_id)
+                self._persist_expired(request.confirmation_id)
+                await self._emit_confirmation_expired(
+                    request.confirmation_id,
+                    conversation_id=conversation_id,
+                )
                 await self._emit_execution_resumed(
                     request.confirmation_id,
                     conversation_id=conversation_id,
@@ -162,16 +216,20 @@ class ConfirmationManager:
         )
         return response
 
-    def resolve(self, response: A2UIConfirmationResponse) -> bool:
+    def resolve(self, response: A2UIConfirmationResponse) -> ResolveResult:
         """WebSocket 收到用户响应时调用，唤醒等待中的 Future。"""
-        if self._sqlite:
-            self._sqlite.resolve_a2ui(response)
         future = self._pending.get(response.confirmation_id)
         if future is None or future.done():
-            return False
+            if response.confirmation_id in self._expired_ids:
+                return ResolveResult(resolved=False, reason="expired")
+            return ResolveResult(resolved=False, reason="already_resolved")
+
+        if self._sqlite:
+            self._sqlite.resolve_a2ui(response)
         future.set_result(response)
         self._pending.pop(response.confirmation_id, None)
-        return True
+        self._expired_ids.discard(response.confirmation_id)
+        return ResolveResult(resolved=True)
 
     def cancel_all_pending(self) -> int:
         """中止执行时唤醒所有挂起确认（视为用户拒绝）。"""
@@ -198,27 +256,32 @@ class ConfirmationManager:
         timeout: float | None = None,
         *,
         conversation_id: str | None = None,
+        default_duration_sec: int = 60,
+        default_style_mode: str = "storybook",
     ) -> A2UIConfirmationResponse:
         """
         当用户输入不明确时，主动询问剧本需求（AskUserQuestion）。
-        收集时长、风格、核心人物/场景等信息。
+        收集时长、风格、核心人物/场景等信息；字段须由前端按可编辑表单渲染。
         """
+        duration_value = (
+            default_duration_sec if isinstance(default_duration_sec, int) and default_duration_sec > 0 else 60
+        )
+        style_value = (default_style_mode or "storybook").strip() or "storybook"
         components = [
             A2UIComponent(
                 id="duration_sec",
                 component="text",
                 label="目标时长（秒）",
-                value=60,
+                value=duration_value,
                 required=True,
             ),
             A2UIComponent(
                 id="style_mode",
                 component="select",
                 label="视频风格",
-                value="dynamic_image",
+                value=style_value,
                 options=[
-                    {"label": "动态图文", "value": "dynamic_image"},
-                    {"label": "动态漫画", "value": "dynamic_comic"},
+                    {"label": "故事书", "value": "storybook"},
                     {"label": "AI 视频", "value": "ai_video"},
                 ],
                 required=True,

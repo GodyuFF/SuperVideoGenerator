@@ -1,6 +1,7 @@
-/** 专业剪辑核心 UI（弹窗与独立页共用）。 */
+/** 专业剪辑核心 UI（弹窗与独立页共用）；成片 MP4 仅经 OpenCut 浏览器导出。 */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useAppTranslation } from "../i18n/useAppTranslation";
 import { fetchEditCapabilities } from "./adapter/capabilitiesAdapter";
 import { prefetchClassicEditor, getClassicEditorModule } from "./classicPrefetch";
@@ -8,6 +9,7 @@ import { getClassicBridgeTimeline } from "./classicAgentBridge";
 import { openEditorStudioInNewTab } from "./editorStudioUrls";
 import { ThemeToggle } from "../components/theme/ThemeToggle";
 import { LocaleSwitcher } from "../i18n/LocaleSwitcher";
+import { StudioChromeOverflow } from "./StudioChromeOverflow";
 import type { EditCapabilities, EditTimelineData } from "../edit/types";
 import type { EditTimelineApi } from "../edit/useEditTimeline";
 import type { ClassicLoadStage } from "./opencut/SvfClassicEditor";
@@ -40,11 +42,10 @@ export function EditorStudioContent({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadStage, setLoadStage] = useState<ClassicLoadStage>("module");
 
-  const { timeline, flushSave, saveTimeline, exportVideo, exportNleProject, saving, loading, error, fetchTimeline } =
+  const { timeline, flushSave, saveTimeline, exportNleProject, saveAndRevealExport, saving, loading, error, fetchTimeline, syncRevision } =
     timelineApi;
-  const [exporting, setExporting] = useState(false);
   const [exportingNle, setExportingNle] = useState(false);
-  const [exportMsg, setExportMsg] = useState("");
+  const [exportHost, setExportHost] = useState<HTMLDivElement | null>(null);
 
   /** 打开时冻结 timeline 快照，避免保存后 prop 变化触发 Classic 重复 bootstrap。 */
   const timelineSnapshotRef = useRef<EditTimelineData | null>(null);
@@ -76,41 +77,45 @@ export function EditorStudioContent({
     onClose(true);
   }, [projectId, scriptId, timeline, flushSave, onClose]);
 
-  const handleExport = async () => {
-    setExporting(true);
-    setExportMsg("");
-    try {
-      const bridgeTl = getClassicBridgeTimeline(projectId, scriptId);
-      const toFlush = bridgeTl ?? timeline;
-      if (toFlush) await flushSave(toFlush);
-      const url = await exportVideo();
-      setExportMsg(url ? t("editor:exportDoneFfmpeg") : t("editor:exportDoneFfmpegShort"));
-    } catch (e) {
-      setExportMsg(e instanceof Error ? e.message : String(e));
-    } finally {
-      setExporting(false);
+  async function deliverExportResult(url: string) {
+    const outcome = await saveAndRevealExport(url);
+    if (!outcome.revealed) {
+      toast.warning(
+        t("editor:exportSavedRevealFailed", {
+          error: outcome.revealError ?? t("editor:exportRevealUnknown"),
+        }),
+      );
+      return;
     }
-  };
+    toast.success(t("editor:exportNleSavedAndRevealed"));
+  }
 
   const handleExportNle = async () => {
     setExportingNle(true);
-    setExportMsg("");
+    const loadingToastId = toast.loading(t("editor:exportNleExporting"));
     try {
       const bridgeTl = getClassicBridgeTimeline(projectId, scriptId);
       const toFlush = bridgeTl ?? timeline;
       if (toFlush) await flushSave(toFlush);
       const url = await exportNleProject();
-      setExportMsg(url ? t("editor:exportNleDone") : t("editor:exportNleDoneShort"));
+      if (!url) {
+        toast.success(t("editor:exportNleDone"));
+        return;
+      }
+      await deliverExportResult(url);
     } catch (e) {
-      setExportMsg(e instanceof Error ? e.message : String(e));
+      if (e instanceof Error && e.message === "已取消保存") {
+        toast.info(t("editor:exportSaveCancelled"));
+      } else {
+        toast.error(e instanceof Error ? e.message : String(e));
+      }
     } finally {
+      toast.dismiss(loadingToastId);
       setExportingNle(false);
     }
   };
 
-  const exportEnabled = capabilities?.export_enabled !== false;
   const nleExportEnabled = capabilities?.nle_export_enabled !== false;
-  const ffmpegHint = t("editor:ffmpegHintShort");
 
   const noTimelineHint = error || t("editor:noTimelineHint");
 
@@ -121,61 +126,35 @@ export function EditorStudioContent({
           <span className="svf-studio-chrome-rec" aria-hidden />
           <h2>{t("editor:proEditorTitle")}</h2>
         </div>
-        <div className="svf-studio-chrome-meta">
+        <div className="svf-studio-chrome-status">
           {saving && <span className="status-badge running">{t("common:actions.saving")}</span>}
-          {exportMsg && <span className="status-badge muted-badge">{exportMsg}</span>}
           {loadStage !== "ready" && loadStage !== "error" && ClassicEditor && (
             <span className="status-badge muted-badge">{t("common:actions.loading")}</span>
           )}
-          {!exportEnabled && (
-            <span className="status-badge style-locked" title={ffmpegHint}>
-              导出不可用
-            </span>
-          )}
         </div>
         <div className="svf-studio-chrome-actions">
-          <div className="svf-studio-chrome-group">
+          <div className="svf-studio-chrome-group svf-studio-chrome-utilities">
             <ThemeToggle />
             <LocaleSwitcher className="locale-switcher locale-switcher--compact" />
           </div>
-          {showOpenInNewTab && (
-            <div className="svf-studio-chrome-group">
-              <button
-                type="button"
-                className="btn-secondary btn-sm"
-                title={t("editor:newTabTitle")}
-                onClick={() => openEditorStudioInNewTab(projectId, scriptId)}
-              >
-                {t("nav:openInNewTab")}
-              </button>
-            </div>
-          )}
-          <div className="svf-studio-chrome-group">
-            <button
-              type="button"
-              className="btn-secondary btn-sm"
-              disabled={exporting || !exportEnabled}
-              title={!exportEnabled ? ffmpegHint : t("editor:ffmpegExportTitle")}
-              onClick={() => void handleExport()}
-            >
-              {exporting ? t("editor:studioExporting") : t("editor:studioExportMp4")}
-            </button>
-            <button
-              type="button"
-              className="btn-secondary btn-sm"
-              disabled={exportingNle || exporting || !nleExportEnabled}
-              title={t("editor:exportNlePremiereHint")}
-              onClick={() => void handleExportNle()}
-            >
-              {exportingNle ? t("editor:exportNleExporting") : t("editor:studioExportNlePremiere")}
-            </button>
+          <div className="svf-studio-chrome-group svf-studio-chrome-workflow">
+            <div
+              ref={setExportHost}
+              className="svf-studio-export-slot"
+              aria-label={t("editor:tabExportSlot")}
+            />
             <button type="button" className="btn-primary btn-sm" onClick={() => void handleDone()}>
               {t("editor:doneClose")}
             </button>
-            <button type="button" className="btn-secondary btn-sm" onClick={() => onClose(false)}>
-              {t("common:actions.cancel")}
-            </button>
           </div>
+          <StudioChromeOverflow
+            showOpenInNewTab={showOpenInNewTab}
+            onOpenInNewTab={() => openEditorStudioInNewTab(projectId, scriptId)}
+            onExportNle={() => void handleExportNle()}
+            exportingNle={exportingNle}
+            nleExportEnabled={nleExportEnabled}
+            onCancel={() => onClose(false)}
+          />
         </div>
       </header>
       <div className="svf-studio-stage editor-studio-content-body">
@@ -215,10 +194,12 @@ export function EditorStudioContent({
             projectId={projectId}
             scriptId={scriptId}
             initialTimeline={timelineSnapshotRef.current}
+            onRevisionSync={syncRevision}
             onSave={handleSave}
             onDone={() => void handleDone()}
             onStageChange={setLoadStage}
             chromeMode="standalone"
+            exportHost={exportHost}
           />
         )}
         {!loadError && !ClassicEditor && timelineSnapshotRef.current && (

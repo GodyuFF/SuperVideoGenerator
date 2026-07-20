@@ -4,7 +4,9 @@
 
 import type { MediaBinItem } from "../../edit/types";
 import { resolveMediaPlayUrl } from "../../utils/mediaUrl";
+import { getSvfDesktop } from "../../desktop/svfDesktop";
 import type { SvfMediaRecord } from "./SvfMediaProvider";
+import { probeMediaDuration } from "./probeMediaDuration";
 
 /** 剧本媒体 URL 规范化上下文（project/script 用于相对路径转 API）。 */
 export interface SvfMediaContext {
@@ -38,6 +40,8 @@ export interface MediaIdLookup {
   resolveMediaId(clip: { asset_ref?: string; preview_url?: string }): string | undefined;
   /** 按 mediaId 查询媒体类型。 */
   getMediaType(mediaId?: string): "image" | "video" | "audio" | undefined;
+  /** 按 mediaId 查询媒体源时长（秒）。 */
+  getMediaDurationSec(mediaId?: string): number | undefined;
   /** 判断 mediaId 是否存在于当前剧本媒体列表。 */
   hasMediaId(mediaId?: string): boolean;
 }
@@ -136,10 +140,61 @@ export function svfMediaItemsToAssets(
   });
 }
 
+/** 将水合探测后的时长回灌 mediaItems，供 loadFromSvf lookup 使用。 */
+export function mergeHydratedDurationsIntoMediaItems<
+  T extends { id: string; duration_ms?: number; type?: string },
+>(mediaItems: T[], hydratedAssets: SvfClassicMediaAsset[]): T[] {
+  const durationById = new Map<string, number>();
+  for (const asset of hydratedAssets) {
+    if (asset.duration != null && asset.duration > 0) {
+      durationById.set(asset.id, Math.round(asset.duration * 1000));
+    }
+  }
+  if (durationById.size === 0) return mediaItems;
+  return mediaItems.map((item) => {
+    const probedMs = durationById.get(item.id);
+    if (probedMs == null || probedMs <= 0) return item;
+    const apiMs = item.duration_ms ?? 0;
+    // TTS 槽位常长于浏览器探测；探测偏短时不覆盖 API/metadata 时长。
+    if (item.type === "audio" && apiMs > probedMs + 50) {
+      return item;
+    }
+    return { ...item, duration_ms: probedMs };
+  });
+}
+
+/** 用 API duration_ms 校正水合资产时长，避免 probe 偏短污染 mediaCache。 */
+export function syncHydratedAssetDurationsFromApi<
+  T extends { id: string; duration_ms?: number; type?: string },
+>(mediaItems: T[], hydratedAssets: SvfClassicMediaAsset[]): void {
+  const apiById = new Map(mediaItems.map((m) => [m.id, m]));
+  for (const asset of hydratedAssets) {
+    const api = apiById.get(asset.id);
+    if (!api?.duration_ms || api.duration_ms <= 0) continue;
+    const apiSec = api.duration_ms / 1000;
+    const probedSec = asset.duration ?? 0;
+    if (api.type === "audio" && probedSec > 0 && probedSec + 0.05 < apiSec) {
+      asset.duration = apiSec;
+      continue;
+    }
+    if (!asset.duration || asset.duration <= 0) {
+      asset.duration = apiSec;
+    }
+  }
+}
+
+/** 清除指定媒体 ID 的 blob 水合缓存（force 刷新时避免复用偏短探测文件）。 */
+export function clearHydratedBlobCacheForIds(mediaIds: string[]): void {
+  for (const id of mediaIds) {
+    hydratedBlobCache.delete(id);
+  }
+}
+
 /** 构建媒体别名索引与类型表。 */
 export function buildMediaIdLookup(items: MediaBinItem[]): MediaIdLookup {
   const index = new Map<string, string>();
   const typeById = new Map<string, "image" | "video" | "audio">();
+  const durationById = new Map<string, number>();
 
   const addAlias = (alias: string, id: string) => {
     const key = (alias || "").trim();
@@ -153,6 +208,9 @@ export function buildMediaIdLookup(items: MediaBinItem[]): MediaIdLookup {
     const normUrl = normalizeMediaUrl(url);
     const mediaType = normalizeMediaType(m.type);
     typeById.set(id, mediaType);
+    if (m.duration_ms != null && m.duration_ms > 0) {
+      durationById.set(id, m.duration_ms / 1000);
+    }
     addAlias(id, id);
     if (url) addAlias(url, id);
     if (normUrl) addAlias(normUrl, id);
@@ -182,6 +240,9 @@ export function buildMediaIdLookup(items: MediaBinItem[]): MediaIdLookup {
     },
     getMediaType(mediaId) {
       return mediaId ? typeById.get(mediaId) : undefined;
+    },
+    getMediaDurationSec(mediaId) {
+      return mediaId ? durationById.get(mediaId) : undefined;
     },
     hasMediaId(mediaId) {
       return mediaId ? typeById.has(mediaId) : false;
@@ -260,76 +321,193 @@ export function getSvfProjectMediaCache(projectKey: string): SvfClassicMediaAsse
 
 /** 清除 SVF 项目媒体缓存。 */
 export function clearSvfProjectMediaCache(projectKey: string): void {
+  const assets = mediaCache.get(projectKey) ?? [];
+  clearHydratedBlobCacheForIds(assets.map((a) => a.id));
   mediaCache.delete(projectKey);
 }
+
+/** 限制并发执行异步任务。 */
+async function mapWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  const executing = new Set<Promise<void>>();
+  for (const item of items) {
+    const task = worker(item).finally(() => {
+      executing.delete(task);
+    });
+    executing.add(task);
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  await Promise.all(executing);
+}
+
+/**
+ * 将已取得的 File 写入资产并可选探测音视频时长。
+ */
+async function applyHydratedFile(
+  asset: SvfClassicMediaAsset,
+  file: File,
+  fetchUrl: string,
+): Promise<void> {
+  asset.file = file;
+  asset.size = file.size;
+  asset.lastModified = Date.now();
+  asset.hydrationFailed = false;
+  asset.url = fetchUrl;
+  hydratedBlobCache.set(asset.id, file);
+
+  if (asset.type !== "audio" && asset.type !== "video") return;
+  try {
+    const probedSec = await probeMediaDuration(file);
+    if (!(probedSec > 0 && Number.isFinite(probedSec))) return;
+    const apiSec = asset.duration != null && asset.duration > 0 ? asset.duration : null;
+    if (apiSec != null) {
+      const drift = Math.abs(apiSec - probedSec) / Math.max(probedSec, 0.001);
+      if (drift > 0.05) {
+        console.warn(
+          `[SvfMediaBridge] 媒体 ${asset.id} 时长偏差: api=${apiSec}s probe=${probedSec}s`,
+        );
+      }
+      // TTS 槽位常长于浏览器探测值；探测偏短时不覆盖 API/metadata 时长。
+      if (asset.type === "audio" && probedSec + 0.05 < apiSec) {
+        return;
+      }
+    }
+    asset.duration = probedSec;
+  } catch (err) {
+    console.warn(`[SvfMediaBridge] 媒体 ${asset.id} 时长探测失败`, err);
+  }
+}
+
+/** 单条媒体资产水合：桌面 IPC 读盘优先，否则 HTTP fetch。 */
+async function hydrateSingleAsset(
+  asset: SvfClassicMediaAsset,
+  context?: SvfMediaContext,
+): Promise<void> {
+  if (!asset.url || asset.file.size > 0) return;
+
+  const cached = hydratedBlobCache.get(asset.id);
+  if (cached && cached.size > 0) {
+    asset.file = cached;
+    asset.size = cached.size;
+    asset.hydrationFailed = false;
+    return;
+  }
+
+  const fetchUrl = resolveAssetPlayUrl(asset.url, context) || asset.url;
+  if (!fetchUrl) {
+    asset.hydrationFailed = true;
+    console.warn(`[SvfMediaBridge] 媒体 ${asset.id} 无可播放 URL`);
+    return;
+  }
+
+  const desktop = getSvfDesktop();
+  if (desktop) {
+    try {
+      const local = await desktop.readLocalMedia(fetchUrl);
+      const file = new File([local.data], local.name || asset.name || "media", {
+        type: local.mime || mimeForAsset(asset.type, ""),
+      });
+      if (file.size === 0) {
+        asset.hydrationFailed = true;
+        console.warn(`[SvfMediaBridge] 媒体 ${asset.id} 本地读盘为空 (${fetchUrl})`);
+        return;
+      }
+      await applyHydratedFile(asset, file, fetchUrl);
+      return;
+    } catch (err) {
+      console.warn(
+        `[SvfMediaBridge] 媒体 ${asset.id} 桌面读盘失败，回退 HTTP (${fetchUrl})`,
+        err,
+      );
+    }
+  }
+
+  try {
+    const res = await fetch(fetchUrl);
+    if (!res.ok) {
+      asset.hydrationFailed = true;
+      console.warn(
+        `[SvfMediaBridge] 媒体 ${asset.id} 水合失败: HTTP ${res.status} (${fetchUrl})`,
+      );
+      return;
+    }
+    const blob = await res.blob();
+    if (blob.size === 0) {
+      asset.hydrationFailed = true;
+      console.warn(`[SvfMediaBridge] 媒体 ${asset.id} 水合为空 blob (${fetchUrl})`);
+      return;
+    }
+    const file = new File([blob], asset.name || "media", {
+      type: mimeForAsset(asset.type, blob.type),
+    });
+    await applyHydratedFile(asset, file, fetchUrl);
+  } catch (err) {
+    asset.hydrationFailed = true;
+    console.warn(`[SvfMediaBridge] 媒体 ${asset.id} 水合异常 (${fetchUrl})`, err);
+  }
+}
+
+const HYDRATE_CONCURRENCY = 4;
 
 /** 将远程 URL 水合为可解码 File（视频 WASM 预览必需）。 */
 export async function hydrateSvfMediaFiles(
   assets: SvfClassicMediaAsset[],
   context?: SvfMediaContext,
 ): Promise<void> {
-  await Promise.all(
-    assets.map(async (asset) => {
-      if (!asset.url || asset.file.size > 0) return;
-
-      const cached = hydratedBlobCache.get(asset.id);
-      if (cached && cached.size > 0) {
-        asset.file = cached;
-        asset.size = cached.size;
-        asset.hydrationFailed = false;
-        return;
-      }
-
-      const fetchUrl = resolveAssetPlayUrl(asset.url, context) || asset.url;
-      if (!fetchUrl) {
-        asset.hydrationFailed = true;
-        console.warn(`[SvfMediaBridge] 媒体 ${asset.id} 无可播放 URL`);
-        return;
-      }
-
-      try {
-        const res = await fetch(fetchUrl);
-        if (!res.ok) {
-          asset.hydrationFailed = true;
-          console.warn(
-            `[SvfMediaBridge] 媒体 ${asset.id} 水合失败: HTTP ${res.status} (${fetchUrl})`,
-          );
-          return;
-        }
-        const blob = await res.blob();
-        if (blob.size === 0) {
-          asset.hydrationFailed = true;
-          console.warn(`[SvfMediaBridge] 媒体 ${asset.id} 水合为空 blob (${fetchUrl})`);
-          return;
-        }
-        const file = new File([blob], asset.name || "media", {
-          type: mimeForAsset(asset.type, blob.type),
-        });
-        asset.file = file;
-        asset.size = file.size;
-        asset.lastModified = Date.now();
-        asset.hydrationFailed = false;
-        asset.url = fetchUrl;
-        hydratedBlobCache.set(asset.id, file);
-      } catch (err) {
-        asset.hydrationFailed = true;
-        console.warn(`[SvfMediaBridge] 媒体 ${asset.id} 水合异常 (${fetchUrl})`, err);
-      }
-    }),
+  await mapWithConcurrency(assets, HYDRATE_CONCURRENCY, (asset) =>
+    hydrateSingleAsset(asset, context),
   );
 }
 
 /** 视频资产水合失败程度（供预览层展示提示）。 */
 export type VideoHydrationState = "none" | "partial" | "all";
 
+/** 单类媒体（video/audio）水合失败程度。 */
+export type MediaHydrationSeverity = VideoHydrationState;
+
+export interface MediaHydrationIssues {
+  video: MediaHydrationSeverity;
+  audio: MediaHydrationSeverity;
+}
+
+function getHydrationStateForType(
+  assets: SvfClassicMediaAsset[],
+  mediaType: "video" | "audio",
+): MediaHydrationSeverity {
+  const items = assets.filter((a) => a.type === mediaType);
+  if (items.length === 0) return "none";
+  const failed = items.filter((a) => a.hydrationFailed || a.file.size === 0);
+  if (failed.length === 0) return "none";
+  if (failed.length >= items.length) return "all";
+  return "partial";
+}
+
+/** 统计视频与音频资产水合失败状态。 */
+export function getMediaHydrationIssues(assets: SvfClassicMediaAsset[]): MediaHydrationIssues {
+  return {
+    video: getHydrationStateForType(assets, "video"),
+    audio: getHydrationStateForType(assets, "audio"),
+  };
+}
+
+/** 返回需展示的 editor i18n 键列表（video + audio）。 */
+export function listMediaHydrationMessageKeys(issues: MediaHydrationIssues): string[] {
+  const keys: string[] = [];
+  if (issues.video === "all") keys.push("mediaHydrationFailedAll");
+  else if (issues.video === "partial") keys.push("mediaHydrationFailedPartial");
+  if (issues.audio === "all") keys.push("audioHydrationFailedAll");
+  else if (issues.audio === "partial") keys.push("audioHydrationFailedPartial");
+  return keys;
+}
+
 /** 统计视频资产水合失败状态。 */
 export function getVideoHydrationState(assets: SvfClassicMediaAsset[]): VideoHydrationState {
-  const videos = assets.filter((a) => a.type === "video");
-  if (videos.length === 0) return "none";
-  const failed = videos.filter((a) => a.hydrationFailed || a.file.size === 0);
-  if (failed.length === 0) return "none";
-  if (failed.length >= videos.length) return "all";
-  return "partial";
+  return getHydrationStateForType(assets, "video");
 }
 
 /** 是否存在需解码但水合失败的视频/音频资产。 */
@@ -339,6 +517,13 @@ export function hasHydrationFailures(assets: SvfClassicMediaAsset[]): boolean {
       (a.type === "video" || a.type === "audio") &&
       (a.hydrationFailed || a.file.size === 0),
   );
+}
+
+/** 视频/音频是否已全部水合完成，可供预览解码与导出混音。 */
+export function isSvfMediaReadyForDecode(assets: SvfClassicMediaAsset[]): boolean {
+  const decodable = assets.filter((a) => a.type === "video" || a.type === "audio");
+  if (decodable.length === 0) return true;
+  return decodable.every((a) => a.file.size > 0 && !a.hydrationFailed);
 }
 
 /** 异步为图片/视频生成缩略图（不阻塞首屏）。 */

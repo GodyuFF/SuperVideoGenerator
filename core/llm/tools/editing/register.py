@@ -40,7 +40,7 @@ _EDITING_META: dict[str, tuple[str, str, str, str]] = {
         "editing_agent",
         "read",
         "edit.analyze_edit_timeline",
-        "按时间窗分析剪辑结构、空白、重叠与优化建议",
+        "按 start_ms/end_ms 读取时间段内各轨 clip 详情（运镜/转场/变换/素材），可选结构分析",
     ),
     "gather_media": ("editing_agent", "write_pipeline", "edit.gather_media", "收集图片/视频/配音素材"),
     "compose_final": ("editing_agent", "write_pipeline", "edit.compose_final", "合成最终成片"),

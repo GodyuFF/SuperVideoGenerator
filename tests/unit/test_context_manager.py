@@ -13,7 +13,7 @@ def test_sub_agent_react_inputs():
     ctx = AgentRunContext(
         task_brief="写剧本",
         work_context={
-            "style_mode": "dynamic_image",
+            "style_mode": "storybook",
             "project_id": project.id,
             "script_id": "s1",
             "conversation_id": "conv1",

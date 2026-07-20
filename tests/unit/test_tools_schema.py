@@ -7,7 +7,7 @@ from core.llm.tools.shared.agent_tools import (
     pipeline_actions,
     read_actions,
 )
-from core.llm.tools_schema import (
+from core.llm.prompt.tools.registry import (
     build_action_tool,
     build_master_react_tools,
     build_sub_agent_react_tools,
@@ -27,21 +27,30 @@ def _assert_read_only_plan_tracking(schema: dict) -> None:
 
 
 def test_build_master_react_tools_includes_finish():
-    tools = build_master_react_tools(["delegate_script_design", "finish"])
+    tools = build_master_react_tools(
+        ["delegate_agent", "finish"],
+        profile_id="default",
+        style_mode="storybook",
+    )
     names = [t.name for t in tools]
-    assert "delegate_script_design" in names
+    assert "delegate_agent" in names
     assert "finish" in names
     assert ASK_USER_QUESTION_ACTION in names
 
 
 def test_build_master_delegate_is_agent_tool():
-    tools = build_master_react_tools(["delegate_script_design"])
-    delegate = next(t for t in tools if t.name == "delegate_script_design")
+    tools = build_master_react_tools(
+        ["delegate_agent"],
+        profile_id="default",
+        style_mode="storybook",
+    )
+    delegate = next(t for t in tools if t.name == "delegate_agent")
     assert delegate.kind == "agent"
-    assert delegate.agent_name == "script_agent"
-    assert delegate.input_schema["type"] == "object"
+    assert "agent_id" in delegate.input_schema["properties"]
+    assert "script_agent" in delegate.input_schema["properties"]["agent_id"]["enum"]
     assert "plan_status" in delegate.input_schema["properties"]
     assert "remaining_plan" in delegate.input_schema["required"]
+    assert "script_agent" in delegate.description
 
 
 def test_react_input_schema_finish_requires_plan_fields():
@@ -80,6 +89,8 @@ def test_create_character_content_has_description():
     content = schema["properties"]["content"]
     assert "description" in content["properties"]
     assert "description" in content.get("required", [])
+    assert "tts_voice" in content["properties"]
+    assert "tts_voice" in content.get("required", [])
 
 
 def test_update_character_requires_asset_id_and_partial_content():
@@ -166,6 +177,7 @@ def test_all_pipeline_actions_have_action_schema():
         "video_agent",
         "tts_agent",
         "editing_agent",
+        "storyboard_refine_agent",
     ):
         for action in pipeline_actions(agent_name):
             schema = action_input_schema(action)
@@ -187,6 +199,27 @@ def test_registry_tools_have_output_schema():
     registry = get_tool_registry()
     for spec in registry.list_tools():
         assert spec.output_schema.get("type") == "object", spec.name
+
+
+def test_update_clip_output_schema_not_asset_mutation():
+    """update_clip 不得误用 asset_mutation output schema。"""
+    from core.llm.tools.register_helpers import output_schema_for
+
+    schema = output_schema_for("update_clip")
+    required = schema.get("required", [])
+    assert "action" in required
+    assert "clip_id" in required
+    assert "asset_id" not in required
+
+
+def test_get_export_status_output_schema_no_action():
+    """get_export_status 输出对齐 job_to_dict，不要求 action。"""
+    from core.llm.tools.register_helpers import output_schema_for
+
+    schema = output_schema_for("get_export_status")
+    required = schema.get("required", [])
+    assert "job_id" in required
+    assert "action" not in required
 
 
 def test_sub_agent_react_tools_unique_names_with_full_available():

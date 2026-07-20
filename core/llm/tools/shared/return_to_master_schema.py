@@ -28,10 +28,10 @@ RETURN_TO_MASTER_SCHEMA: dict[str, Any] = {
             "items": {"type": "object"},
             "description": "结构化缺失项（可选）",
         },
-        "suggested_delegates": {
+        "suggested_agent_ids": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "建议主编排下一步 delegate_* 行动（可选）",
+            "description": "建议主编排下一步委派的 agent_id（可选）",
         },
         "resume_hint": {
             "type": "string",

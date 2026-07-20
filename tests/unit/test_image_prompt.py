@@ -20,7 +20,7 @@ def test_compose_character_prompt_includes_traits_and_style():
         "prompt_hint": "电影感侧光",
     }
     style = StyleConfig(
-        mode=VideoStyleMode.DYNAMIC_IMAGE,
+        mode=VideoStyleMode.STORYBOOK,
         aspect_ratio="16:9",
     )
     prompt, negative = compose_image_prompt(

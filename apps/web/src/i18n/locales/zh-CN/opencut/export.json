@@ -16,5 +16,9 @@
   "qualityMedium": "中 - 均衡",
   "qualityHigh": "高 - 推荐",
   "qualityVeryHigh": "极高 - 文件最大",
+  "qualityLowShort": "低",
+  "qualityMediumShort": "中",
+  "qualityHighShort": "高",
+  "qualityVeryHighShort": "极高",
   "includeAudio": "导出时包含音频"
 }

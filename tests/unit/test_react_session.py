@@ -9,13 +9,14 @@ from core.llm.client import LLMClient
 from core.llm.model import new_conversation_id
 from core.llm.react_decide import (
     build_master_react_state_json,
-    build_master_react_system,
+    build_master_react_turn_user,
     decide_master_session,
 )
 from core.llm.client.settings import LLMConfigManager
 from core.models.entities import GenerationMode, VideoStyleMode
 from core.llm.master import MasterToolExecutor, create_master_react_session
-from core.llm.prompt.chat_messages import MASTER_STATE_HEADER, extract_master_state_json
+from core.llm.master.delegate_tool import DELEGATE_AGENT_ACTION
+from core.llm.prompt.chat_messages import MASTER_STATE_HEADER, extract_react_state_json, chat_message
 from core.store.memory import MemoryStore
 from tests.support.scripted_llm import ScriptedLLMClient
 
@@ -31,18 +32,15 @@ def test_react_session_available_actions_include_tools_and_delegates():
         project_id="p1",
         script_id="s1",
         user_message="测试短片",
-        style_mode=VideoStyleMode.DYNAMIC_IMAGE,
+        style_mode=VideoStyleMode.STORYBOOK,
         generation_mode=GenerationMode.AUTO,
     )
     actions = session.available_actions()
-    assert "delegate_script_design" in actions
+    assert DELEGATE_AGENT_ACTION in actions
     assert "tool_get_plan_summary" in actions
     assert "finish" in actions
-    assert "delegate_video_gen" not in actions
     session.completed_step_types.add("script_design")
-    actions_after = session.available_actions()
-    assert "delegate_script_design" in actions_after
-    assert "delegate_script_design" not in session.next_actions()
+    assert DELEGATE_AGENT_ACTION in session.available_actions()
 
 
 def test_react_session_next_actions_skips_completed():
@@ -51,14 +49,29 @@ def test_react_session_next_actions_skips_completed():
         project_id="p1",
         script_id="s1",
         user_message="测试",
-        style_mode=VideoStyleMode.DYNAMIC_IMAGE,
+        style_mode=VideoStyleMode.STORYBOOK,
         generation_mode=GenerationMode.AUTO,
     )
-    assert "delegate_script_design" in session.next_actions()
+    from core.store.memory import MemoryStore
+    from core.llm.master.delegate_deps import resolve_delegate_readiness
+
+    store = MemoryStore()
+    session.extra["delegate_readiness"] = resolve_delegate_readiness(
+        store, session.script_id, VideoStyleMode.STORYBOOK
+    )
+    assert DELEGATE_AGENT_ACTION in session.next_actions()
     session.completed_step_types.add("script_design")
     next_acts = session.next_actions()
-    assert "delegate_script_design" not in next_acts
-    assert len(next_acts) >= 1
+    readiness = session.extra["delegate_readiness"]
+    pending = [
+        r["agent_id"]
+        for r in readiness
+        if r.get("step_type") not in session.completed_step_types and not r.get("hard_blockers")
+    ]
+    if pending:
+        assert DELEGATE_AGENT_ACTION in next_acts
+    else:
+        assert next_acts == []
 
 
 def test_build_master_react_system_contains_state_json():
@@ -70,16 +83,15 @@ def test_build_master_react_system_contains_state_json():
         style_mode=VideoStyleMode.AI_VIDEO,
         generation_mode=GenerationMode.AUTO,
     )
-    system = build_master_react_system(session)
-    assert MASTER_STATE_HEADER in system
+    turn = build_master_react_turn_user(session)
+    assert MASTER_STATE_HEADER in turn
     state = json.loads(build_master_react_state_json(session))
-    assert "delegate_script_design" in state["available_actions"]
+    assert DELEGATE_AGENT_ACTION in state["available_actions"]
     assert "tool_get_plan_summary" in state["available_actions"]
     assert "next_actions" in state
     assert state["task_brief"]
 
-    messages = [{"role": "system", "content": system}]
-    parsed = extract_master_state_json(messages)
+    parsed = extract_react_state_json([chat_message("user", turn)])
     assert parsed is not None
     assert parsed["task_brief"] == state["task_brief"]
 
@@ -90,13 +102,13 @@ def test_build_master_react_state_excludes_completed_from_available():
         project_id="p1",
         script_id="s1",
         user_message="去重测试",
-        style_mode=VideoStyleMode.DYNAMIC_IMAGE,
+        style_mode=VideoStyleMode.STORYBOOK,
         generation_mode=GenerationMode.AUTO,
     )
     session.completed_step_types.add("script_design")
     state = json.loads(build_master_react_state_json(session))
-    assert "delegate_script_design" in state["completed_actions"]
-    assert "delegate_script_design" not in state["available_actions"]
+    assert "step:script_design" in state["completed_actions"]
+    assert DELEGATE_AGENT_ACTION in state["available_actions"]
     assert "finish" in state["available_actions"]
 
 
@@ -106,7 +118,7 @@ def test_build_master_react_state_includes_execution_plan():
         project_id="p1",
         script_id="s1",
         user_message="Plan 测试",
-        style_mode=VideoStyleMode.DYNAMIC_IMAGE,
+        style_mode=VideoStyleMode.STORYBOOK,
         generation_mode=GenerationMode.AUTO,
     )
     session.execution_plan = {
@@ -116,11 +128,11 @@ def test_build_master_react_state_includes_execution_plan():
         "runtime_summary": "进行中",
     }
     session.plan_status_history = ["步骤1完成"]
-    session.last_remaining_plan = ["delegate_image_gen"]
+    session.last_remaining_plan = ["image_agent"]
     state = json.loads(build_master_react_state_json(session))
     assert state["execution_plan"]["goal"] == "测试"
     assert state["plan_status_history"] == ["步骤1完成"]
-    assert state["last_remaining_plan"] == ["delegate_image_gen"]
+    assert state["last_remaining_plan"] == ["image_agent"]
 
 
 @pytest.mark.asyncio
@@ -130,7 +142,7 @@ async def test_decide_master_session_requires_user_message(llm_config_with_key):
         project_id="p1",
         script_id="s1",
         user_message="测试",
-        style_mode=VideoStyleMode.DYNAMIC_IMAGE,
+        style_mode=VideoStyleMode.STORYBOOK,
         generation_mode=GenerationMode.AUTO,
     )
     conversations = ConversationStore()
@@ -150,7 +162,7 @@ async def test_decide_master_session_with_user_in_store(llm_config_with_key):
         project_id="p1",
         script_id="s1",
         user_message="做短片",
-        style_mode=VideoStyleMode.DYNAMIC_IMAGE,
+        style_mode=VideoStyleMode.STORYBOOK,
         generation_mode=GenerationMode.AUTO,
     )
     conversations = ConversationStore()
@@ -161,7 +173,8 @@ async def test_decide_master_session_with_user_in_store(llm_config_with_key):
         session,
         conversations,
     )
-    assert decision.action.startswith("delegate_")
+    assert decision.action == DELEGATE_AGENT_ACTION
+    assert decision.action_input.get("agent_id")
 
 
 @pytest.mark.asyncio

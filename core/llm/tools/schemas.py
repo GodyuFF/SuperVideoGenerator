@@ -15,6 +15,7 @@ from core.llm.tools.shared.input_common import (
     merge_plan_tracking,
 )
 from core.llm.tools.storyboard.schemas import STORYBOARD_SCHEMAS
+from core.llm.tools.storyboard_refine.schemas import STORYBOARD_REFINE_SCHEMAS
 from core.llm.tools.tts.schemas import TTS_SCHEMAS
 from core.llm.tools.video.schemas import VIDEO_SCHEMAS
 from core.llm.tools.shared.return_to_master_schema import RETURN_TO_MASTER_SCHEMA
@@ -31,6 +32,7 @@ _READ_ONLY_REACT_ACTIONS = frozenset(
         "list_text_assets",
         "list_images",
         "get_plan",
+        "get_refine_plan",
         "list_videos",
         "list_audio",
         "list_final",
@@ -48,6 +50,7 @@ ACTION_INPUT_SCHEMAS: dict[str, dict[str, Any]] = {
     **SCRIPT_SCHEMAS,
     **IMAGE_SCHEMAS,
     **STORYBOARD_SCHEMAS,
+    **STORYBOARD_REFINE_SCHEMAS,
     **VIDEO_SCHEMAS,
     **TTS_SCHEMAS,
     **EDITING_SCHEMAS,
@@ -75,4 +78,12 @@ def action_input_schema(action: str) -> dict[str, Any]:
     schema = ACTION_INPUT_SCHEMAS.get(action)
     if schema:
         return dict(schema)
+    try:
+        from core.llm.tools.registry import get_tool_registry
+
+        spec = get_tool_registry().get(action)
+        if spec is not None:
+            return dict(spec.input_schema)
+    except Exception:
+        pass
     return dict(OBSERVATION_ONLY)

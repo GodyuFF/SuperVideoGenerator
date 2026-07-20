@@ -31,11 +31,49 @@
     "play": "播放",
     "pause": "暂停",
     "open": "打开",
-    "regeneratePrompt": "重新生成 Prompt"
+    "previewImage": "图片预览",
+    "regeneratePrompt": "重新生成 Prompt",
+    "regenerate": "重新生成",
+    "resizeDrawer": "拖动调整面板宽度"
+  },
+  "regenerate": {
+    "default": "重新生成",
+    "image": "重新生成图片",
+    "tts": "重新生成配音",
+    "video": "重新生成视频",
+    "frame": "重新生成画面",
+    "inProgress": "生成中…",
+    "success": "二次生成已完成",
+    "failed": "二次生成失败",
+    "panelLabel": "分镜二次生成",
+    "eyebrow": {
+      "tts": "TTS · 配音",
+      "frame": "Frame · 画面",
+      "video": "Video · 视频"
+    },
+    "hint": {
+      "tts": "按当前旁白重新合成配音",
+      "frame": "按分镜描述重新生成关键帧",
+      "video": "基于画面与配音重新合成视频"
+    }
+  },
+  "generating": {
+    "default": "生成中",
+    "image": "图片生成中",
+    "tts": "配音生成中",
+    "video": "视频生成中",
+    "failed": "生成失败"
   },
   "view": {
     "formatted": "格式化视图",
     "rawJson": "原始 JSON"
+  },
+  "splash": {
+    "eyebrow": "暗房 · 胶片",
+    "tagline": "从创意到成片",
+    "statusDeveloping": "正在显影…",
+    "statusLoading": "载入工作区…",
+    "statusCalibrating": "校准取景器…"
   },
   "theme": {
     "system": "系统",

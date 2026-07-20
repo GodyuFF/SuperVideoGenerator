@@ -7,6 +7,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from core.media.duration_probe import probe_media_duration_ms
 from core.models.entities import MediaAsset, MediaAssetType
 from core.store.memory import MemoryStore
 from core.store.project_paths import export_api_path, media_api_path, parse_relative_export_path, parse_relative_media_path
@@ -26,6 +27,41 @@ def is_placeholder_media_url(url: str) -> bool:
     if u.startswith("timeline://"):
         return True
     return False
+
+
+def resolve_media_play_link(media: MediaAsset) -> str:
+    """返回前端浏览器可请求的播放 URL（优先 /api/ 路径，避免 file://）。"""
+    raw = (media.url or "").strip().replace("\\", "/")
+    if not raw or is_placeholder_media_url(raw):
+        return ""
+    if raw.startswith("/api/"):
+        return raw
+    if raw.startswith(("http://", "https://")):
+        return raw
+
+    parsed = parse_relative_media_path(raw)
+    if parsed:
+        project_id, script_id, filename = parsed
+        return media_api_path(project_id, script_id, filename)
+
+    export_parsed = parse_relative_export_path(raw)
+    if export_parsed:
+        project_id, script_id, filename = export_parsed
+        return export_api_path(project_id, script_id, filename)
+
+    access = resolve_media_access(raw)
+    file_path = str(access.get("file_path") or "").strip()
+    if file_path and Path(file_path).is_file():
+        filename = Path(file_path).name
+        project_id = str(media.project_id or "").strip()
+        script_id = str(media.script_id or "").strip()
+        if project_id and script_id and filename:
+            return media_api_path(project_id, script_id, filename)
+
+    link = str(access.get("link") or "").strip()
+    if link.startswith(("http://", "https://", "/api/")):
+        return link
+    return ""
 
 
 def resolve_media_access(url: str) -> dict[str, Any]:
@@ -163,15 +199,37 @@ def _preview(text: str, limit: int = _PROMPT_PREVIEW_LEN) -> str:
     return t[: limit - 1] + "…"
 
 
+def resolve_media_duration_ms(media: MediaAsset, access: dict[str, Any]) -> int | None:
+    """解析媒体时长：metadata 与本地探测偏差大时以探测为准。"""
+    meta = media.metadata or {}
+    raw = meta.get("duration_ms")
+    meta_ms = int(raw) if isinstance(raw, (int, float)) and raw > 0 else 0
+    if media.type not in (MediaAssetType.AUDIO, MediaAssetType.VIDEO):
+        return meta_ms if meta_ms > 0 else None
+    file_path = str(access.get("file_path") or "").strip()
+    if not file_path:
+        return meta_ms if meta_ms > 0 else None
+    probed = probe_media_duration_ms(file_path, media.type)
+    if probed is None or probed <= 0:
+        return meta_ms if meta_ms > 0 else None
+    if meta_ms <= 0:
+        return probed
+    drift = abs(probed - meta_ms) / max(probed, 1)
+    if drift > 0.05:
+        return probed
+    return meta_ms
+
+
 def build_media_item(store: MemoryStore, media: MediaAsset) -> dict[str, Any]:
     access = resolve_media_access(media.url)
+    play_link = resolve_media_play_link(media)
     item: dict[str, Any] = {
         "id": media.id,
         "name": media.name,
         "type": media.type.value,
         "status": media.status.value,
         "url": media.url,
-        "link": access["link"],
+        "link": play_link or access["link"],
         "file_path": access["file_path"],
         "is_accessible": access["is_accessible"],
         "is_placeholder": access["is_placeholder"],
@@ -188,6 +246,9 @@ def build_media_item(store: MemoryStore, media: MediaAsset) -> dict[str, Any]:
         item["generation_prompt_preview"] = _preview(prompt)
     if meta.get("source_text_asset_id"):
         item["source_text_asset_id"] = meta["source_text_asset_id"]
+    duration_ms = resolve_media_duration_ms(media, access)
+    if duration_ms is not None and duration_ms > 0:
+        item["duration_ms"] = duration_ms
     return item
 
 

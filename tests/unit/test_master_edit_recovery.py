@@ -58,8 +58,8 @@ def test_format_edit_compose_failure_observation_includes_delegate_hints():
     )
     obs = format_edit_compose_failure_observation(report)
     assert "【剪辑缺失明细】" in obs
-    assert "delegate_image_gen" in obs
-    assert "delegate_edit_compose" in obs
+    assert "delegate_agent" in obs
+    assert "image_agent" in obs or "editing_agent" in obs
     assert "txt_1" in obs
 
 
@@ -106,7 +106,7 @@ def test_compose_final_raises_when_assets_missing(store_with_plan: MemoryStore):
     store_with_plan.set_edit_timeline(timeline)
     ctx = AgentRunContext(
         task_brief="合成",
-        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        work_context={"style_mode": VideoStyleMode.STORYBOOK},
         script_id=script_id,
         step_id="edit_compose",
         agent_name="editing_agent",

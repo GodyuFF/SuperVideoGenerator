@@ -12,7 +12,17 @@ type ImageProps = ImgHTMLAttributes<HTMLImageElement> & {
 };
 
 /** 替代 next/image。 */
-export default function Image({ src, alt, width, height, style, fill, ...rest }: ImageProps) {
+export default function Image({
+  src,
+  alt,
+  width,
+  height,
+  style,
+  fill,
+  priority: _priority,
+  unoptimized: _unoptimized,
+  ...rest
+}: ImageProps) {
   const mergedStyle = fill
     ? { ...style, width: "100%", height: "100%", objectFit: "cover" as const }
     : style;

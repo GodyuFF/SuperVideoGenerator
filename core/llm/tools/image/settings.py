@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,8 +16,29 @@ DEFAULT_AGNES_IMAGE_MODEL = "agnes-image-2.1-flash"
 DEFAULT_SD_BASE_URL = "http://127.0.0.1:7860"
 DEFAULT_IMAGE_SIZE = "1024x768"
 
+from core.llm.tools.volcengine.ark_common import DEFAULT_ARK_BASE_URL, DEFAULT_SEEDREAM_MODEL
+
 IMAGE_SIZE_OPTIONS = ("1024x768", "1024x1024", "768x1024")
-IMAGE_PROVIDERS = ("agnes", "local_sd", "bailian")
+# 火山 SeedDream 推荐尺寸（总像素 ≥ 3686400；对齐官方 2K/4K 推荐表）
+SEEDREAM_SIZE_OPTIONS = (
+    "2K",
+    "4K",
+    "2048x2048",  # 1:1
+    "2304x1728",  # 4:3
+    "1728x2304",  # 3:4
+    "2496x1664",  # 3:2
+    "1664x2496",  # 2:3
+    "2560x1440",  # 16:9
+    "1440x2560",  # 9:16
+    "3024x1296",  # 21:9
+    "4096x4096",  # 4K 1:1
+    "4704x3520",  # 4K 4:3
+    "3520x4704",  # 4K 3:4
+    "5504x3040",  # 4K 16:9
+    "3040x5504",  # 4K 9:16
+)
+IMAGE_PROVIDERS = ("agnes", "local_sd", "bailian", "volcengine")
+_CUSTOM_SIZE_RE = re.compile(r"^(\d{2,5})[x×](\d{2,5})$", re.IGNORECASE)
 SD_SAMPLER_OPTIONS = (
     "Euler a",
     "Euler",
@@ -39,6 +61,41 @@ SD_SAMPLER_OPTIONS = (
     "PLMS",
     "UniPC",
 )
+
+
+def coerce_image_size(provider: str, size: str) -> str:
+    """校验并规范化生图尺寸；火山支持系统预设与自定义 WxH。"""
+    raw = (size or "").strip().replace("×", "x")
+    if not raw:
+        raise ValueError("图片尺寸不能为空")
+
+    if provider == "volcengine":
+        from core.llm.tools.image.ark_client import normalize_seedream_size
+
+        if raw in SEEDREAM_SIZE_OPTIONS or raw in IMAGE_SIZE_OPTIONS:
+            return normalize_seedream_size(raw)
+        matched = _CUSTOM_SIZE_RE.fullmatch(raw)
+        if not matched:
+            raise ValueError(
+                f"不支持的图片尺寸: {size}（请使用系统预设或自定义宽高如 2560x1440）"
+            )
+        w, h = int(matched.group(1)), int(matched.group(2))
+        if not (64 <= w <= 8192 and 64 <= h <= 8192):
+            raise ValueError("自定义宽高须在 64–8192 之间")
+        ratio = w / h
+        if ratio < 1 / 16 or ratio > 16:
+            raise ValueError("自定义宽高比须在 1/16–16 之间")
+        return normalize_seedream_size(f"{w}x{h}")
+
+    if raw in IMAGE_SIZE_OPTIONS:
+        return raw
+    matched = _CUSTOM_SIZE_RE.fullmatch(raw)
+    if not matched:
+        raise ValueError(f"不支持的图片尺寸: {size}")
+    w, h = int(matched.group(1)), int(matched.group(2))
+    if not (64 <= w <= 4096 and 64 <= h <= 4096):
+        raise ValueError("自定义宽高须在 64–4096 之间")
+    return f"{w}x{h}"
 
 
 class ImageGenSettings(BaseSettings):
@@ -115,7 +172,7 @@ class ImageGenConfigManager:
         s = self._settings
         if s.api_key and s.api_key.strip():
             return s.api_key.strip()
-        for env_name in ("SVG_IMAGE_GEN_API_KEY", "AGNES_API_KEY"):
+        for env_name in ("SVG_IMAGE_GEN_API_KEY", "AGNES_API_KEY", "ARK_API_KEY"):
             val = os.getenv(env_name)
             if val and val.strip():
                 return val.strip()
@@ -131,6 +188,8 @@ class ImageGenConfigManager:
             return True
         if s.provider == "bailian":
             return bool(self.resolved_api_key() and s.bailian_workspace_id.strip())
+        if s.provider == "volcengine":
+            return bool(self.resolved_api_key())
         return bool(self.resolved_api_key())
 
     def get_public_config(self) -> dict[str, Any]:
@@ -141,6 +200,7 @@ class ImageGenConfigManager:
             "provider": s.provider,
             "provider_label": (
                 "阿里云百炼" if s.provider == "bailian"
+                else "火山方舟 SeedDream" if s.provider == "volcengine"
                 else "Stable Diffusion (本地)" if s.provider == "local_sd"
                 else "Agnes AI"
             ),
@@ -148,11 +208,16 @@ class ImageGenConfigManager:
                 {"id": "agnes", "label": "Agnes AI"},
                 {"id": "local_sd", "label": "Stable Diffusion (本地)"},
                 {"id": "bailian", "label": "阿里云百炼"},
+                {"id": "volcengine", "label": "火山方舟 SeedDream"},
             ],
             "model": s.model,
             "base_url": s.base_url,
             "default_size": s.default_size,
-            "available_sizes": list(IMAGE_SIZE_OPTIONS),
+            "available_sizes": (
+                list(SEEDREAM_SIZE_OPTIONS)
+                if s.provider == "volcengine"
+                else list(IMAGE_SIZE_OPTIONS)
+            ),
             "timeout_sec": s.timeout_sec,
             "max_concurrency": s.max_concurrency,
             "has_api_key": bool(self.resolved_api_key()),
@@ -208,6 +273,25 @@ class ImageGenConfigManager:
             if provider not in IMAGE_PROVIDERS:
                 raise ValueError(f"不支持的生图服务商: {provider}")
             self._settings.provider = provider
+            if provider == "volcengine":
+                if self._settings.model in ("", DEFAULT_AGNES_IMAGE_MODEL):
+                    self._settings.model = DEFAULT_SEEDREAM_MODEL
+                if "agnes-ai.com" in (self._settings.base_url or ""):
+                    self._settings.base_url = DEFAULT_ARK_BASE_URL
+                # Agnes 小尺寸对 SeedDream 5.x 非法，自动抬到 2K
+                if self._settings.default_size in IMAGE_SIZE_OPTIONS:
+                    from core.llm.tools.image.ark_client import normalize_seedream_size
+
+                    self._settings.default_size = normalize_seedream_size(
+                        self._settings.default_size
+                    )
+            elif provider == "agnes":
+                if self._settings.model == DEFAULT_SEEDREAM_MODEL:
+                    self._settings.model = DEFAULT_AGNES_IMAGE_MODEL
+                if "volces.com" in (self._settings.base_url or ""):
+                    self._settings.base_url = DEFAULT_AGNES_BASE_URL
+                if self._settings.default_size in SEEDREAM_SIZE_OPTIONS:
+                    self._settings.default_size = DEFAULT_IMAGE_SIZE
             # 切换 provider 时清除旧的 SD 检测结果，让下次检测重新判断
             if provider != "local_sd":
                 self._sd_detect_result = None
@@ -222,9 +306,9 @@ class ImageGenConfigManager:
         if base_url is not None:
             self._settings.base_url = base_url.rstrip("/")
         if default_size is not None:
-            if default_size not in IMAGE_SIZE_OPTIONS:
-                raise ValueError(f"不支持的图片尺寸: {default_size}")
-            self._settings.default_size = default_size
+            self._settings.default_size = coerce_image_size(
+                self._settings.provider, default_size
+            )
         if timeout_sec is not None:
             self._settings.timeout_sec = timeout_sec
         if max_concurrency is not None:
@@ -309,4 +393,6 @@ def is_image_gen_available(settings: ImageGenSettings | None = None) -> bool:
         return True  # 本地 SD 不需要 API key
     if s.provider == "bailian":
         return bool(resolved_image_gen_api_key(s) and s.bailian_workspace_id.strip())
+    if s.provider == "volcengine":
+        return bool(resolved_image_gen_api_key(s))
     return bool(resolved_image_gen_api_key(s))

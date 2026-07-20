@@ -39,5 +39,6 @@
   "ariaPreviewCanvas": "Preview canvas",
   "ariaEditText": "Edit text",
   "ariaDragAdjustValue": "Drag to adjust value",
-  "ariaResetDefault": "Reset to default"
+  "ariaResetDefault": "Reset to default",
+  "audioClipHydrationMissing": "Audio not loaded — no waveform. Check the asset or regenerate TTS."
 }

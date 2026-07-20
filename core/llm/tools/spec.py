@@ -33,6 +33,7 @@ class ToolSpec:
     kind: ToolKind
     handler: ToolHandler
     logical_name: str = ""  # 如 script.list_text_assets
+    source: str = "builtin"  # builtin | extension | mcp
 
     @property
     def read_only(self) -> bool:

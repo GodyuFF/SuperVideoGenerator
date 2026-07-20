@@ -37,6 +37,7 @@ import {
 	useSelectionScope,
 } from "@opencut/selection";
 import { buildElementFromMedia } from "@opencut/timeline/element-utils";
+import { resolveMediaDurationSeconds } from "../../../../../../adapter/probeMediaDuration";
 import {
 	type MediaSortKey,
 	type MediaSortOrder,
@@ -253,16 +254,21 @@ function MediaAssetDraggable({
 }) {
 	const editor = useEditor();
 
-	const addElementAtTime = ({
+	const addElementAtTime = async ({
 		asset,
 		startTime,
 	}: {
 		asset: MediaAsset;
 		startTime: MediaTime;
 	}) => {
+		const durationSec = await resolveMediaDurationSeconds({
+			duration: asset.duration,
+			file: asset.file,
+			type: asset.type,
+		});
 		const duration =
-			asset.duration != null
-				? mediaTimeFromSeconds({ seconds: asset.duration })
+			durationSec != null
+				? mediaTimeFromSeconds({ seconds: durationSec })
 				: DEFAULT_NEW_ELEMENT_DURATION;
 		const element = buildElementFromMedia({
 			mediaId: asset.id,

@@ -66,6 +66,12 @@ async def handle_generate_images(
             outputs=concurrent_outputs,
             ok=result.ok,
         )
+    from core.edit.shot_media_bind import sync_plan_image_media_from_frames
+
+    sync_result = sync_plan_image_media_from_frames(store, ctx.script_id)
+    if isinstance(result.structured, dict):
+        result.structured["shot_image_sync"] = sync_result
+    schedule_save(store, immediate=True)
     return result
 
 HANDLERS = {

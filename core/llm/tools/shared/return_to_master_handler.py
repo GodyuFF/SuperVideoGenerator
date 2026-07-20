@@ -25,8 +25,8 @@ def handle_return_to_master(
     }
     if args.get("missing_items"):
         structured["missing_items"] = args["missing_items"]
-    if args.get("suggested_delegates"):
-        structured["suggested_delegates"] = args["suggested_delegates"]
+    if args.get("suggested_agent_ids"):
+        structured["suggested_agent_ids"] = args["suggested_agent_ids"]
     if args.get("resume_hint"):
         structured["resume_hint"] = str(args["resume_hint"]).strip()
     raise ReturnToMasterError(

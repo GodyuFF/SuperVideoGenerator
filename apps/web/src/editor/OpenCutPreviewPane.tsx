@@ -13,7 +13,7 @@ import { useResolvedSvfTheme } from "../hooks/useResolvedSvfTheme";
 import { PreviewPanel } from "@opencut/preview/components";
 import { EditorProvider } from "@opencut/components/providers/editor-provider";
 import { ClassicEditorErrorBoundary } from "./opencut/ClassicEditorErrorBoundary";
-import { svfProjectKey } from "./adapter/svfProjectAdapter";
+import { svfProjectKey, buildTimelineFingerprint } from "./adapter/svfProjectAdapter";
 import {
   installSvfStorageBridge,
   registerSvfSaveHandler,
@@ -23,8 +23,8 @@ import {
 } from "./opencut/svf-storage-bridge";
 import {
   getSvfProjectMediaCache,
-  getVideoHydrationState,
-  type VideoHydrationState,
+  getMediaHydrationIssues,
+  listMediaHydrationMessageKeys,
 } from "./adapter/SvfMediaBridge";
 import { warmGpuRenderer } from "./classicPrefetch";
 import {
@@ -32,6 +32,7 @@ import {
   unregisterClassicAgentSession,
 } from "./classicAgentBridge";
 import type { EditTimelineData } from "../edit/types";
+import { EditTabExportPortal } from "./EditTabExportPortal";
 import "@opencut/globals.css";
 import "./opencut/svf-opencut-theme.css";
 import { useSvfOpencutThemeScope } from "./opencut/useSvfOpencutThemeScope";
@@ -58,8 +59,16 @@ interface OpenCutPreviewPaneProps {
   paused?: boolean;
   /** 为 true 时暂停不释放 bridge 会话（弹窗接管同一项目）。 */
   holdSessionOnPause?: boolean;
-  /** 播放头或播放状态变化时回调。 */
-  onPlaybackChange?: (playheadMs: number, playing: boolean) => void;
+  /** 播放头、总时长与播放状态变化时回调（毫秒均来自 EditorCore MediaTime）。 */
+  onPlaybackChange?: (state: {
+    playheadMs: number;
+    durationMs: number;
+    playing: boolean;
+  }) => void;
+  /** 顶栏导出按钮 Portal 挂载点（已挂载的 DOM 元素）。 */
+  exportHost?: HTMLDivElement | null;
+  /** Tab 内 Classic 编辑保存回调（PATCH edit-timeline）。 */
+  onSaveTimeline?: (timeline: EditTimelineData) => Promise<EditTimelineData | void>;
 }
 
 /** 按需加载 EditorCore 与 wasm 时间工具。 */
@@ -76,35 +85,50 @@ async function getPlaybackApi() {
   };
 }
 
-/** 订阅 OpenCut 播放状态并上报给父组件。 */
+/** 订阅 OpenCut 播放状态并上报给父组件（含播放中的逐帧 onUpdate）。 */
 function PlaybackReporter({
   onPlaybackChange,
 }: {
-  onPlaybackChange?: (playheadMs: number, playing: boolean) => void;
+  onPlaybackChange?: (state: {
+    playheadMs: number;
+    durationMs: number;
+    playing: boolean;
+  }) => void;
 }) {
   const onChangeRef = useRef(onPlaybackChange);
   onChangeRef.current = onPlaybackChange;
 
   useEffect(() => {
     let alive = true;
-    let unsubscribe: (() => void) | undefined;
+    const unsubs: Array<() => void> = [];
 
     void (async () => {
       const { editor, mediaTimeToSeconds } = await getPlaybackApi();
       if (!alive) return;
 
+      /** 从 EditorCore 读取播放头与场景总时长（ticks → 毫秒）。 */
       const emit = () => {
-        const ms = mediaTimeToSeconds({ time: editor.playback.getCurrentTime() }) * 1000;
-        onChangeRef.current?.(ms, editor.playback.getIsPlaying());
+        const playheadMs =
+          mediaTimeToSeconds({ time: editor.playback.getCurrentTime() }) * 1000;
+        const durationMs =
+          mediaTimeToSeconds({ time: editor.timeline.getTotalDuration() }) * 1000;
+        onChangeRef.current?.({
+          playheadMs,
+          durationMs,
+          playing: editor.playback.getIsPlaying(),
+        });
       };
 
       emit();
-      unsubscribe = editor.playback.subscribe(emit);
+      unsubs.push(editor.playback.subscribe(emit));
+      unsubs.push(editor.playback.onUpdate(() => emit()));
+      unsubs.push(editor.playback.onSeek(() => emit()));
+      unsubs.push(editor.timeline.subscribe(emit));
     })();
 
     return () => {
       alive = false;
-      unsubscribe?.();
+      for (const off of unsubs) off();
     };
   }, []);
 
@@ -122,14 +146,14 @@ function noopOverlayVisibilityChange(_params: {
 /** 剪辑 Tab 内嵌 OpenCut WASM 预览面板。 */
 export const OpenCutPreviewPane = forwardRef<OpenCutPreviewPaneHandle, OpenCutPreviewPaneProps>(
   function OpenCutPreviewPane(
-    { projectId, scriptId, timeline, paused = false, holdSessionOnPause = false, onPlaybackChange },
+    { projectId, scriptId, timeline, paused = false, holdSessionOnPause = false, onPlaybackChange, onSaveTimeline, exportHost },
     ref,
   ) {
     const { t } = useAppTranslation(["editor", "common"]);
     const themeClass = useResolvedSvfTheme();
     const [ready, setReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [hydrationState, setHydrationState] = useState<VideoHydrationState>("none");
+    const [hydrationMessageKeys, setHydrationMessageKeys] = useState<string[]>([]);
     const [retryKey, setRetryKey] = useState(0);
     /** bridge 就绪后才递增，避免 EditorProvider 在缓存未装好时抢跑 loadProject。 */
     const [bootstrapId, setBootstrapId] = useState(0);
@@ -137,7 +161,7 @@ export const OpenCutPreviewPane = forwardRef<OpenCutPreviewPaneHandle, OpenCutPr
     const sessionHeldRef = useRef(false);
     const bootstrapTimelineRef = useRef(timeline);
     bootstrapTimelineRef.current = timeline;
-    const timelineFingerprint = `${timeline.revision ?? 0}:${timeline.updated_at ?? ""}:${timeline.duration_ms ?? 0}`;
+    const timelineFingerprint = buildTimelineFingerprint(timeline);
     const prevFingerprintRef = useRef("");
 
     useSvfOpencutThemeScope(!paused && ready);
@@ -175,12 +199,15 @@ export const OpenCutPreviewPane = forwardRef<OpenCutPreviewPaneHandle, OpenCutPr
       }
 
       registerClassicAgentSession(projectId, scriptId);
-      registerSvfSaveHandler(async () => undefined);
+      registerSvfSaveHandler(async (merged) => {
+        if (!onSaveTimeline) return undefined;
+        return onSaveTimeline(merged);
+      });
 
       return () => {
         unregisterClassicAgentSession(projectId, scriptId);
       };
-    }, [projectId, scriptId, paused]);
+    }, [projectId, scriptId, paused, onSaveTimeline]);
 
     useEffect(() => {
       if (paused) {
@@ -192,39 +219,41 @@ export const OpenCutPreviewPane = forwardRef<OpenCutPreviewPaneHandle, OpenCutPr
       setReady(false);
       setError(null);
 
-      void (async () => {
-        try {
-          const timelineChanged = prevFingerprintRef.current !== timelineFingerprint;
-          prevFingerprintRef.current = timelineFingerprint;
-          const force = retryKey > 0 || timelineChanged;
-          await installSvfStorageBridge(projectId, scriptId, {
-            force,
-            initialTimeline: bootstrapTimelineRef.current,
-          });
-          if (cancelled) return;
+      /** 弹窗刚关闭时延后一帧再装 bridge，避免与 EditorStudio 卸载争抢主线程。 */
+      const deferId = window.requestAnimationFrame(() => {
+        void (async () => {
+          try {
+            const base = await installSvfStorageBridge(projectId, scriptId, {
+              force: true,
+              initialTimeline: bootstrapTimelineRef.current,
+            });
+            bootstrapTimelineRef.current = base;
+            if (cancelled) return;
 
-          await warmGpuRenderer();
-          if (cancelled) return;
+            await warmGpuRenderer();
+            if (cancelled) return;
 
-          markSvfProjectLoaded(compositeId);
-          acquireSvfEditorSession(projectId, scriptId);
-          sessionHeldRef.current = true;
-          const hydration = getVideoHydrationState(getSvfProjectMediaCache(compositeId));
-          if (!cancelled) {
-            setHydrationState(hydration);
-            setBootstrapId((id) => id + 1);
-            setReady(true);
+            markSvfProjectLoaded(compositeId);
+            acquireSvfEditorSession(projectId, scriptId);
+            sessionHeldRef.current = true;
+            const issues = getMediaHydrationIssues(getSvfProjectMediaCache(compositeId));
+            if (!cancelled) {
+              setHydrationMessageKeys(listMediaHydrationMessageKeys(issues));
+              setBootstrapId((id) => id + 1);
+              setReady(true);
+            }
+          } catch (e) {
+            if (!cancelled) {
+              setError(e instanceof Error ? e.message : String(e));
+              setReady(false);
+            }
           }
-        } catch (e) {
-          if (!cancelled) {
-            setError(e instanceof Error ? e.message : String(e));
-            setReady(false);
-          }
-        }
-      })();
+        })();
+      });
 
       return () => {
         cancelled = true;
+        window.cancelAnimationFrame(deferId);
         if (sessionHeldRef.current && !holdSessionOnPause) {
           releaseSvfEditorSession(projectId, scriptId);
           sessionHeldRef.current = false;
@@ -282,19 +311,14 @@ export const OpenCutPreviewPane = forwardRef<OpenCutPreviewPaneHandle, OpenCutPr
               key={`${compositeId}-${bootstrapId}`}
               projectId={compositeId}
               embedded
-              skipStorageMigration
             >
-              {hydrationState === "partial" && (
-                <p className="svf-media-hydration-warn px-3 py-2 text-sm">
-                  {t("editor:mediaHydrationFailedPartial")}
+              {hydrationMessageKeys.map((key) => (
+                <p key={key} className="svf-media-hydration-warn px-3 py-2 text-sm">
+                  {t(`editor:${key}`)}
                 </p>
-              )}
-              {hydrationState === "all" && (
-                <p className="svf-media-hydration-warn px-3 py-2 text-sm">
-                  {t("editor:mediaHydrationFailedAll")}
-                </p>
-              )}
+              ))}
               <PlaybackReporter onPlaybackChange={onPlaybackChange} />
+              <EditTabExportPortal host={exportHost ?? null} />
               <PreviewPanel
                 overlayControls={[]}
                 overlayInstances={[]}

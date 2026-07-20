@@ -138,11 +138,30 @@ def collect_variant_generation_items(
                 "name": f"{src.name}-{variant.label or variant.kind}",
                 "image_prompt": prompt,
             }
-            if variant.kind != "base":
+            if variant.kind == "base":
+                from core.assets.element_refs import (
+                    ASSET_TYPE_TO_BUCKET,
+                    normalize_element_refs,
+                )
+                from core.llm.tools.image.frames import _resolve_element_media_id
+
+                bucket = ASSET_TYPE_TO_BUCKET.get(
+                    src.type.value if hasattr(src.type, "value") else str(src.type),
+                    "",
+                )
+                refs = normalize_element_refs(content.get("element_refs"))
+                for tid in refs.get(bucket) or []:
+                    mid = _resolve_element_media_id(store, tid, {})
+                    if mid:
+                        item["reference_media_id"] = mid
+                        break
+            elif variant.kind != "base":
                 ref_mid = str(row.get("reference_media_id", "")).strip()
                 if ref_mid:
                     item["reference_media_id"] = ref_mid
             items.append(item)
     bases = [i for i in items if i.get("variant_kind") == "base"]
     derivs = [i for i in items if i.get("variant_kind") != "base"]
-    return bases + derivs
+    from core.assets.element_refs import topo_sort_generation_items
+
+    return topo_sort_generation_items(store, bases) + topo_sort_generation_items(store, derivs)

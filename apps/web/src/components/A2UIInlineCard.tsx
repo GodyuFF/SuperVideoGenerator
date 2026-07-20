@@ -1,10 +1,11 @@
 /**
  * A2UI 内嵌卡片：在聊天流中展示确认表单，无全屏 overlay。
+ * ask_user_question（generic）采用暗房胶片取景器样式。
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppTranslation } from "../i18n/useAppTranslation";
-import type { A2UIComponent, A2UIConfirmationRequest } from "../types";
+import type { A2UIComponent, A2UIConfirmAck, A2UIConfirmationRequest } from "../types";
 import type { A2UIChatMessage } from "../types/chat";
 import {
   initialA2UIValues,
@@ -13,20 +14,34 @@ import {
 
 type ScriptIntent = "continue" | "regenerate" | "abort";
 
+const CHIP_OPTION_LIMIT = 6;
+
 interface Props {
   message: A2UIChatMessage;
   sendConfirmation: (
     confirmationId: string,
     approved: boolean,
     values?: Record<string, unknown>
-  ) => Promise<boolean>;
+  ) => Promise<A2UIConfirmAck>;
   onSubmitted: (
     messageId: string,
     values: Record<string, unknown>,
     approved: boolean
   ) => void;
+  /** 本地倒计时到期时通知父级将消息标为 expired。 */
+  onExpired?: (messageId: string) => void;
 }
 
+/** 将剩余秒数格式化为 mm:ss 或纯秒。 */
+function formatRemainSec(sec: number): string {
+  if (sec <= 0) return "0s";
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** 已提交答案摘要。 */
 function SubmittedSummary({
   request,
   values,
@@ -36,21 +51,25 @@ function SubmittedSummary({
   values: Record<string, unknown>;
   approved: boolean;
 }) {
+  const { t } = useAppTranslation(["settings"]);
   const entries = useMemo(() => {
     const rows: { label: string; value: string }[] = [];
     if (request.kind === "script_structure") {
       const intent = String(values.intent ?? "");
       const intentLabel =
         intent === "continue"
-          ? "继续"
+          ? t("settings:a2ui.intentContinue")
           : intent === "regenerate"
-            ? "重新生成"
+            ? t("settings:a2ui.intentRegenerate")
             : intent === "abort"
-              ? "中止"
+              ? t("settings:a2ui.intentAbort")
               : intent;
-      rows.push({ label: "选择", value: intentLabel });
+      rows.push({ label: t("settings:a2ui.choiceLabel"), value: intentLabel });
       if (values.feedback) {
-        rows.push({ label: "修改意见", value: String(values.feedback) });
+        rows.push({
+          label: t("settings:a2ui.feedbackLabel"),
+          value: String(values.feedback),
+        });
       }
       return rows;
     }
@@ -58,21 +77,34 @@ function SubmittedSummary({
       const val = values[c.id];
       if (val === undefined || val === null || val === "") continue;
       if (c.component === "checkbox") {
-        rows.push({ label: c.label, value: val ? "是" : "否" });
+        rows.push({
+          label: c.label,
+          value: val ? t("settings:a2ui.costConfirmed") : "—",
+        });
       } else {
         rows.push({ label: c.label, value: String(val) });
       }
     }
     if (request.kind === "video_generation_cost" && values.confirm_checkbox) {
-      rows.push({ label: "费用确认", value: "已确认" });
+      rows.push({
+        label: t("settings:a2ui.costConfirmed"),
+        value: t("settings:a2ui.costConfirmed"),
+      });
     }
     return rows;
-  }, [request, values]);
+  }, [request, values, t]);
+
+  const statusLabel =
+    request.kind === "generic" || request.kind === "script_requirements"
+      ? t("settings:a2ui.answered")
+      : approved
+        ? t("settings:a2ui.submitted")
+        : t("settings:a2ui.cancelled");
 
   return (
     <div className="a2ui-inline-summary">
       <span className={`a2ui-inline-status ${approved ? "approved" : "cancelled"}`}>
-        {approved ? "已提交" : "已取消"}
+        {statusLabel}
       </span>
       {entries.length > 0 && (
         <dl className="a2ui-inline-summary-list">
@@ -88,16 +120,57 @@ function SubmittedSummary({
   );
 }
 
+/** 卡片眉标：等待回答 / 等待确认，不暴露原始 kind。 */
+function A2UIEyebrow({ kind }: { kind: string }) {
+  const { t } = useAppTranslation(["settings"]);
+  const label =
+    kind === "generic" || kind === "script_requirements"
+      ? t("settings:a2ui.awaitingReply")
+      : t("settings:a2ui.awaitingConfirm");
+  return <span className="a2ui-eyebrow">{label}</span>;
+}
+
 /** 聊天内嵌 A2UI 确认卡片 */
 export function A2UIInlineCard({
   message,
   sendConfirmation,
   onSubmitted,
+  onExpired,
 }: Props) {
+  const { t } = useAppTranslation(["common", "settings"]);
   const { request, status, submittedValues } = message;
-  const readOnly = status !== "pending";
+  const cardRef = useRef<HTMLDivElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [remainSec, setRemainSec] = useState<number | null>(null);
+
+  const readOnly = status !== "pending";
+  const expiresIn = request.expires_in_sec;
+
+  useEffect(() => {
+    if (status !== "pending") return;
+    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [status, message.confirmationId]);
+
+  useEffect(() => {
+    if (status !== "pending" || expiresIn == null || expiresIn <= 0) {
+      setRemainSec(null);
+      return;
+    }
+    const started = Date.now();
+    let fired = false;
+    const tick = () => {
+      const left = Math.max(0, expiresIn - Math.floor((Date.now() - started) / 1000));
+      setRemainSec(left);
+      if (left <= 0 && !fired) {
+        fired = true;
+        onExpired?.(message.id);
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [status, expiresIn, message.id, onExpired]);
 
   const submit = async (
     approved: boolean,
@@ -107,41 +180,71 @@ export function A2UIInlineCard({
     setSubmitting(true);
     setError("");
     try {
-      const resolved = await sendConfirmation(
+      const ack = await sendConfirmation(
         message.confirmationId,
         approved,
         values
       );
-      if (!resolved) {
-        setError("提交失败，请重试");
+      if (!ack.resolved) {
+        if (ack.reason === "expired") {
+          setError(t("settings:a2ui.submitExpired"));
+          onExpired?.(message.id);
+        } else if (ack.reason === "already_resolved") {
+          setError(t("settings:a2ui.submitAlreadyResolved"));
+        } else {
+          setError(t("settings:a2ui.submitFailed"));
+        }
         return;
       }
       onSubmitted(message.id, values, approved);
     } catch (e) {
-      setError((e as Error).message || "提交失败，请重试");
+      setError((e as Error).message || t("settings:a2ui.submitFailed"));
     } finally {
       setSubmitting(false);
     }
   };
 
+  const shellClass =
+    status === "pending"
+      ? "a2ui-inline-card a2ui-inline-card--live"
+      : "a2ui-inline-card a2ui-inline-card-readonly";
+
   if (status === "superseded") {
     return (
-      <div className="a2ui-inline-card a2ui-inline-card-readonly">
+      <div className={shellClass} ref={cardRef}>
+        <div className="a2ui-viewfinder-bar" aria-hidden />
         <header className="a2ui-inline-header">
-          <span className="a2ui-badge">{request.kind}</span>
-          <strong>{request.title}</strong>
+          <A2UIEyebrow kind={request.kind} />
+          <strong className="a2ui-inline-title">{request.title}</strong>
         </header>
-        <p className="a2ui-inline-muted">已被新的确认请求取代</p>
+        <p className="a2ui-inline-muted">{t("settings:a2ui.superseded")}</p>
+      </div>
+    );
+  }
+
+  if (status === "expired") {
+    return (
+      <div className={shellClass} ref={cardRef}>
+        <div className="a2ui-viewfinder-bar" aria-hidden />
+        <header className="a2ui-inline-header">
+          <A2UIEyebrow kind={request.kind} />
+          <strong className="a2ui-inline-title">{request.title}</strong>
+        </header>
+        <span className="a2ui-inline-status cancelled">
+          {t("settings:a2ui.expired")}
+        </span>
+        <p className="a2ui-inline-muted">{t("settings:a2ui.expiredHint")}</p>
       </div>
     );
   }
 
   if (readOnly) {
     return (
-      <div className="a2ui-inline-card a2ui-inline-card-readonly">
+      <div className={shellClass} ref={cardRef}>
+        <div className="a2ui-viewfinder-bar" aria-hidden />
         <header className="a2ui-inline-header">
-          <span className="a2ui-badge">{request.kind}</span>
-          <strong>{request.title}</strong>
+          <A2UIEyebrow kind={request.kind} />
+          <strong className="a2ui-inline-title">{request.title}</strong>
         </header>
         {status === "submitted" || status === "cancelled" ? (
           <SubmittedSummary
@@ -150,56 +253,82 @@ export function A2UIInlineCard({
             approved={status === "submitted"}
           />
         ) : (
-          <p className="a2ui-inline-muted">未在历史中记录用户响应</p>
+          <p className="a2ui-inline-muted">{t("settings:a2ui.noHistoryResponse")}</p>
         )}
       </div>
     );
   }
 
+  const expiryHint =
+    remainSec != null ? (
+      <p className="a2ui-expiry-hint">
+        {t("settings:a2ui.expiresIn", { time: formatRemainSec(remainSec) })}
+      </p>
+    ) : null;
+
   if (request.kind === "script_structure") {
     return (
-      <ScriptStructureCard
-        request={request}
-        submitting={submitting}
-        error={error}
-        onSubmit={submit}
-      />
+      <div className={shellClass} ref={cardRef}>
+        <div className="a2ui-viewfinder-bar a2ui-viewfinder-bar--pulse" aria-hidden />
+        <ScriptStructureCard
+          request={request}
+          submitting={submitting}
+          error={error}
+          onSubmit={submit}
+          expiryHint={expiryHint}
+        />
+      </div>
     );
   }
 
-  if (request.kind === "generic") {
+  if (
+    request.kind === "generic" ||
+    request.kind === "script_requirements" ||
+    request.kind === "plan_approval"
+  ) {
     return (
-      <GenericQuestionCard
-        request={request}
-        submitting={submitting}
-        error={error}
-        onSubmit={submit}
-        onCancel={() => submit(false, { intent: "abort" })}
-      />
+      <div className={shellClass} ref={cardRef}>
+        <div className="a2ui-viewfinder-bar a2ui-viewfinder-bar--pulse" aria-hidden />
+        <GenericQuestionCard
+          request={request}
+          submitting={submitting}
+          error={error}
+          onSubmit={submit}
+          onCancel={() => submit(false, { intent: "abort" })}
+          expiryHint={expiryHint}
+        />
+      </div>
     );
   }
 
   return (
-    <CostConfirmCard
-      request={request}
-      submitting={submitting}
-      error={error}
-      onSubmit={submit}
-      onCancel={() => submit(false, {})}
-    />
+    <div className={shellClass} ref={cardRef}>
+      <div className="a2ui-viewfinder-bar a2ui-viewfinder-bar--pulse" aria-hidden />
+      <CostConfirmCard
+        request={request}
+        submitting={submitting}
+        error={error}
+        onSubmit={submit}
+        onCancel={() => submit(false, {})}
+        expiryHint={expiryHint}
+      />
+    </div>
   );
 }
 
+/** 剧本结构确认卡。 */
 function ScriptStructureCard({
   request,
   submitting,
   error,
   onSubmit,
+  expiryHint,
 }: {
   request: A2UIConfirmationRequest;
   submitting: boolean;
   error: string;
   onSubmit: (approved: boolean, values: Record<string, unknown>) => void;
+  expiryHint: ReactNode;
 }) {
   const { t } = useAppTranslation(["common", "settings"]);
   const [feedback, setFeedback] = useState("");
@@ -212,12 +341,13 @@ function ScriptStructureCard({
   };
 
   return (
-    <div className="a2ui-inline-card">
+    <>
       <header className="a2ui-inline-header">
-        <span className="a2ui-badge">{request.kind}</span>
-        <strong>{request.title}</strong>
+        <A2UIEyebrow kind={request.kind} />
+        <strong className="a2ui-inline-title">{request.title}</strong>
       </header>
       {request.description && <p className="a2ui-desc">{request.description}</p>}
+      {expiryHint}
       {summary && (
         <div className="a2ui-field a2ui-script-summary">
           <strong>{summary.label}</strong>
@@ -225,14 +355,14 @@ function ScriptStructureCard({
         </div>
       )}
       <label className="a2ui-field">
-        <strong>修改意见（重新生成时填写）</strong>
+        <strong>{t("settings:a2ui.feedbackLabel")}</strong>
         <textarea
-          className="a2ui-feedback"
+          className="a2ui-feedback a2ui-input"
           rows={3}
           value={feedback}
           disabled={submitting}
           onChange={(e) => setFeedback(e.target.value)}
-          placeholder="如需调整剧本结构或内容，请在此说明…"
+          placeholder={t("settings:a2ui.feedbackPlaceholder")}
         />
       </label>
       {error && <p className="a2ui-error">{error}</p>}
@@ -262,22 +392,25 @@ function ScriptStructureCard({
           {submitting ? t("common:actions.submitting") : t("settings:a2ui.continue")}
         </button>
       </footer>
-    </div>
+    </>
   );
 }
 
+/** ask_user_question 动态提问卡。 */
 function GenericQuestionCard({
   request,
   submitting,
   error,
   onSubmit,
   onCancel,
+  expiryHint,
 }: {
   request: A2UIConfirmationRequest;
   submitting: boolean;
   error: string;
   onSubmit: (approved: boolean, values: Record<string, unknown>) => void;
   onCancel: () => void;
+  expiryHint: ReactNode;
 }) {
   const { t } = useAppTranslation(["common", "settings"]);
   const [values, setValues] = useState<Record<string, unknown>>(() =>
@@ -293,7 +426,9 @@ function GenericQuestionCard({
   const submit = () => {
     if (missingRequired.length > 0) {
       setLocalError(
-        `请填写必填项：${missingRequired.map((c) => c.label).join("、")}`
+        t("settings:a2ui.missingRequired", {
+          fields: missingRequired.map((c) => c.label).join("、"),
+        })
       );
       return;
     }
@@ -304,12 +439,13 @@ function GenericQuestionCard({
   const displayError = localError || error;
 
   return (
-    <div className="a2ui-inline-card">
+    <>
       <header className="a2ui-inline-header">
-        <span className="a2ui-badge">{request.kind}</span>
-        <strong>{request.title}</strong>
+        <A2UIEyebrow kind={request.kind} />
+        <strong className="a2ui-inline-title">{request.title}</strong>
       </header>
       {request.description && <p className="a2ui-desc">{request.description}</p>}
+      {expiryHint}
       <div className="a2ui-components">
         {request.components.map((c) => (
           <GenericQuestionField
@@ -342,36 +478,41 @@ function GenericQuestionCard({
           {submitting ? t("common:actions.submitting") : t("common:actions.submit")}
         </button>
       </footer>
-    </div>
+    </>
   );
 }
 
+/** 费用确认卡。 */
 function CostConfirmCard({
   request,
   submitting,
   error,
   onSubmit,
   onCancel,
+  expiryHint,
 }: {
   request: A2UIConfirmationRequest;
   submitting: boolean;
   error: string;
   onSubmit: (approved: boolean, values: Record<string, unknown>) => void;
   onCancel: () => void;
+  expiryHint: ReactNode;
 }) {
   const { t } = useAppTranslation(["common", "settings"]);
   const [checkbox, setCheckbox] = useState(false);
 
   return (
-    <div className="a2ui-inline-card">
+    <>
       <header className="a2ui-inline-header">
-        <span className="a2ui-badge">{request.kind}</span>
-        <strong>{request.title}</strong>
+        <A2UIEyebrow kind={request.kind} />
+        <strong className="a2ui-inline-title">{request.title}</strong>
       </header>
       {request.description && <p className="a2ui-desc">{request.description}</p>}
+      {expiryHint}
       {request.estimated_cost_usd != null && (
         <div className="a2ui-cost">
-          预估费用：<strong>${request.estimated_cost_usd.toFixed(2)} USD</strong>
+          {t("settings:a2ui.estimatedCost")}
+          <strong>${request.estimated_cost_usd.toFixed(2)} USD</strong>
         </div>
       )}
       <div className="a2ui-components">
@@ -397,16 +538,22 @@ function CostConfirmCard({
         <button
           type="button"
           className="btn-primary"
-          disabled={submitting || (request.kind === "video_generation_cost" && !checkbox)}
+          disabled={
+            submitting ||
+            (request.kind === "video_generation_cost" && !checkbox)
+          }
           onClick={() => onSubmit(true, { confirm_checkbox: checkbox })}
         >
-          {submitting ? t("common:actions.submitting") : t("settings:a2ui.confirmContinue")}
+          {submitting
+            ? t("common:actions.submitting")
+            : t("settings:a2ui.confirmContinue")}
         </button>
       </footer>
-    </div>
+    </>
   );
 }
 
+/** ask_user 单个表单字段（含 chip 单选）。 */
 function GenericQuestionField({
   component,
   value,
@@ -434,6 +581,40 @@ function GenericQuestionField({
   }
 
   if (component.component === "select") {
+    const options = component.options ?? [];
+    const useChips = options.length > 0 && options.length <= CHIP_OPTION_LIMIT;
+    if (useChips) {
+      return (
+        <fieldset className="a2ui-field a2ui-chip-field">
+          <legend>
+            {component.label}
+            {component.required && <span className="a2ui-required">*</span>}
+          </legend>
+          <div
+            className="a2ui-option-chips"
+            role="radiogroup"
+            aria-label={component.label}
+          >
+            {options.map((opt) => {
+              const selected = String(value ?? "") === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  className={`a2ui-option-chip${selected ? " is-selected" : ""}`}
+                  disabled={disabled}
+                  onClick={() => onChange(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      );
+    }
     return (
       <label className="a2ui-field">
         <strong>
@@ -446,7 +627,7 @@ function GenericQuestionField({
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
         >
-          {(component.options ?? []).map((opt) => (
+          {options.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
             </option>
@@ -457,15 +638,35 @@ function GenericQuestionField({
   }
 
   if (component.component === "text") {
+    const isDuration =
+      component.id === "duration_sec" || /时长|秒/.test(component.label);
+    if (isDuration) {
+      return (
+        <label className="a2ui-field">
+          <strong>
+            {component.label}
+            {component.required && <span className="a2ui-required">*</span>}
+          </strong>
+          <input
+            className="a2ui-input"
+            type="number"
+            min={1}
+            value={String(value ?? "")}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </label>
+      );
+    }
     return (
       <label className="a2ui-field">
         <strong>
           {component.label}
           {component.required && <span className="a2ui-required">*</span>}
         </strong>
-        <input
-          className="a2ui-input"
-          type="text"
+        <textarea
+          className="a2ui-input a2ui-feedback"
+          rows={3}
           value={String(value ?? "")}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
@@ -477,6 +678,7 @@ function GenericQuestionField({
   return null;
 }
 
+/** 费用卡内字段渲染。 */
 function A2UIField({
   component,
   checkbox,

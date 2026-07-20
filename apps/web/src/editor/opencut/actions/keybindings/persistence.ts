@@ -2,7 +2,6 @@ import type { ShortcutKey } from "@opencut/actions/keybinding";
 import { isShortcutKey } from "@opencut/actions/keybinding";
 import type { TActionWithOptionalArgs } from "@opencut/actions";
 import { isActionWithOptionalArgs } from "@opencut/actions";
-import { runMigrations } from "./migrations";
 import {
 	getPersistedKeybindingsState,
 	type PersistedKeybindingsState,
@@ -25,12 +24,11 @@ export function serializeKeybindingsState({
 
 export function migratePersistedKeybindingsState({
 	state,
-	fromVersion,
 }: {
 	state: unknown;
 	fromVersion: number;
 }): unknown {
-	return runMigrations({ state, fromVersion });
+	return state;
 }
 
 /**

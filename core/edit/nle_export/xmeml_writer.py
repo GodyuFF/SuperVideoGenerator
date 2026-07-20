@@ -10,7 +10,7 @@ from core.edit.media_paths import ms_to_frame
 
 from core.edit.media_paths import ms_to_frame
 from core.edit.nle_export.media_bundle import MediaBundle, media_kind_for_id
-from core.edit.timeline import ensure_video_layers, timeline_duration_ms
+from core.edit.timeline import timeline_duration_ms
 from core.models.entities import EditClip, EditTimeline
 from core.store.memory import MemoryStore
 
@@ -174,7 +174,6 @@ def write_xmeml(
     height: int,
 ) -> str:
     """生成 FCP7 XMEML v5 字符串。"""
-    timeline = ensure_video_layers(timeline)
     duration_ms = timeline_duration_ms(timeline)
     sequence_frames = max(1, ms_to_frame(duration_ms, fps))
 

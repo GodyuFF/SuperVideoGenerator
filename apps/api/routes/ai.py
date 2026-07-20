@@ -15,6 +15,7 @@ from core.models.entities import ImageSourceMode
 from core.store.project_paths import DATA_ROOT
 from core.tts.engine import is_tts_available, synthesize_speech
 from core.tts.voices import get_all_voices
+from core.llm.client.settings import MAX_OUTPUT_TOKENS
 from core.llm.tools.image.settings import get_image_gen_manager
 
 router = APIRouter(prefix="/api/ai")
@@ -39,7 +40,15 @@ class LlmSectionPatch(BaseModel):
     use_llm_react: bool | None = None
     show_react_details: bool | None = None
     temperature: float | None = None
-    max_tokens: int | None = None
+    max_tokens: int | None = Field(
+        None, ge=256, le=MAX_OUTPUT_TOKENS, description="输出 Token 上限（最大 384k）"
+    )
+    context_window_tokens: int | None = Field(
+        None, ge=4096, description="输入 Token 上限，超限时触发历史压缩"
+    )
+    history_keep_messages: int | None = Field(
+        None, ge=1, description="压缩时保留最近 ReAct 轮次数"
+    )
 
 
 class ImageSectionPatch(BaseModel):
@@ -106,12 +115,22 @@ class ExportSectionPatch(BaseModel):
     crf: int | None = None
 
 
+class EmbeddingSectionPatch(BaseModel):
+    """RAG Embedding 分区 PATCH。"""
+
+    enabled: bool | None = None
+    api_key: str | None = Field(None, description="Embedding API Key，留空表示不修改")
+    base_url: str | None = None
+    model: str | None = None
+
+
 class UpdateAiConfigRequest(BaseModel):
     llm: LlmSectionPatch | None = None
     image: ImageSectionPatch | None = None
     video: VideoSectionPatch | None = None
     tts: TtsSectionPatch | None = None
     export: ExportSectionPatch | None = None
+    embedding: EmbeddingSectionPatch | None = None
 
 
 class TtsPreviewRequest(BaseModel):
@@ -161,7 +180,7 @@ def _section_dict(section: BaseModel | None) -> dict[str, Any] | None:
 
 @router.get("/config")
 def get_ai_config():
-    """获取 LLM / 图片 / 视频 / TTS 分区配置。"""
+    """获取 LLM / 图片 / 视频 / TTS / Embedding 分区配置。"""
     return state.ai_config.get_public_config()
 
 
@@ -175,14 +194,22 @@ def patch_ai_config(body: UpdateAiConfigRequest):
             video=_section_dict(body.video),
             tts=_section_dict(body.tts),
             export=_section_dict(body.export),
+            embedding=_section_dict(body.embedding),
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
 
 @router.get("/tts/voices")
-def list_tts_voices(locale: str | None = Query(None, description="语言区域过滤，如 zh-CN")):
-    """返回可选 TTS 音色列表。"""
+def list_tts_voices(
+    locale: str | None = Query(None, description="语言区域过滤，如 zh-CN"),
+    provider: str | None = Query(None, description="TTS 服务商：edge/openai/azure_v2/siliconflow/gemini/mimo"),
+):
+    """返回可选 TTS 音色列表；可按服务商与语言过滤。"""
+    from core.tts.voices import get_all_voices, get_voices_for_provider
+
+    if provider:
+        return {"voices": get_voices_for_provider(provider, locale)}
     return {"voices": get_all_voices(locale)}
 
 
@@ -251,6 +278,7 @@ async def test_image_generation(body: TestImageRequest):
         AgnesImageGenerationError,
         generate_text_to_image_async,
     )
+    from core.llm.tools.image.ark_client import ArkImageGenerationError
     from core.llm.tools.image.sd_client import (
         SdImageGenerationError,
         sd_txt2img,
@@ -279,6 +307,13 @@ async def test_image_generation(body: TestImageRequest):
                 body.prompt,
                 settings=settings,
             )
+        elif settings.provider == "volcengine":
+            from core.llm.tools.image.ark_client import ark_txt2img
+
+            image_url = await ark_txt2img(
+                body.prompt,
+                settings=settings,
+            )
         else:
             image_url = await generate_text_to_image_async(
                 body.prompt,
@@ -290,6 +325,8 @@ async def test_image_generation(body: TestImageRequest):
         raise HTTPException(502, detail=f"Agnes 生图失败：{e}") from e
     except BailianImageGenerationError as e:
         raise HTTPException(502, detail=f"百炼生图失败：{e}") from e
+    except ArkImageGenerationError as e:
+        raise HTTPException(502, detail=f"SeedDream 生图失败：{e}") from e
     except Exception as e:
         raise HTTPException(502, detail=f"生图失败：{e}") from e
 

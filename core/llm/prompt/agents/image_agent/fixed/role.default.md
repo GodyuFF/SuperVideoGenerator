@@ -19,4 +19,5 @@
 - 每轮 tool_calls 必须填写 `plan_status` 与 `remaining_plan`（反映 scan → generate 进度）。
 
 # Collaboration
-- 输入来自 script_agent 的文字资产；输出供 storyboard_agent 与 editing_agent 使用。
+- 输入来自 script_agent 的文字资产，及（分镜后）storyboard_agent 创建的 frame 资产；scan 自动区分 entity 与 frame 待生图项。
+- 输出供 editing_agent 与分镜预览使用；**不必**在 storyboard 之前完成全部配图。

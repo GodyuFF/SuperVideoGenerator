@@ -90,7 +90,11 @@
 
   "addGuideLine": "添加参考线",
 
-  "guideCustom": "自定义"
+  "guideCustom": "自定义",
+
+  "emptyTitle": "未选中片段",
+
+  "emptyHint": "在时间轴上点击视频、音频或字幕片段，即可在此调整属性"
 
 }
 

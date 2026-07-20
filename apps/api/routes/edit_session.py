@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from apps.api.state import state
+from core.guards.script_style import normalize_style_mode_id
 from core.edit.timeline import (
     build_tts_by_shot,
     resolve_shot_image_ref,
@@ -62,41 +63,12 @@ def _build_timeline_payload(
     timeline = store.get_edit_timeline_for_script(script_id)
     if timeline is None:
         plan = store.get_video_plan_for_script(script_id)
-        if plan is None:
+        if plan is None or not plan.shots:
             return None
-        # 从 VideoPlan 构建初始时间轴
-        tts_by_shot = build_tts_by_shot(store, script_id)
-        clips: list[dict[str, Any]] = []
-        for shot in sorted(plan.shots, key=lambda s: s.order):
-            start_ms = sum(
-                s.duration_ms
-                for s in sorted(plan.shots, key=lambda x: x.order)
-                if s.order < shot.order
-            )
-            image_id = resolve_shot_image_ref(store, shot)
-            audio_id = tts_by_shot.get(shot.id)
-            clip: dict[str, Any] = {
-                "id": shot.id,
-                "start_ms": start_ms,
-                "end_ms": start_ms + shot.duration_ms,
-                "label": shot.narration_text[:80] if shot.narration_text else f"镜头 {shot.order + 1}",
-                "camera_motion": shot.camera_motion,
-                "asset_refs": [],
-            }
-            if image_id:
-                clip["asset_refs"].append({"id": image_id, "role": "video"})
-            if audio_id:
-                clip["asset_refs"].append({"id": audio_id, "role": "audio"})
-            clips.append(clip)
+        from core.edit.timeline import compile_timeline_from_shots
 
-        return {
-            "source": "video_plan",
-            "duration_ms": plan.shots[-1].start_ms() if plan.shots else 0,
-            "clips": clips,
-            "revision": 0,
-        }
+        timeline = compile_timeline_from_shots(store, script_id=script_id, plan=plan)
 
-    # 已有 EditTimeline
     board = timeline_board_items(store, timeline)
     return {
         "source": "edit_timeline",
@@ -140,7 +112,7 @@ def get_edit_session(project_id: str, script_id: str):
         "project_id": project_id,
         "script_id": script_id,
         "script_title": script.title,
-        "style_mode": script.style_mode.value if script.style_mode else "dynamic_image",
+        "style_mode": normalize_style_mode_id(script.style_mode) if script.style_mode else "storybook",
         "timeline": timeline,
         "media_assets": media,
     }
@@ -190,6 +162,11 @@ async def patch_edit_session(
 @router.post("/projects/{project_id}/scripts/{script_id}/edit-session/export")
 async def post_edit_export(project_id: str, script_id: str):
     """触发编辑会话导出。"""
+    from core.edit.export_settings import CLASSIC_EXPORT_ONLY_MESSAGE, get_export_manager
+
+    if not get_export_manager().is_ffmpeg_export_enabled():
+        raise HTTPException(status_code=403, detail=CLASSIC_EXPORT_ONLY_MESSAGE)
+
     script = state.store.get_script(script_id)
     if not script or script.project_id != project_id:
         raise HTTPException(404, "剧本不存在")
@@ -209,7 +186,7 @@ async def post_edit_export(project_id: str, script_id: str):
     import threading
 
     def worker(_job):
-        style_mode = script.style_mode or VideoStyleMode.DYNAMIC_IMAGE
+        style_mode = script.style_mode or VideoStyleMode.STORYBOOK
         fin_id = new_id("media")
         out_path = prepare_export_output_path(project_id, script_id, fin_id)
         result = export_timeline_to_mp4(

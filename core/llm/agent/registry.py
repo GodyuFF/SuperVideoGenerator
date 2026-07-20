@@ -1,15 +1,22 @@
 """子 Agent 注册表。"""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from core.llm.agent.base import ReActAgent
-from core.llm.agent.config_manager import AgentConfigManager
+from core.llm.agent.config_manager import get_agent_config_manager
 from core.llm.a2ui.manager import ConfirmationManager
 from core.conversation import ConversationStore
 from core.llm.agent.definitions import AGENT_CLASSES, AGENT_DEFINITIONS
 from core.events.emitter import EventEmitter
 from core.interaction_log.recorder import InteractionRecorder
 from core.llm.client import LLMClient
-from core.llm.settings import LLMConfigManager
+from core.llm.client.settings import LLMConfigManager
 from core.store.memory import MemoryStore
+
+if TYPE_CHECKING:
+    from core.llm.agent.config_manager import AgentConfigManager
 
 
 class AgentRegistry:
@@ -27,7 +34,7 @@ class AgentRegistry:
         confirmation_manager: ConfirmationManager | None = None,
     ) -> None:
         self._store = store
-        self._agent_config = agent_config or AgentConfigManager()
+        self._agent_config = agent_config or get_agent_config_manager()
         self._agents: dict[str, ReActAgent] = {}
         for name, cls in AGENT_CLASSES.items():
             agent = cls(

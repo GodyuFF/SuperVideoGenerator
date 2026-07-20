@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.guards.script_style import format_style_hints_line, normalize_style_mode_id
 from core.store.memory import MemoryStore
 
 
@@ -44,7 +45,10 @@ def build_project_script_context(
             ctx["script_status"] = script.status.value
             ctx["duration_sec"] = script.duration_sec
             if script.style_mode and "style_mode" not in ctx:
-                ctx["style_mode"] = script.style_mode.value
+                ctx["style_mode"] = normalize_style_mode_id(script.style_mode)
+            hints_line = format_style_hints_line(script.style_hints)
+            if hints_line:
+                ctx["style_hints"] = hints_line
 
     return ctx
 
@@ -60,7 +64,7 @@ def format_project_context_line(context: dict[str, Any]) -> str:
         status = context.get("script_status", "")
         status_part = f", status={status}" if status else ""
         parts.append(f"剧本={title}({context['script_id']}{status_part})")
-    for key in ("style_mode", "generation_mode", "conversation_id", "duration_sec"):
+    for key in ("style_mode", "style_hints", "generation_mode", "conversation_id", "duration_sec"):
         if key in context and context[key]:
             parts.append(f"{key}={context[key]}")
     return ", ".join(parts)

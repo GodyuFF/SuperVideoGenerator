@@ -105,6 +105,7 @@ def test_read_webpage_registered_for_all_agents():
     assert spec.read_only
     excluded = {
         "storyboard_agent",
+        "storyboard_refine_agent",
         "tts_agent",
         "editing_agent",
         "image_agent",

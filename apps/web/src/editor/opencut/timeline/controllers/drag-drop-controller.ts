@@ -31,6 +31,7 @@ import type { TimelineDragData } from "@opencut/timeline/drag";
 import type { MediaAsset } from "@opencut/media/types";
 import type { ProcessedMediaAsset } from "@opencut/media/processing";
 import { roundFrameTime, type MediaTime } from "@opencut/wasm";
+import { resolveMediaDurationSeconds } from "../../../adapter/probeMediaDuration";
 
 // --- Config ---
 
@@ -372,7 +373,7 @@ export class DragDropController {
 				this.executeEffectDrop({ target, dragData });
 				return;
 			case "media":
-				this.executeMediaDrop({ target, dragData });
+				void this.executeMediaDrop({ target, dragData });
 				return;
 		}
 	}
@@ -425,13 +426,13 @@ export class DragDropController {
 		this.insertAtTarget({ element, target, trackType: "graphic" });
 	}
 
-	private executeMediaDrop({
+	private async executeMediaDrop({
 		target,
 		dragData,
 	}: {
 		target: DropTarget;
 		dragData: Extract<TimelineDragData, { type: "media" }>;
-	}): void {
+	}): Promise<void> {
 		if (target.targetElement) {
 			// Replace media source — not yet implemented
 			return;
@@ -442,13 +443,19 @@ export class DragDropController {
 			.find((asset) => asset.id === dragData.id);
 		if (!mediaAsset) return;
 
+		const durationSec = await resolveMediaDurationSeconds({
+			duration: mediaAsset.duration,
+			file: mediaAsset.file,
+			type: mediaAsset.type,
+		});
+
 		const trackType: TrackType =
 			dragData.mediaType === "audio" ? "audio" : "video";
 		const element = buildElementFromMedia({
 			mediaId: mediaAsset.id,
 			mediaType: mediaAsset.type,
 			name: mediaAsset.name,
-			duration: toElementDurationTicks({ seconds: mediaAsset.duration }),
+			duration: toElementDurationTicks({ seconds: durationSec }),
 			startTime: target.xPosition,
 		});
 		this.insertAtTarget({ element, target, trackType });

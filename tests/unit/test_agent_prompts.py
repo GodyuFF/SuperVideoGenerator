@@ -33,14 +33,14 @@ def test_agent_config_includes_read_actions():
             assert "read_only" in tool
 
 
-def test_style_mode_selects_dynamic_image_prompt():
+def test_style_mode_selects_storybook_prompt():
     from core.models.entities import VideoStyleMode
 
     bundle = resolve_agent_prompts(
         "storyboard_agent",
-        style_mode=VideoStyleMode.DYNAMIC_IMAGE,
+        style_mode=VideoStyleMode.STORYBOOK,
     )
-    assert "动态图文" in bundle.role_prompt
+    assert "故事书" in bundle.role_prompt
     assert bundle.action_hint
 
 
@@ -75,7 +75,9 @@ def test_project_role_prompt_override():
 def test_agent_config_manager_list_public():
     mgr = AgentConfigManager()
     agents = mgr.list_agents_public()
-    assert len(agents) == len(AGENT_DEFINITIONS)
+    assert len(agents) == len(AGENT_DEFINITIONS) + 1
+    master = next(a for a in agents if a["name"] == "super_video_master")
+    assert master["effective_role_prompt"]
     for item in agents:
         assert item["tools"]
         assert item["effective_role_prompt"]

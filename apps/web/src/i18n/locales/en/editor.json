@@ -74,17 +74,46 @@
 
   "exportNleExporting": "Exporting PR project…",
 
+  "exportSaving": "Saving to your computer…",
+
+  "exportSavedAndRevealed": "Saved and revealed in file explorer",
+
+  "exportNleSavedAndRevealed": "PR package saved and revealed in file explorer",
+
+  "exportSavedRevealFailed": "File saved, but could not open folder: {{error}}",
+
+  "exportRevealUnknown": "Unknown error",
+
+  "exportSaveCancelled": "Save cancelled",
+
   "studioExportNlePremiere": "Export PR project",
 
   "mediaHydrationFailedAll": "Video media failed to load; preview unavailable. Check your network and retry.",
 
   "mediaHydrationFailedPartial": "Some video media failed to load; preview may be incomplete.",
+  "mediaHydrationBlockedExport": "Media not fully loaded; export disabled until hydration succeeds.",
+
+  "audioHydrationFailedAll": "Audio media failed to load; preview will be silent. Check your network and retry.",
+
+  "audioHydrationFailedPartial": "Some audio media failed to load; preview may be silent or incomplete.",
 
   "cinemaMonitor": "Monitor",
 
   "cinemaExport": "Export",
 
+  "tabExportSlot": "Browser video export",
+
+  "reloadTimeline": "Reload",
+
+  "reloadTimelineTitle": "Fetch edit timeline from server again",
+
+  "studioMore": "More",
+
   "cinemaStudio": "Studio",
+
+  "exportViaEditorHint": "Export the final video from the Edit Assistant toolbar (browser render). Server-side FFmpeg export is disabled.",
+
+  "exportViaEditorShort": "Export in editor",
 
   "classicStage": {
 

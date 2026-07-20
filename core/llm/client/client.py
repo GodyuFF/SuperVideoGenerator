@@ -13,7 +13,13 @@ from core.interaction_log.redact import redact_for_log, redact_headers
 from core.interaction_log.recorder import InteractionRecorder
 from core.llm.client.errors import format_llm_http_error
 from core.llm.client.settings import LLMConfigManager
-from core.llm.streaming import OnDelta, ToolCallAccumulator, parse_sse_line
+from core.llm.streaming import (
+    OnDelta,
+    ThoughtStreamExtractor,
+    ToolCallAccumulator,
+    extract_complete_stream_parts,
+    parse_sse_line,
+)
 from core.llm.json_parse import parse_llm_json_object
 from core.llm.client.finish_reason import (
     LlmOutputTruncatedError,
@@ -35,6 +41,7 @@ from core.llm.client.wire import (
     llm_request_to_log_body,
     llm_request_to_wire_messages,
 )
+from core.logging.perf import llm_slow_threshold_ms, log_perf
 from core.logging.setup import get_logger, log_stage
 
 logger = get_logger("core.llm.client")
@@ -295,6 +302,7 @@ class LLMClient:
 
         start = time.perf_counter()
         parts: list[str] = []
+        thinking_parts: list[str] = []
         stream_meta: dict[str, Any] = {}
         try:
             async with httpx.AsyncClient(**self._client_kwargs()) as client:
@@ -340,18 +348,21 @@ class LLMClient:
                                 stream_meta["finish_reason"] = meta["finish_reason"]
                             if meta.get("response_id"):
                                 stream_meta["response_id"] = meta["response_id"]
-                        if delta is None or "content" not in delta:
+                        if delta is None:
                             continue
-                        text = str(delta["content"])
-                        if not text:
-                            continue
-                        parts.append(text)
-                        if on_delta:
-                            await on_delta(text)
+                        text_part, thinking_part = extract_complete_stream_parts(delta)
+                        if text_part:
+                            parts.append(text_part)
+                            if on_delta:
+                                await on_delta(text_part)
+                        if thinking_part:
+                            thinking_parts.append(thinking_part)
 
                     duration_ms = (time.perf_counter() - start) * 1000
                     content = "".join(parts)
-                    if not content:
+                    if not content.strip():
+                        content = "".join(thinking_parts)
+                    if not content.strip():
                         raise RuntimeError("LLM 返回空内容")
 
                     response_token_meta = _merge_response_token_meta(
@@ -374,6 +385,17 @@ class LLMClient:
                         "llm.response",
                         f"{summary_prefix} 流式响应",
                         length=len(content),
+                    )
+                    slow_ms = llm_slow_threshold_ms()
+                    log_perf(
+                        "llm",
+                        f"{summary_prefix} 流式响应",
+                        duration_ms=duration_ms,
+                        level="warning" if duration_ms >= slow_ms else "info",
+                        agent=str(ctx.get("agent_name", "")),
+                        script_id=str(ctx.get("script_id", "")),
+                        model=model,
+                        kind="complete",
                     )
                     if self._recorder:
                         await self._recorder.record(
@@ -620,7 +642,7 @@ class LLMClient:
 
             start = time.perf_counter()
             accumulator = ToolCallAccumulator()
-            content_deltas: list[str] = []
+            thought_extractor = ThoughtStreamExtractor()
             try:
                 async with httpx.AsyncClient(**self._client_kwargs()) as client:
                     async with client.stream(
@@ -668,9 +690,10 @@ class LLMClient:
                                 accumulator.absorb_meta(meta)
                             if delta is None:
                                 continue
-                            content_delta = accumulator.feed(delta)
-                            if content_delta:
-                                content_deltas.append(content_delta)
+                            accumulator.feed(delta)
+                            if on_delta:
+                                for part in thought_extractor.feed(delta):
+                                    await on_delta(part)
 
                         duration_ms = (time.perf_counter() - start) * 1000
                         result = accumulator.build()
@@ -744,6 +767,19 @@ class LLMClient:
                             tool=result.primary_name() if has_tools else "none",
                             attempt=attempt + 1,
                         )
+                        slow_ms = llm_slow_threshold_ms()
+                        log_perf(
+                            "llm",
+                            f"{summary_prefix} tool_calls",
+                            duration_ms=duration_ms,
+                            level="warning" if duration_ms >= slow_ms else "info",
+                            agent=str(ctx.get("agent_name", "")),
+                            script_id=str(ctx.get("script_id", "")),
+                            model=model,
+                            kind="tool_calls",
+                            tool=result.primary_name() if has_tools else "none",
+                            attempt=attempt + 1,
+                        )
                         response_body = _tool_calls_response_log_body(
                             result, stream_meta, max_tokens=settings.max_tokens
                         )
@@ -793,9 +829,6 @@ class LLMClient:
                             )
 
                         if has_tools:
-                            if on_delta:
-                                for part in content_deltas:
-                                    await on_delta(part)
                             return result
 
                         if attempt == 0:

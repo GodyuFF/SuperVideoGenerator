@@ -31,7 +31,7 @@ def _setup_prop_script():
             description="测试道具，金属与木质混合，适合作为叙事中的小物件特写展示。",
         ),
         observation="",
-    )
+    ).asset
     return store, script, project
 
 

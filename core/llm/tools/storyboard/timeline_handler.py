@@ -16,6 +16,7 @@ from core.store.persist import schedule_save
 
 handle_create_shots = make_write_handler("storyboard_agent", "create_shots")
 handle_create_frames = make_write_handler("storyboard_agent", "create_frames")
+handle_create_video_clips = make_write_handler("storyboard_agent", "create_video_clips")
 handle_persist_plan = make_write_handler("storyboard_agent", "persist_plan")
 
 
@@ -61,6 +62,21 @@ def handle_build_edit_timeline(
     )
 
 
+def _resolve_load_context_script_id(ctx: AgentRunContext, args: dict[str, Any]) -> str:
+    """校验并返回 load_context 必填的 script_id（须与会话一致）。"""
+    sid = str(args.get("script_id") or "").strip()
+    if not sid:
+        raise ValueError(
+            "load_context 必须传入 script_id（与当前会话编排状态中的 script_id 一致）"
+        )
+    ctx_sid = str(ctx.script_id or "").strip()
+    if ctx_sid and sid != ctx_sid:
+        raise ValueError(
+            f"load_context.script_id 与当前会话不一致：期望 {ctx_sid}，收到 {sid}"
+        )
+    return sid
+
+
 def handle_load_context_enriched(
     store: MemoryStore, ctx: AgentRunContext, args: dict[str, Any]
 ) -> ToolResult:
@@ -69,7 +85,8 @@ def handle_load_context_enriched(
 
     observation = apply_action_result(store, "storyboard_agent", "load_context", ctx, args)
     try:
-        payload = build_storyboard_context_payload(store, ctx.script_id)
+        script_id = _resolve_load_context_script_id(ctx, args)
+        payload = build_storyboard_context_payload(store, script_id)
     except ValueError as e:
         return ToolResult(observation=f"{observation}\n{e}", ok=False)
 
@@ -121,6 +138,7 @@ HANDLERS = {
     "load_context": handle_load_context_enriched,
     "create_shots": handle_create_shots,
     "create_frames": handle_create_frames,
+    "create_video_clips": handle_create_video_clips,
     "persist_plan": handle_persist_plan,
     "build_edit_timeline": handle_build_edit_timeline,
     "get_edit_timeline": handle_get_edit_timeline,

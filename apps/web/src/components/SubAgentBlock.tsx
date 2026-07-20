@@ -1,9 +1,9 @@
 /**
  * 子 Agent ReAct 过程展示：某 Plan 步骤下的多轮思考/行动/可折叠参数/可折叠观察。
- * 参数和观察默认折叠，点击箭头展开/收起。
+ * 思考、参数和观察默认折叠，点击箭头展开/收起。
  */
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { SubAgentTurnMessage } from "../types/chat";
 import { normalizeActionInput } from "../types/chat";
 
@@ -34,20 +34,28 @@ function CollapsibleSection({
   preview,
   full,
   defaultExpanded = false,
+  alwaysCollapsible = false,
+  bodyClassName = "",
 }: {
   label: string;
   preview: string;
   full: string;
   defaultExpanded?: boolean;
+  alwaysCollapsible?: boolean;
+  bodyClassName?: string;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const needsToggle = full.includes("\n") || full.length > 250 || full !== preview;
+  const needsToggle =
+    alwaysCollapsible ||
+    full.includes("\n") ||
+    full.length > 250 ||
+    full !== preview;
 
   if (!needsToggle) {
     return (
       <div className="collapsible-section">
         <div className="react-section-label">{label}</div>
-        <div className="react-section-body">{full}</div>
+        <div className={`react-section-body ${bodyClassName}`.trim()}>{full}</div>
       </div>
     );
   }
@@ -58,15 +66,19 @@ function CollapsibleSection({
         <span>{label}</span>
         <ToggleArrow expanded={expanded} onClick={() => setExpanded((v) => !v)} />
       </div>
-      <div className="react-section-body">
+      <div className={`react-section-body ${bodyClassName}`.trim()}>
         {expanded ? full : preview}
       </div>
     </div>
   );
 }
 
-export function SubAgentBlock({ block, showDetails = true }: SubAgentBlockProps) {
-  const [expanded, setExpanded] = useState(true);
+/** 子 Agent ReAct 块（默认折叠，减少执行期 DOM 压力）。 */
+export const SubAgentBlock = memo(function SubAgentBlock({
+  block,
+  showDetails = true,
+}: SubAgentBlockProps) {
+  const [expanded, setExpanded] = useState(false);
   const title = block.displayName || block.agentName;
 
   return (
@@ -90,7 +102,19 @@ export function SubAgentBlock({ block, showDetails = true }: SubAgentBlockProps)
       {expanded && (
         <div className="sub-agent-body">
           {block.iterations.map((it) => {
+            const batchActions = it.actions && it.actions.length > 1 ? it.actions : undefined;
             if (!showDetails) {
+              if (batchActions) {
+                return (
+                  <div key={it.iteration} className="sub-agent-iteration sub-agent-iteration-compact">
+                    <div className="react-action-batch">
+                      {batchActions.map((a) => (
+                        <code key={a.action} className="react-action-code">{a.action}</code>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
               if (!it.action) return null;
               return (
                 <div key={it.iteration} className="sub-agent-iteration sub-agent-iteration-compact">
@@ -114,11 +138,26 @@ export function SubAgentBlock({ block, showDetails = true }: SubAgentBlockProps)
                 <div className="react-turn-badge">#{it.iteration}</div>
                 {it.thought && (
                   <div className="react-thought">
-                    <div className="react-section-label">思考</div>
-                    <div className="react-thought-body">{it.thought}</div>
+                    <CollapsibleSection
+                      label="思考"
+                      preview={firstLine(it.thought, 120)}
+                      full={it.thought}
+                      defaultExpanded={false}
+                      alwaysCollapsible
+                      bodyClassName="react-thought-body"
+                    />
                   </div>
                 )}
-                {it.action && (
+                {batchActions ? (
+                  <div className="react-action">
+                    <div className="react-section-label">行动（{batchActions.length} 个并行）</div>
+                    <div className="react-action-batch">
+                      {batchActions.map((a) => (
+                        <code key={a.action} className="react-action-code">{a.action}</code>
+                      ))}
+                    </div>
+                  </div>
+                ) : it.action ? (
                   <div className="react-action">
                     <div className="react-section-label">行动</div>
                     <code className="react-action-code">{it.action}</code>
@@ -131,7 +170,7 @@ export function SubAgentBlock({ block, showDetails = true }: SubAgentBlockProps)
                       />
                     )}
                   </div>
-                )}
+                ) : null}
                 {obs && (
                   <CollapsibleSection
                     label="观察"
@@ -147,7 +186,28 @@ export function SubAgentBlock({ block, showDetails = true }: SubAgentBlockProps)
       )}
     </div>
   );
-}
+}, (prev, next) => {
+  const a = prev.block;
+  const b = next.block;
+  if (prev.showDetails !== next.showDetails) return false;
+  return (
+    a.id === b.id &&
+    a.iterations.length === b.iterations.length &&
+    a.finished?.iterations === b.finished?.iterations &&
+    a.finished?.outputCount === b.finished?.outputCount &&
+    a.iterations.every((it, i) => {
+      const other = b.iterations[i];
+      return (
+        other &&
+        it.iteration === other.iteration &&
+        it.thought === other.thought &&
+        it.action === other.action &&
+        it.observation === other.observation &&
+        JSON.stringify(it.actions ?? null) === JSON.stringify(other.actions ?? null)
+      );
+    })
+  );
+});
 
 /** 从 WS 事件 payload 解析 action_input */
 export function subAgentActionInput(raw: unknown): Record<string, string> | undefined {

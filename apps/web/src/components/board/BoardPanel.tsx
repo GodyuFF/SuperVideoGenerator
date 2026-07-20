@@ -2,24 +2,53 @@
  * 看板 Tab 容器与各类型看板渲染
  */
 
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, memo, startTransition, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useAppTranslation } from "../../i18n/useAppTranslation";
 import { GraphBoard } from "./GraphBoard";
+import { MediaBoard } from "./MediaBoard";
+import { KnowledgeBoard } from "./KnowledgeBoard";
 import { ImageTextAssetCard, type ImageTextAssetItem } from "../ImageTextAssetCard";
+import { ImageTextAssetDetailModal } from "../ImageTextAssetDetailModal";
 import { ImageTextAssetEditor } from "../ImageTextAssetEditor";
+import { MediaAssetDetailModal, type MediaAssetItem } from "../MediaAssetDetailModal";
 import { EditTimelineBoard } from "./EditTimelineBoard";
 import { EditTabSimpleView } from "../../editor/EditTabSimpleView";
 import { useEditTimeline } from "../../edit/useEditTimeline";
-import { MediaPreview } from "../MediaPreview";
 import { ScriptDetailsBoard } from "./ScriptDetailsBoard";
-import { BOARD_TABS, type BoardTabId, type BoardView, type ScriptBoardMeta, visibleScriptTabs } from "../../types/board";
+import { ScriptDetailDrawer } from "./ScriptDetailDrawer";
+import { BatchAssetStudioDrawer } from "./BatchAssetStudioDrawer";
+import {
+  GenerationQueueDrawer,
+  GenerationQueueOpenButton,
+} from "../GenerationQueueDrawer";
+import { ShotDetailDrawer, type ShotDetailItem } from "./ShotDetailDrawer";
+import { StoryboardBoard } from "./StoryboardBoard";
+import {
+  buildShotDetailItem,
+  parseStoryboardShot,
+  parseStoryboardShots,
+} from "./storyboardShared";
+import type { StyleVideoGenMode } from "../../utils/shotSegmentUtils";
+import {
+  BOARD_TABS,
+  boardMatchesTab,
+  visibleScriptTabs,
+  type BoardNode,
+  type BoardTabId,
+  type BoardView,
+  type ScriptBoardMeta,
+} from "../../types/board";
 import type { WorkspaceMode } from "../../lib/localProjects";
 import { ManualEditBanner } from "../manual/ManualEditBanner";
 import { CreateTextAssetDialog } from "../manual/CreateTextAssetDialog";
-import { PlotAssetEditor } from "../manual/PlotAssetEditor";
 import { deleteTextAsset } from "../../lib/manualAssets";
-import { StoryboardTable } from "./StoryboardTable";
-import { resolveMediaPlayUrl } from "../../utils/mediaUrl";
+import { fetchBoardTextAssetItem } from "../../lib/fetchBoardTextAsset";
+import { useVideoPlan } from "../../hooks/useVideoPlan";
+import {
+  buildMinimalShotPayload,
+  shotCameraMotion,
+  shotVoiceText,
+} from "../../utils/shotTrackUtils";
 
 const EditorStudioModal = lazy(() =>
   import("../../editor/EditorStudioModal").then((m) => ({ default: m.EditorStudioModal })),
@@ -47,6 +76,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`board-status status-${status}`}>{status}</span>;
 }
 
+/** 项目整体看板：按创建顺序展示带编号的剧本卡片。 */
 function OverviewBoard({
   board,
   onEnterScript,
@@ -116,7 +146,14 @@ function OverviewBoard({
                 }}
               >
                 <header>
-                  <strong>{String(item.title)}</strong>
+                  <div className="board-card-title-row">
+                    <span className="board-script-index" aria-label={t("board:scriptIndex", { index: Number(item.script_index ?? item.order ?? 0) })}>
+                      {t("board:scriptIndex", {
+                        index: Number(item.script_index ?? item.order ?? 0) || "—",
+                      })}
+                    </span>
+                    <strong>{String(item.title)}</strong>
+                  </div>
                   <StatusBadge status={String(item.status)} />
                 </header>
                 <p className="muted board-preview">
@@ -173,48 +210,18 @@ function OverviewBoard({
   );
 }
 
-function KnowledgeBoard({
-  board,
-  projectId,
-  onEdit,
-  onDelete,
-  manualEditEnabled,
-}: {
-  board: BoardView;
-  projectId?: string | null;
-  onEdit?: (item: ImageTextAssetItem) => void;
-  onDelete?: (item: ImageTextAssetItem) => void;
-  manualEditEnabled?: boolean;
-}) {
-  const items = board.items ?? [];
-  const stats = board.stats ?? {};
-  return (
-    <>
-      <div className="board-stats-chips">
-        {Object.entries(stats).map(([k, v]) => (
-          <span key={k} className="stat-chip">
-            {k}: {String(v)}
-          </span>
-        ))}
-      </div>
-      <ul className="knowledge-list">
-        {items.map((raw) => {
-          const item = raw as unknown as ImageTextAssetItem;
-          return (
-            <li key={item.id} className="knowledge-item">
-              <ImageTextAssetCard
-                item={item}
-                onEdit={projectId && manualEditEnabled ? onEdit : undefined}
-                onDelete={projectId && manualEditEnabled ? onDelete : undefined}
-                manualEditEnabled={manualEditEnabled}
-              />
-            </li>
-          );
-        })}
-      </ul>
-    </>
-  );
-}
+const API = "/api";
+
+const TEXT_ASSET_KINDS = new Set([
+  "plot",
+  "character",
+  "scene",
+  "prop",
+  "frame",
+  "video_clip",
+  "narration",
+]);
+const MEDIA_ASSET_KINDS = new Set(["image", "audio", "video", "final"]);
 
 function CharacterSceneBoard({
   board,
@@ -224,16 +231,22 @@ function CharacterSceneBoard({
   onEdit,
   onDelete,
   onCreate,
+  onOpenBatchStudio,
   manualEditEnabled,
+  onNavigateAsset,
+  onRegenerated,
 }: {
   board: BoardView;
-  kind: "character" | "scene" | "prop" | "frame";
+  kind: "character" | "scene" | "prop" | "frame" | "video_clip";
   projectId?: string | null;
   scriptId?: string | null;
   onEdit?: (item: ImageTextAssetItem) => void;
   onDelete?: (item: ImageTextAssetItem) => void;
-  onCreate?: (kind: "character" | "scene" | "prop") => void;
+  onCreate?: (kind: "character" | "scene" | "prop" | "frame" | "video_clip") => void;
+  onOpenBatchStudio?: () => void;
   manualEditEnabled?: boolean;
+  onNavigateAsset?: (id: string, kind: string) => void;
+  onRegenerated?: () => void;
 }) {
   const { t } = useAppTranslation(["board", "common"]);
   const items = board.items ?? [];
@@ -244,19 +257,34 @@ function CharacterSceneBoard({
         ? t("board:emptyScene")
         : kind === "frame"
           ? t("board:emptyFrame")
-          : t("board:emptyProp");
-  if (items.length === 0 && !manualEditEnabled) return <p className="muted">{empty}</p>;
+          : kind === "video_clip"
+            ? t("board:emptyVideoClip")
+            : t("board:emptyProp");
+  if (items.length === 0 && !manualEditEnabled && !onOpenBatchStudio) {
+    return <p className="muted">{empty}</p>;
+  }
   return (
     <div className="character-scene-board">
-      {manualEditEnabled && projectId && scriptId && onCreate && (
+      {(onOpenBatchStudio || (manualEditEnabled && projectId && scriptId && onCreate)) && (
         <div className="board-toolbar">
-          <button type="button" className="btn-secondary btn-sm" onClick={() => onCreate(kind)}>
-            {kind === "character"
-              ? t("board:newCharacterShort")
-              : kind === "scene"
-                ? t("board:newSceneShort")
-                : t("board:newPropShort")}
-          </button>
+          {onOpenBatchStudio ? (
+            <button type="button" className="btn-secondary btn-sm" onClick={onOpenBatchStudio}>
+              {t("board:batchStudio.open")}
+            </button>
+          ) : null}
+          {manualEditEnabled && projectId && scriptId && onCreate ? (
+            <button type="button" className="btn-secondary btn-sm" onClick={() => onCreate(kind)}>
+              {kind === "character"
+                ? t("board:newCharacterShort")
+                : kind === "scene"
+                  ? t("board:newSceneShort")
+                  : kind === "frame"
+                    ? t("board:newFrameShort")
+                    : kind === "video_clip"
+                      ? t("board:newVideoClipShort")
+                      : t("board:newPropShort")}
+            </button>
+          ) : null}
         </div>
       )}
       {items.length === 0 ? (
@@ -274,6 +302,8 @@ function CharacterSceneBoard({
                 onEdit={projectId && manualEditEnabled ? onEdit : undefined}
                 onDelete={projectId && manualEditEnabled ? onDelete : undefined}
                 manualEditEnabled={manualEditEnabled}
+                onNavigateAsset={onNavigateAsset}
+                onRegenerated={onRegenerated}
               />
             );
           })}
@@ -283,244 +313,72 @@ function CharacterSceneBoard({
   );
 }
 
-function ScriptBoard({
+function StoryboardBoardPanel({
   board,
   projectId,
   scriptId,
   manualEditEnabled,
-  onRefresh,
+  onOpenShot,
+  onApplyOps,
+  onBoardRefresh,
+  saving,
 }: {
   board: BoardView;
   projectId?: string | null;
   scriptId?: string | null;
   manualEditEnabled?: boolean;
-  onRefresh?: () => void;
+  onOpenShot?: (shot: ShotDetailItem) => void;
+  onApplyOps?: (ops: import("../../types/videoPlan").VideoPlanOp[]) => Promise<void>;
+  onBoardRefresh?: () => void;
+  saving?: boolean;
 }) {
-  const { t } = useAppTranslation(["board", "common"]);
-  const [editingPlot, setEditingPlot] = useState<{
-    id: string;
-    name: string;
-    text: string;
-  } | null>(null);
-  const [createPlotOpen, setCreatePlotOpen] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const stats = board.stats ?? {};
-  const content = String(stats.content_md ?? "").trim();
-  const plotItems = board.items ?? [];
-
-  const handleDeletePlot = async (assetId: string) => {
-    if (!projectId || !scriptId) return;
-    if (!window.confirm("确定删除该剧情资产？")) return;
-    setDeletingId(assetId);
-    try {
-      await deleteTextAsset(projectId, scriptId, assetId);
-      onRefresh?.();
-    } catch (err) {
-      window.alert((err as Error).message);
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
   return (
-    <div className="script-board">
-      {content ? (
-        <>
-          <div className="script-board-meta">
-            <span>{String(stats.title ?? "")}</span>
-            <StatusBadge status={String(stats.status ?? "draft")} />
-            {stats.style_mode != null && stats.style_mode !== "" && (
-              <span className="muted">{String(stats.style_mode)}</span>
-            )}
-          </div>
-          <pre className="script-md-block">{content}</pre>
-        </>
-      ) : null}
-      <div className="board-toolbar">
-        {manualEditEnabled && projectId && scriptId && (
-          <button
-            type="button"
-            className="btn-secondary btn-sm"
-            onClick={() => setCreatePlotOpen(true)}
-          >
-            {t("board:newPlot")}
-          </button>
-        )}
-      </div>
-      {plotItems.length > 0 && (
-        <>
-          <h4>私有文字资产</h4>
-          <ul className="simple-item-list">
-            {plotItems.map((raw) => {
-              const item = raw as Record<string, unknown>;
-              const id = String(item.id);
-              return (
-                <li key={id} className="simple-item-row">
-                  <span className="asset-type-badge">{String(item.type)}</span>
-                  <span className="simple-item-text">
-                    {String(item.name)} — {String(item.preview ?? "")}
-                  </span>
-                  {manualEditEnabled && projectId && (
-                    <span className="simple-item-actions">
-                      <button
-                        type="button"
-                        className="btn-secondary btn-sm"
-                        onClick={() =>
-                          setEditingPlot({
-                            id,
-                            name: String(item.name),
-                            text: String(item.preview ?? ""),
-                          })
-                        }
-                      >
-                        {t("board:editPlot")}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-danger btn-sm"
-                        disabled={deletingId === id}
-                        onClick={() => void handleDeletePlot(id)}
-                      >
-                        {deletingId === id ? t("common:actions.deleting") : t("common:actions.delete")}
-                      </button>
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </>
-      )}
-      {!content && plotItems.length === 0 && (
-        <p className="muted">{t("board:noScriptContent")}</p>
-      )}
-
-      {createPlotOpen && projectId && scriptId && (
-        <CreateTextAssetDialog
-          projectId={projectId}
-          scriptId={scriptId}
-          assetType="plot"
-          onClose={() => setCreatePlotOpen(false)}
-          onCreated={() => onRefresh?.()}
-        />
-      )}
-      {editingPlot && projectId && (
-        <PlotAssetEditor
-          projectId={projectId}
-          assetId={editingPlot.id}
-          initialName={editingPlot.name}
-          initialText={editingPlot.text}
-          onClose={() => setEditingPlot(null)}
-          onSaved={() => onRefresh?.()}
-        />
-      )}
-    </div>
-  );
-}
-
-function StoryboardBoard({
-  board,
-  projectId,
-  scriptId,
-}: {
-  board: BoardView;
-  projectId?: string | null;
-  scriptId?: string | null;
-}) {
-  return <StoryboardTable board={board} projectId={projectId} scriptId={scriptId} />;
-}
-
-function MediaBoard({
-  board,
-  projectId,
-  scriptId,
-}: {
-  board: BoardView;
-  projectId?: string | null;
-  scriptId?: string | null;
-}) {
-  const { t } = useAppTranslation("board");
-  const items = board.items ?? [];
-  const byType: Record<string, typeof items> = {};
-  for (const raw of items) {
-    const mediaType = String((raw as Record<string, unknown>).type);
-    byType[mediaType] = byType[mediaType] ?? [];
-    byType[mediaType].push(raw);
-  }
-  if (items.length === 0) {
-    return <p className="muted">媒体资产将在图片/视频/TTS/剪辑步骤完成后显示。</p>;
-  }
-  return (
-    <div className="media-board-groups">
-      {Object.entries(byType).map(([type, group]) => (
-        <section key={type}>
-          <h4>
-            {type}（{group.length}）
-          </h4>
-          <ul className="media-output-list">
-            {group.map((raw) => {
-              const m = raw as Record<string, unknown>;
-              const url = m.url ? String(m.url) : "";
-              const type = String(m.type);
-              const playUrl = resolveMediaPlayUrl(url, projectId, scriptId);
-              return (
-                <li key={String(m.id)} className="media-output-item">
-                  <strong>{String(m.name)}</strong>
-                  {m.shot_id ? (
-                    <span className="muted"> · 镜头 {String(m.shot_id)}</span>
-                  ) : null}
-                  <MediaPreview
-                    kind={type}
-                    url={url}
-                    projectId={projectId}
-                    scriptId={scriptId}
-                    className="board-media-preview"
-                  />
-                  {playUrl ? (
-                    <a href={playUrl} target="_blank" rel="noreferrer" className="media-link">
-                      {t("openFile")}
-                    </a>
-                  ) : (
-                    <code>{String(m.id)}</code>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
-    </div>
+    <StoryboardBoard
+      board={board}
+      projectId={projectId}
+      scriptId={scriptId}
+      manualEditEnabled={manualEditEnabled}
+      saving={saving}
+      onOpenShot={onOpenShot}
+      onApplyOps={onApplyOps}
+      onBoardRefresh={onBoardRefresh}
+    />
   );
 }
 
 function PipelineBoard({ board }: { board: BoardView }) {
   const pipeline = board.pipeline ?? [];
-  const scriptSteps = board.items ?? [];
+  const extraItems = board.items ?? [];
   return (
     <div className="pipeline-board">
-      <h4>主编排顺序（{String(board.stats?.style_mode ?? "dynamic_image")}）</h4>
-      <ol className="pipeline-master">
-        {pipeline.map((step) => (
-          <li key={step.step_type} className={`pipeline-step status-${step.status}`}>
-            <span className="pipeline-order">{step.order}</span>
-            <div>
-              <strong>{step.title}</strong>
-              <span className="muted"> · {step.agent}</span>
-              <p className="muted">{step.description}</p>
-            </div>
-            <StatusBadge status={step.status} />
-          </li>
-        ))}
-      </ol>
-      {scriptSteps.length > 0 && (
+      <p className="muted">{board.description}</p>
+      <h4>本对话已执行步骤（{String(board.stats?.style_mode ?? "storybook")}）</h4>
+      {pipeline.length === 0 ? (
+        <p className="muted">尚未委派子 Agent；发送创意后将按实际执行顺序展示。</p>
+      ) : (
+        <ol className="pipeline-master">
+          {pipeline.map((step) => (
+            <li key={step.step_type} className={`pipeline-step status-${step.status}`}>
+              <span className="pipeline-order">{step.order}</span>
+              <div>
+                <strong>{step.title}</strong>
+                <span className="muted"> · {step.agent}</span>
+                <p className="muted">{step.description}</p>
+              </div>
+              <StatusBadge status={step.status} />
+            </li>
+          ))}
+        </ol>
+      )}
+      {extraItems.length > 0 && (
         <>
-          <h4>剧本 Agent 内部顺序</h4>
+          <h4>当前状态摘要</h4>
           <ol className="pipeline-sub">
-            {scriptSteps.map((raw, i) => {
+            {extraItems.map((raw, i) => {
               const s = raw as Record<string, unknown>;
               return (
-                <li key={String(s.step_type ?? i)}>
-                  {Number(s.order)}. {String(s.title ?? s.step_type)}
+                <li key={String(s.kind ?? i)}>
+                  {String(s.title ?? "")}
                 </li>
               );
             })}
@@ -543,8 +401,15 @@ function BoardContent({
   onEdit,
   onDelete,
   onCreateAsset,
+  onOpenBatchStudio,
   onRefresh,
   manualEditEnabled,
+  onNavigateAsset,
+  onOpenShot,
+  onOpenMedia,
+  onGraphNodeClick,
+  storyboardApplyOps,
+  storyboardSaving,
 }: {
   activeTab: BoardTabId;
   board: BoardView;
@@ -556,9 +421,16 @@ function BoardContent({
   scriptMeta?: ScriptBoardMeta | null;
   onEdit?: (item: ImageTextAssetItem) => void;
   onDelete?: (item: ImageTextAssetItem) => void;
-  onCreateAsset?: (kind: "character" | "scene" | "prop") => void;
+  onCreateAsset?: (kind: "character" | "scene" | "prop" | "frame" | "video_clip") => void;
+  onOpenBatchStudio?: () => void;
   onRefresh?: () => void;
   manualEditEnabled?: boolean;
+  onNavigateAsset?: (id: string, kind: string) => void;
+  onOpenShot?: (shot: ShotDetailItem) => void;
+  onOpenMedia?: (item: MediaAssetItem) => void;
+  onGraphNodeClick?: (node: BoardNode) => void;
+  storyboardApplyOps?: (ops: import("../../types/videoPlan").VideoPlanOp[]) => Promise<void>;
+  storyboardSaving?: boolean;
 }) {
   switch (activeTab) {
     case "overview":
@@ -575,24 +447,17 @@ function BoardContent({
         <KnowledgeBoard
           board={board}
           projectId={projectId}
+          scriptId={scriptId}
           onEdit={onEdit}
           onDelete={onDelete}
           manualEditEnabled={manualEditEnabled}
+          onNavigateAsset={onNavigateAsset}
+          onRegenerated={onRefresh}
         />
       );
     case "script_details":
       return (
         <ScriptDetailsBoard
-          board={board}
-          projectId={projectId}
-          scriptId={scriptId}
-          manualEditEnabled={manualEditEnabled}
-          onRefresh={onRefresh}
-        />
-      );
-    case "script":
-      return (
-        <ScriptBoard
           board={board}
           projectId={projectId}
           scriptId={scriptId}
@@ -610,7 +475,10 @@ function BoardContent({
           onEdit={onEdit}
           onDelete={onDelete}
           onCreate={onCreateAsset}
+          onOpenBatchStudio={onOpenBatchStudio}
           manualEditEnabled={manualEditEnabled}
+          onNavigateAsset={onNavigateAsset}
+          onRegenerated={onRefresh}
         />
       );
     case "scene":
@@ -623,7 +491,10 @@ function BoardContent({
           onEdit={onEdit}
           onDelete={onDelete}
           onCreate={onCreateAsset}
+          onOpenBatchStudio={onOpenBatchStudio}
           manualEditEnabled={manualEditEnabled}
+          onNavigateAsset={onNavigateAsset}
+          onRegenerated={onRefresh}
         />
       );
     case "prop":
@@ -636,7 +507,10 @@ function BoardContent({
           onEdit={onEdit}
           onDelete={onDelete}
           onCreate={onCreateAsset}
+          onOpenBatchStudio={onOpenBatchStudio}
           manualEditEnabled={manualEditEnabled}
+          onNavigateAsset={onNavigateAsset}
+          onRegenerated={onRefresh}
         />
       );
     case "frame":
@@ -648,23 +522,71 @@ function BoardContent({
           scriptId={scriptId}
           onEdit={onEdit}
           onDelete={onDelete}
+          onCreate={onCreateAsset}
+          onOpenBatchStudio={onOpenBatchStudio}
           manualEditEnabled={manualEditEnabled}
+          onNavigateAsset={onNavigateAsset}
+          onRegenerated={onRefresh}
+        />
+      );
+    case "video_clip":
+      return (
+        <CharacterSceneBoard
+          board={board}
+          kind="video_clip"
+          projectId={projectId}
+          scriptId={scriptId}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onCreate={onCreateAsset}
+          onOpenBatchStudio={onOpenBatchStudio}
+          manualEditEnabled={manualEditEnabled}
+          onNavigateAsset={onNavigateAsset}
+          onRegenerated={onRefresh}
         />
       );
     case "storyboard":
-      return <StoryboardBoard board={board} projectId={projectId} scriptId={scriptId} />;
+      return (
+        <StoryboardBoardPanel
+          board={board}
+          projectId={projectId}
+          scriptId={scriptId}
+          manualEditEnabled={manualEditEnabled}
+          onOpenShot={onOpenShot}
+          onApplyOps={storyboardApplyOps}
+          onBoardRefresh={onRefresh}
+          saving={storyboardSaving}
+        />
+      );
     case "edit":
       return <EditTimelineBoard board={board} />;
     case "media":
-      return <MediaBoard board={board} projectId={projectId} scriptId={scriptId} />;
+      return (
+        <MediaBoard
+          board={board}
+          projectId={projectId}
+          scriptId={scriptId}
+          onOpenMedia={onOpenMedia}
+        />
+      );
     case "pipeline":
       return <PipelineBoard board={board} />;
+    case "graph":
+      return (
+        <div className="board-graph-tab">
+          <GraphBoard
+            nodes={board.nodes ?? []}
+            edges={board.edges ?? []}
+            onOpenDetail={onGraphNodeClick}
+          />
+        </div>
+      );
     default:
       return null;
   }
 }
 
-export function BoardPanel({
+export const BoardPanel = memo(function BoardPanel({
   workspaceMode,
   activeTab,
   onTabChange,
@@ -684,13 +606,25 @@ export function BoardPanel({
   const { t } = useAppTranslation(["board", "common"]);
   const [editing, setEditing] = useState<ImageTextAssetItem | null>(null);
   const [createAssetKind, setCreateAssetKind] = useState<
-    "character" | "scene" | "prop" | null
+    "character" | "scene" | "prop" | "frame" | "video_clip" | null
   >(null);
   const [editStudioOpen, setEditStudioOpen] = useState(false);
+  const [navTextDetail, setNavTextDetail] = useState<ImageTextAssetItem | null>(null);
+  const [mediaDetail, setMediaDetail] = useState<MediaAssetItem | null>(null);
+  const [shotDetail, setShotDetail] = useState<ShotDetailItem | null>(null);
+  const [scriptDetailId, setScriptDetailId] = useState<string | null>(null);
+  const [batchStudioOpen, setBatchStudioOpen] = useState(false);
   const isProjectMode = workspaceMode === "project";
   const isEditTab = !isProjectMode && activeTab === "edit" && Boolean(projectId && scriptId);
+  const isStoryboardTab =
+    !isProjectMode && activeTab === "storyboard" && Boolean(projectId && scriptId);
+  const needVideoPlan =
+    Boolean(projectId && scriptId) && (isStoryboardTab || Boolean(shotDetail));
   const editTimelineApi = useEditTimeline(projectId ?? "", scriptId ?? "", {
     enabled: isEditTab,
+  });
+  const videoPlanApi = useVideoPlan(projectId, scriptId, {
+    enabled: needVideoPlan,
   });
   const projectTabs = BOARD_TABS.filter((t) => t.id === "overview" || t.id === "knowledge");
   const visibleSecondaryIds = useMemo(
@@ -710,10 +644,14 @@ export function BoardPanel({
   useEffect(() => {
     if (isProjectMode) return;
     if (activeTab === "script_details") return;
+    /** meta 尚未拉取或看板仍在切换加载中时，勿因 visibleSecondaryIds 为空误跳回详情 Tab。 */
+    if (loading || !scriptMeta) return;
     if (!visibleSecondaryIds.has(activeTab)) {
       onTabChange("script_details");
     }
-  }, [isProjectMode, activeTab, visibleSecondaryIds, onTabChange]);
+  }, [isProjectMode, activeTab, visibleSecondaryIds, onTabChange, loading, scriptMeta]);
+
+  const boardReady = Boolean(board && boardMatchesTab(board, activeTab));
 
   const handleDeleteAsset = async (item: ImageTextAssetItem) => {
     if (!projectId || !scriptId || !manualEditEnabled) return;
@@ -725,6 +663,224 @@ export function BoardPanel({
       window.alert((err as Error).message);
     }
   };
+
+  /** 在图文/媒体/分镜详情间跳转：先关闭当前弹层，再按 kind 打开目标详情。 */
+  const handleNavigateAsset = useCallback(
+    async (assetId: string, kind: string) => {
+      if (!projectId) return;
+      setEditing(null);
+      setNavTextDetail(null);
+      setMediaDetail(null);
+      setShotDetail(null);
+      setScriptDetailId(null);
+
+      let resolvedKind = kind;
+      let name = assetId;
+      try {
+        const r = await fetch(`${API}/projects/${projectId}/assets/${assetId}/lineage`);
+        if (r.ok) {
+          const view = (await r.json()) as { asset?: { kind?: string; name?: string } };
+          resolvedKind = view.asset?.kind ?? kind;
+          name = view.asset?.name ?? assetId;
+        }
+      } catch {
+        // 谱系拉取失败时仍用传入 kind 打开详情
+      }
+
+      const k = resolvedKind.replace(/^text_/, "");
+      if (k === "script") {
+        setScriptDetailId(assetId);
+      } else if (k === "shot") {
+        let shot: ShotDetailItem = { id: assetId, order: 0, time_label: name };
+        if (scriptId) {
+          try {
+            const params = new URLSearchParams({ script_id: scriptId });
+            const r = await fetch(
+              `${API}/projects/${projectId}/board/storyboard?${params}`,
+            );
+            if (r.ok) {
+              const b = (await r.json()) as BoardView;
+              const found = (b.items ?? []).find(
+                (it) => String((it as Record<string, unknown>).id) === assetId,
+              );
+              if (found) {
+                shot = buildShotDetailItem(
+                  parseStoryboardShot(
+                    found as Record<string, unknown>,
+                    0,
+                    {
+                      edit: t("board:storyboard.timelineEdit"),
+                      plan: t("board:storyboard.timelinePlan"),
+                    },
+                  ),
+                );
+              }
+            }
+          } catch {
+            // 使用最小 shot 占位
+          }
+        }
+        setShotDetail(shot);
+      } else if (MEDIA_ASSET_KINDS.has(k)) {
+        let media: MediaAssetItem = { id: assetId, type: k, name };
+        if (scriptId) {
+          try {
+            const params = new URLSearchParams({ script_id: scriptId });
+            const r = await fetch(`${API}/projects/${projectId}/board/media?${params}`);
+            if (r.ok) {
+              const b = (await r.json()) as BoardView;
+              const found = (b.items ?? []).find(
+                (it) => String((it as Record<string, unknown>).id) === assetId,
+              );
+              if (found) {
+                media = found as unknown as MediaAssetItem;
+              }
+            }
+          } catch {
+            // 使用最小 media 占位
+          }
+        }
+        setMediaDetail(media);
+      } else if (TEXT_ASSET_KINDS.has(k)) {
+        let item: ImageTextAssetItem = { id: assetId, type: k, name };
+        if (scriptId) {
+          try {
+            if (k === "plot") {
+              const params = new URLSearchParams({ script_id: scriptId });
+              const r = await fetch(
+                `${API}/projects/${projectId}/board/script_details?${params}`,
+              );
+              if (r.ok) {
+                const b = (await r.json()) as BoardView;
+                const found = (b.items ?? []).find(
+                  (it) =>
+                    String((it as Record<string, unknown>).id) === assetId &&
+                    String((it as Record<string, unknown>).type ?? "") === "plot",
+                );
+                if (found) {
+                  const row = found as Record<string, unknown>;
+                  item = {
+                    id: assetId,
+                    type: "plot",
+                    name: String(row.name ?? name),
+                    summary: String(row.preview ?? ""),
+                    preview: String(row.preview ?? ""),
+                    content: { text: String(row.preview ?? "") },
+                  };
+                }
+              }
+            } else {
+              const full = await fetchBoardTextAssetItem(projectId, scriptId, assetId, k);
+              if (full) item = full;
+            }
+          } catch {
+            // 看板补全失败时仍用桩数据打开详情
+          }
+        }
+        setNavTextDetail(item);
+      }
+    },
+    [projectId, scriptId, t],
+  );
+
+  const handleGraphNodeClick = useCallback(
+    (node: BoardNode) => {
+      void handleNavigateAsset(node.id, node.kind);
+    },
+    [handleNavigateAsset],
+  );
+
+  const storyboardShotList = useMemo(() => {
+    if (
+      activeTab !== "storyboard" ||
+      board?.kind !== "storyboard" ||
+      !board?.items?.length
+    ) {
+      return [];
+    }
+    const timelineLabels = {
+      edit: t("board:storyboard.timelineEdit"),
+      plan: t("board:storyboard.timelinePlan"),
+    };
+    return parseStoryboardShots(board, timelineLabels).map(buildShotDetailItem);
+  }, [activeTab, board, t]);
+
+  const styleVideoModes = useMemo((): StyleVideoGenMode[] => {
+    const raw = board?.stats?.video_modes;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (m): m is StyleVideoGenMode =>
+        m === "text2video" || m === "img2video" || m === "keyframes",
+    );
+  }, [board?.stats?.video_modes]);
+
+  /** 看板刷新后同步抽屉内镜头摘要（保存编辑后元数据即时更新）。 */
+  useEffect(() => {
+    if (!shotDetail) return;
+    const updated = storyboardShotList.find((s) => s.id === shotDetail.id);
+    if (!updated) return;
+    setShotDetail((prev) => {
+      if (!prev || prev.id !== updated.id) return prev;
+      return updated;
+    });
+  }, [storyboardShotList, shotDetail?.id]);
+
+  const handleOpenShot = useCallback((shot: ShotDetailItem) => {
+    setEditing(null);
+    setNavTextDetail(null);
+    setMediaDetail(null);
+    setScriptDetailId(null);
+    setShotDetail(shot);
+  }, []);
+
+  const handleOpenMedia = useCallback((item: MediaAssetItem) => {
+    setEditing(null);
+    setNavTextDetail(null);
+    setShotDetail(null);
+    setScriptDetailId(null);
+    setMediaDetail(item);
+  }, []);
+
+  const handleStoryboardApplyOps = useCallback(
+    async (ops: import("../../types/videoPlan").VideoPlanOp[]) => {
+      await videoPlanApi.applyOps(ops);
+      onRefresh();
+    },
+    [videoPlanApi, onRefresh],
+  );
+
+  const handleDeleteShot = useCallback(
+    async (shotId: string) => {
+      await videoPlanApi.applyOps([{ op: "delete", shot_id: shotId }]);
+      onRefresh();
+    },
+    [videoPlanApi, onRefresh],
+  );
+
+  const handleSplitShot = useCallback(
+    async (shotId: string) => {
+      const data = await videoPlanApi.fetchVideoPlan();
+      const planShot = data?.shots?.find((s) => s.id === shotId);
+      const narr = planShot ? shotVoiceText(planShot) : "";
+      const totalMs = planShot?.duration_ms ?? 3000;
+      const halfMs = Math.max(500, Math.floor(totalMs / 2));
+      const mid = Math.max(1, Math.ceil(narr.length / 2));
+      const motion = planShot ? shotCameraMotion(planShot) : "static";
+      const order = planShot?.order ?? 0;
+      await videoPlanApi.applyOps([
+        {
+          op: "split",
+          shot_id: shotId,
+          new_shots: [
+            buildMinimalShotPayload(order, halfMs, narr.slice(0, mid), motion),
+            buildMinimalShotPayload(order + 1, totalMs - halfMs, narr.slice(mid), motion),
+          ],
+        },
+      ]);
+      onRefresh();
+    },
+    [videoPlanApi, onRefresh],
+  );
 
   return (
     <div className="board-panel">
@@ -746,13 +902,29 @@ export function BoardPanel({
             </button>
           ))}
         </div>
-        <button type="button" className="btn-secondary btn-sm board-refresh" onClick={onRefresh}>
-          {t("board:refresh")}
-        </button>
+        <div className="board-tab-actions">
+          {!isProjectMode && projectId && scriptId ? (
+            <>
+              <GenerationQueueOpenButton />
+              <button
+                type="button"
+                className="btn-secondary btn-sm"
+                onClick={() => setBatchStudioOpen(true)}
+              >
+                {t("board:batchStudio.open")}
+              </button>
+            </>
+          ) : null}
+          {!isEditTab && (
+            <button type="button" className="btn-secondary btn-sm board-refresh" onClick={onRefresh}>
+              {t("board:refresh")}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="board-content">
-        {loading && !isEditTab && <p className="muted">加载看板…</p>}
+        {(loading || !boardReady) && !isEditTab && <p className="muted">加载看板…</p>}
         {error && !isEditTab && <p className="board-error">{error}</p>}
         {!isProjectMode && !isEditTab && <ManualEditBanner visible={!manualEditEnabled} />}
         {isEditTab && projectId && scriptId && (
@@ -764,7 +936,7 @@ export function BoardPanel({
             studioOpen={editStudioOpen}
           />
         )}
-        {!loading && board && !isEditTab && (
+        {!loading && boardReady && board && !isEditTab && (
           <>
             {board.description && <p className="muted board-desc">{board.description}</p>}
             <BoardContent
@@ -779,8 +951,17 @@ export function BoardPanel({
               onEdit={manualEditEnabled ? setEditing : undefined}
               onDelete={manualEditEnabled ? handleDeleteAsset : undefined}
               onCreateAsset={manualEditEnabled ? setCreateAssetKind : undefined}
+              onOpenBatchStudio={() => setBatchStudioOpen(true)}
               onRefresh={onRefresh}
               manualEditEnabled={manualEditEnabled}
+              onNavigateAsset={handleNavigateAsset}
+              onOpenShot={handleOpenShot}
+              onOpenMedia={handleOpenMedia}
+              onGraphNodeClick={handleGraphNodeClick}
+              storyboardApplyOps={
+                manualEditEnabled ? handleStoryboardApplyOps : undefined
+              }
+              storyboardSaving={videoPlanApi.saving}
             />
           </>
         )}
@@ -789,6 +970,7 @@ export function BoardPanel({
       {editing && projectId && (
         <ImageTextAssetEditor
           projectId={projectId}
+          scriptId={scriptId}
           item={editing}
           disabled={!manualEditEnabled}
           onClose={() => setEditing(null)}
@@ -812,13 +994,94 @@ export function BoardPanel({
             projectId={projectId}
             scriptId={scriptId}
             timelineApi={editTimelineApi}
-            onClose={(saved) => {
-              setEditStudioOpen(false);
-              if (saved) void editTimelineApi.fetchTimeline();
+            onClose={(_saved) => {
+              // 低优先级卸载全屏编辑器，避免与 Tab 预览重建争抢主线程。
+              startTransition(() => {
+                setEditStudioOpen(false);
+              });
+              // flushSave 已 PATCH 并更新 timeline 状态；预览由 timeline revision 指纹触发单次 soft-reload。
             }}
           />
         </Suspense>
       )}
+
+      {navTextDetail && projectId && (
+        <ImageTextAssetDetailModal
+          item={navTextDetail}
+          projectId={projectId}
+          scriptId={scriptId}
+          onClose={() => setNavTextDetail(null)}
+          onNavigateAsset={handleNavigateAsset}
+          manualEditEnabled={manualEditEnabled}
+          onRegenerated={onRefresh}
+        />
+      )}
+
+      {mediaDetail && projectId && (
+        <MediaAssetDetailModal
+          item={mediaDetail}
+          projectId={projectId}
+          scriptId={scriptId}
+          onClose={() => setMediaDetail(null)}
+          onNavigateAsset={handleNavigateAsset}
+          manualEditEnabled={manualEditEnabled}
+          onRegenerated={onRefresh}
+        />
+      )}
+
+      {shotDetail && projectId && (
+        <ShotDetailDrawer
+          shot={shotDetail}
+          projectId={projectId}
+          scriptId={scriptId}
+          allShots={storyboardShotList}
+          manualEditEnabled={manualEditEnabled}
+          planLoading={videoPlanApi.loading}
+          getShotById={videoPlanApi.getShotById}
+          fetchVideoPlan={videoPlanApi.fetchVideoPlan}
+          patchShot={manualEditEnabled ? videoPlanApi.patchShot : undefined}
+          syncFromTts={manualEditEnabled ? videoPlanApi.syncFromTts : undefined}
+          analyzeAvSync={videoPlanApi.analyzeAvSync}
+          applyAvSyncAction={
+            manualEditEnabled ? videoPlanApi.applyAvSyncAction : undefined
+          }
+          onDeleteShot={manualEditEnabled ? handleDeleteShot : undefined}
+          onSplitShot={manualEditEnabled ? handleSplitShot : undefined}
+          onSaved={onRefresh}
+          onClose={() => setShotDetail(null)}
+          onNavigateAsset={handleNavigateAsset}
+          onSelectShot={setShotDetail}
+          onOpenEditTimeline={() => {
+            setShotDetail(null);
+            onTabChange("edit");
+          }}
+          styleVideoModes={styleVideoModes}
+        />
+      )}
+
+      {scriptDetailId && projectId ? (
+        <ScriptDetailDrawer
+          projectId={projectId}
+          scriptId={scriptDetailId}
+          activeScriptId={scriptId}
+          manualEditEnabled={manualEditEnabled}
+          onClose={() => setScriptDetailId(null)}
+          onRefresh={onRefresh}
+          onNavigateAsset={handleNavigateAsset}
+        />
+      ) : null}
+
+      {batchStudioOpen && projectId && scriptId ? (
+        <BatchAssetStudioDrawer
+          projectId={projectId}
+          scriptId={scriptId}
+          manualEditEnabled={manualEditEnabled}
+          onClose={() => setBatchStudioOpen(false)}
+          onRefresh={onRefresh}
+        />
+      ) : null}
+
+      <GenerationQueueDrawer />
     </div>
   );
-}
+});

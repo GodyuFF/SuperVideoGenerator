@@ -108,6 +108,38 @@ def test_persist_media_http_url(tmp_path, monkeypatch):
     assert file_path.read_bytes() == png_bytes
 
 
+def test_resolve_script_media_absolute_path_by_bare_media_id(tmp_path, monkeypatch):
+    """裸 media_id（无扩展名）应能解析到落盘文件。"""
+    from core.models.entities import AssetStatus, MediaAsset, MediaAssetType
+    from core.store.media_storage import resolve_script_media_absolute_path
+
+    monkeypatch.setattr(project_paths, "PROJECTS_ROOT", tmp_path)
+    media_dir = project_paths.script_media_dir("proj1", "scr1")
+    media_dir.mkdir(parents=True, exist_ok=True)
+    (media_dir / "media_09bb5a381262.png").write_bytes(b"png")
+
+    store = MemoryStore()
+    store.media_assets["media_09bb5a381262"] = MediaAsset(
+        id="media_09bb5a381262",
+        project_id="proj1",
+        script_id="scr1",
+        name="测试图",
+        type=MediaAssetType.IMAGE,
+        status=AssetStatus.READY,
+        url="projects/proj1/scripts/scr1/assets/media/media_09bb5a381262.png",
+    )
+
+    path = resolve_script_media_absolute_path(
+        "proj1",
+        "scr1",
+        "media_09bb5a381262",
+        store=store,
+    )
+    assert path is not None
+    assert path.name == "media_09bb5a381262.png"
+    assert path.is_file()
+
+
 def test_discover_projects_from_disk_imports_missing_meta(tmp_path, monkeypatch):
     from core.store import persist
 

@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from core.llm.tools.shared.agent_tools import ASK_USER_QUESTION_ACTION
-from core.llm.master.actions import ACTION_TO_STEP, STEP_META
 from core.llm.model.llm_request import ToolDefinition
 from core.llm.prompt.tools.schemas import action_input_schema, react_input_schema
-from core.llm.tools.master.schemas import build_master_delegate_schema, build_master_finish_schema
+from core.llm.tools.master.schemas import build_master_finish_schema
+from core.llm.master.delegate_tool import (
+    DELEGATE_AGENT_ACTION,
+    build_delegate_agent_description,
+    build_delegate_agent_input_schema,
+)
 
 
 def tool_choice_force(name: str) -> dict[str, str]:
@@ -29,22 +35,11 @@ def _master_action_description(action: str) -> str:
         return "结束主编排 ReAct 循环，进入收尾摘要。"
     if action == ASK_USER_QUESTION_ACTION:
         return "向用户询问缺失信息（A2UI 弹窗），用于补充任务所需字段。"
-    if action.startswith("delegate_"):
-        step = ACTION_TO_STEP.get(action)
-        if step and step in STEP_META:
-            meta = STEP_META[step]
-            return f"委派子 Agent「{meta['title']}」：{meta['description']}"
-        return f"委派子 Agent 执行 {action}"
+    if action == DELEGATE_AGENT_ACTION:
+        return "委派子 Agent 执行专项任务（需传入 agent_id）。"
     if action.startswith("tool_"):
         return f"调用主编排工具 {action}"
     return action
-
-
-def _master_agent_name(action: str) -> str:
-    step = ACTION_TO_STEP.get(action)
-    if step and step in STEP_META:
-        return str(STEP_META[step].get("agent", ""))
-    return ""
 
 
 def _sub_action_description(agent_name: str, action: str) -> str:
@@ -67,15 +62,54 @@ def build_react_tool(action: str, description: str, *, input_schema: dict | None
     )
 
 
-def build_master_react_tool(action: str) -> ToolDefinition:
+def build_delegate_agent_tool(
+    profile_id: str,
+    style_mode: Any,
+    *,
+    config: Any | None = None,
+    delegate_readiness: list[dict[str, Any]] | None = None,
+    eligible_agent_ids: list[str] | None = None,
+) -> ToolDefinition:
+    """构建会话感知的 delegate_agent 工具定义。"""
+    return ToolDefinition(
+        name=DELEGATE_AGENT_ACTION,
+        description=build_delegate_agent_description(
+            profile_id,
+            style_mode,
+            config=config,
+            delegate_readiness=delegate_readiness,
+            eligible_agent_ids=eligible_agent_ids,
+        ),
+        input_schema=build_delegate_agent_input_schema(
+            profile_id,
+            style_mode,
+            config=config,
+            eligible_agent_ids=eligible_agent_ids,
+        ),
+        kind="agent",
+        agent_name="",
+    )
+
+
+def build_master_react_tool(
+    action: str,
+    *,
+    profile_id: str | None = None,
+    style_mode: Any | None = None,
+    config: Any | None = None,
+    delegate_readiness: list[dict[str, Any]] | None = None,
+    eligible_delegate_agent_ids: list[str] | None = None,
+) -> ToolDefinition:
     description = _master_action_description(action)
-    if action.startswith("delegate_"):
-        return ToolDefinition(
-            name=action,
-            description=description,
-            input_schema=build_master_delegate_schema(),
-            kind="agent",
-            agent_name=_master_agent_name(action),
+    if action == DELEGATE_AGENT_ACTION:
+        pid = profile_id or "default"
+        sm = style_mode or "storybook"
+        return build_delegate_agent_tool(
+            pid,
+            sm,
+            config=config,
+            delegate_readiness=delegate_readiness,
+            eligible_agent_ids=eligible_delegate_agent_ids,
         )
     if action == "finish":
         return ToolDefinition(
@@ -127,13 +161,28 @@ def _ensure_ask_tool(
 def build_master_react_tools(
     available_actions: list[str],
     *,
+    profile_id: str | None = None,
+    style_mode: Any | None = None,
+    config: Any | None = None,
     include_ask_user: bool | None = None,
+    delegate_readiness: list[dict[str, Any]] | None = None,
+    eligible_delegate_agent_ids: list[str] | None = None,
 ) -> list[ToolDefinition]:
     if include_ask_user is None:
         include_ask_user = True
     actions = unique_actions(available_actions)
     return _ensure_ask_tool(
-        [build_master_react_tool(action) for action in actions],
+        [
+            build_master_react_tool(
+                action,
+                profile_id=profile_id,
+                style_mode=style_mode,
+                config=config,
+                delegate_readiness=delegate_readiness,
+                eligible_delegate_agent_ids=eligible_delegate_agent_ids,
+            )
+            for action in actions
+        ],
         include_ask_user=include_ask_user,
     )
 

@@ -1,5 +1,8 @@
 """Agent 可控剪辑工具处理实现。
 
+所有写操作必须经 core.edit.timeline_service.patch_timeline 写入 EditTimeline
+（video_layers + tracks），禁止旁路修改 VideoPlan 代替剪辑编排。
+
 每个 handler 接收:
 - store: MemoryStore
 - ctx: AgentRunContext
@@ -15,10 +18,11 @@ from typing import Any
 
 from core.llm.agent.react_core import AgentRunContext
 from core.llm.tools.result import ToolResult
-from core.models.entities import StepOutput
+from core.models.entities import EditClip, MediaAssetType, StepOutput
 from core.store.memory import MemoryStore
 from core.store.persist import schedule_save
 from core.edit.timeline import (
+    _effective_audio_media_duration_ms,
     build_timeline_layer_summary,
     format_layer_summary_text,
     timeline_board_items,
@@ -34,6 +38,27 @@ def _script_from_ctx(ctx: AgentRunContext) -> str:
 
 def _project_from_ctx(ctx: AgentRunContext) -> str:
     return str(ctx.work_context.get("project_id", ""))
+
+
+def _clip_to_raw(clip: EditClip) -> dict[str, Any]:
+    """将现有 clip 全量序列化为 PATCH body，避免丢失 source_refs/motion/过渡等字段。"""
+    raw = clip.model_dump()
+    meta = dict(raw.get("metadata") or {})
+    meta.setdefault("edited_by", "agent")
+    raw["metadata"] = meta
+    return raw
+
+
+def _resolve_media_default_duration_ms(store: MemoryStore, media) -> int:
+    """未显式指定时长时读取素材真实时长；音频优先本地探测，兜底 3000ms。"""
+    if media.type == MediaAssetType.AUDIO:
+        probed = _effective_audio_media_duration_ms(store, media)
+        if probed > 0:
+            return probed
+    meta_ms = int((media.metadata or {}).get("duration_ms") or 0)
+    if meta_ms > 0:
+        return meta_ms
+    return 3000
 
 
 def handle_get_edit_timeline(
@@ -99,7 +124,6 @@ def handle_add_clip(
     media_id = str(args.get("media_id", ""))
     track = str(args.get("track", "video"))
     start_ms = int(args.get("start_ms", 0))
-    duration_ms = int(args.get("duration_ms", 3000))
     layer_id = str(args.get("layer_id", ""))
     label = str(args.get("label", ""))
 
@@ -111,6 +135,13 @@ def handle_add_clip(
             structured={"error": f"media {media_id} not found"},
             ok=False,
         )
+
+    try:
+        duration_ms = int(args.get("duration_ms") or 0)
+    except (TypeError, ValueError):
+        duration_ms = 0
+    if duration_ms <= 0:
+        duration_ms = _resolve_media_default_duration_ms(store, media)
 
     if not label:
         label = media.name or media_id
@@ -141,46 +172,38 @@ def handle_add_clip(
         "metadata": {"edited_by": "agent", "media_id": media_id},
     }
 
-    # 更新对应层
-    body: dict[str, Any] = {"video_layers": []}
-    found_layer = False
-
+    # 更新对应层/轨：video 追加到指定层，audio/subtitle 追加到现有轨（禁止整轨替换）
     if track == "video":
+        body: dict[str, Any] = {"video_layers": []}
+        found_layer = False
         for layer in timeline.video_layers:
             layer_dict = {
                 "id": layer.id,
                 "name": layer.name,
                 "z_index": layer.z_index,
-                "clips": [
-                    {
-                        "id": c.id,
-                        "start_ms": c.start_ms,
-                        "end_ms": c.end_ms,
-                        "label": c.label,
-                        "asset_ref": c.asset_ref,
-                        "transform": c.transform,
-                        "metadata": c.metadata,
-                    }
-                    for c in layer.clips
-                ],
+                "clips": [_clip_to_raw(c) for c in layer.clips],
             }
             if layer_id and layer.id == layer_id:
                 layer_dict["clips"].append(new_clip)
                 found_layer = True
             body["video_layers"].append(layer_dict)
 
-        if not found_layer and timeline.video_layers:
-            # 添加到第一个视频层
-            body["video_layers"][0]["clips"].append(new_clip)
-            found_layer = True
-
-    if not found_layer:
-        body = {
-            "tracks": {
-                track: [new_clip],
-            },
-            "video_layers": body.get("video_layers"),
+        if not found_layer:
+            if body["video_layers"]:
+                # 添加到第一个视频层
+                body["video_layers"][0]["clips"].append(new_clip)
+            else:
+                body["video_layers"] = [
+                    {"id": "", "name": "主画面", "z_index": 0, "clips": [new_clip]}
+                ]
+    else:
+        track_key = track if track in ("audio", "subtitle") else "audio"
+        tracks_body = {
+            key: [_clip_to_raw(c) for c in timeline.tracks.get(key, [])]
+            for key in ("audio", "subtitle")
         }
+        tracks_body[track_key].append(new_clip)
+        body = {"tracks": tracks_body}
 
     try:
         view = patch_timeline(store, script_id=script_id, project_id=project_id, body=body)
@@ -219,15 +242,7 @@ def handle_update_clip(
             "clips": [],
         }
         for c in layer.clips:
-            clip_dict = {
-                "id": c.id,
-                "start_ms": c.start_ms,
-                "end_ms": c.end_ms,
-                "label": c.label,
-                "asset_ref": c.asset_ref,
-                "transform": c.transform,
-                "metadata": c.metadata,
-            }
+            clip_dict = _clip_to_raw(c)
             if c.id == clip_id:
                 patched = True
                 if "start_ms" in args:
@@ -288,15 +303,7 @@ def handle_remove_clip(
             if c.id == clip_id:
                 removed = True
                 continue
-            layer_dict["clips"].append({
-                "id": c.id,
-                "start_ms": c.start_ms,
-                "end_ms": c.end_ms,
-                "label": c.label,
-                "asset_ref": c.asset_ref,
-                "transform": c.transform,
-                "metadata": c.metadata,
-            })
+            layer_dict["clips"].append(_clip_to_raw(c))
         body["video_layers"].append(layer_dict)
 
     if not removed:
@@ -337,15 +344,7 @@ def handle_apply_effect(
             "clips": [],
         }
         for c in layer.clips:
-            clip_dict = {
-                "id": c.id,
-                "start_ms": c.start_ms,
-                "end_ms": c.end_ms,
-                "label": c.label,
-                "asset_ref": c.asset_ref,
-                "transform": c.transform,
-                "metadata": dict(c.metadata or {}),
-            }
+            clip_dict = _clip_to_raw(c)
             if c.id == clip_id:
                 patched = True
                 meta = dict(clip_dict.get("metadata") or {})
@@ -399,15 +398,7 @@ def handle_set_keyframe(
             "clips": [],
         }
         for c in layer.clips:
-            clip_dict = {
-                "id": c.id,
-                "start_ms": c.start_ms,
-                "end_ms": c.end_ms,
-                "label": c.label,
-                "asset_ref": c.asset_ref,
-                "transform": dict(c.transform or {}),
-                "metadata": c.metadata,
-            }
+            clip_dict = _clip_to_raw(c)
             if c.id == clip_id:
                 patched = True
                 transform = dict(clip_dict.get("transform") or {})
@@ -442,6 +433,11 @@ def handle_export_timeline(
     store: MemoryStore, ctx: AgentRunContext, args: dict[str, Any]
 ) -> ToolResult:
     """触发视频导出。"""
+    from core.edit.export_settings import CLASSIC_EXPORT_ONLY_MESSAGE, get_export_manager
+
+    if not get_export_manager().is_ffmpeg_export_enabled():
+        return ToolResult(observation=CLASSIC_EXPORT_ONLY_MESSAGE, ok=False)
+
     script_id = _script_from_ctx(ctx)
     project_id = _project_from_ctx(ctx)
     skip_subtitles = bool(args.get("skip_subtitles"))
@@ -460,7 +456,7 @@ def handle_export_timeline(
     job_id = job.id
 
     script = store.get_script(script_id)
-    style_mode = script.style_mode if script else VideoStyleMode.DYNAMIC_IMAGE
+    style_mode = script.style_mode if script else VideoStyleMode.STORYBOOK
 
     import threading
 

@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import type { AiConfig, AiConfigPatch, AiConfigTab, ImageSourceMode } from "../types";
 import { IMAGE_SOURCE_LABELS } from "../constants";
 import { LocaleSwitcher } from "../i18n/LocaleSwitcher";
+import { coerceAppLocale, applyAppLocale } from "../i18n/localeSync";
 import { ThemeToggle } from "../components/theme/ThemeToggle";
 import { AppShell } from "../components/layout/AppShell";
 
@@ -19,7 +20,7 @@ interface AiSettingsPageProps {
   onRefresh: () => void;
 }
 
-const TAB_IDS: AiConfigTab[] = ["llm", "image", "video", "tts", "export"];
+const TAB_IDS: AiConfigTab[] = ["llm", "image", "video", "tts", "export", "embedding"];
 
 const TAB_I18N_KEYS: Record<AiConfigTab, string> = {
   llm: "ai.tabs.llm",
@@ -27,7 +28,165 @@ const TAB_I18N_KEYS: Record<AiConfigTab, string> = {
   video: "ai.tabs.video",
   tts: "ai.tabs.tts",
   export: "ai.tabs.editExport",
+  embedding: "ai.tabs.embedding",
 };
+
+const ARK_IMAGE_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+const ARK_SEEDREAM_MODEL = "doubao-seedream-5-0-pro";
+const ARK_SEEDANCE_MODEL = "doubao-seedance-2-0";
+const AGNES_IMAGE_BASE_URL = "https://apihub.agnes-ai.com/v1";
+const AGNES_VIDEO_BASE_URL = "https://apihub.agnes-ai.com/v1";
+
+/** 自定义尺寸在下拉中的哨兵值。 */
+const CUSTOM_SIZE_VALUE = "__custom__";
+
+/** Agnes / SD / 百炼默认尺寸。 */
+const AGNES_IMAGE_SIZES = ["1024x768", "1024x1024", "768x1024"] as const;
+
+/** 火山 SeedDream 推荐尺寸（总像素 ≥ 3686400）。 */
+const SEEDREAM_IMAGE_SIZES = [
+  "2K",
+  "4K",
+  "2048x2048",
+  "2304x1728",
+  "1728x2304",
+  "2496x1664",
+  "1664x2496",
+  "2560x1440",
+  "1440x2560",
+  "3024x1296",
+  "4096x4096",
+  "4704x3520",
+  "3520x4704",
+  "5504x3040",
+  "3040x5504",
+] as const;
+
+/** 尺寸选项展示标签（比例提示）。 */
+const IMAGE_SIZE_LABELS: Record<string, string> = {
+  "2K": "2K（模型自动比例）",
+  "4K": "4K（模型自动比例）",
+  "1024x768": "1024×768（4:3）",
+  "1024x1024": "1024×1024（1:1）",
+  "768x1024": "768×1024（3:4）",
+  "2048x2048": "2048×2048（1:1）",
+  "2304x1728": "2304×1728（4:3）",
+  "1728x2304": "1728×2304（3:4）",
+  "2496x1664": "2496×1664（3:2）",
+  "1664x2496": "1664×2496（2:3）",
+  "2560x1440": "2560×1440（16:9）",
+  "1440x2560": "1440×2560（9:16）",
+  "3024x1296": "3024×1296（21:9）",
+  "4096x4096": "4096×4096（4K 1:1）",
+  "4704x3520": "4704×3520（4K 4:3）",
+  "3520x4704": "3520×4704（4K 3:4）",
+  "5504x3040": "5504×3040（4K 16:9）",
+  "3040x5504": "3040×5504（4K 9:16）",
+};
+
+/** 解析 WxH 文本。 */
+function parseImageWh(size: string): { w: number; h: number } | null {
+  const m = /^(\d+)\s*[x×]\s*(\d+)$/i.exec(size.trim());
+  if (!m) return null;
+  const w = Number(m[1]);
+  const h = Number(m[2]);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+  return { w, h };
+}
+
+/** 按生图服务商返回系统预设尺寸。 */
+function imageSizesForProvider(provider: string, fromApi: string[] | undefined): string[] {
+  if (provider === "volcengine") {
+    return [...SEEDREAM_IMAGE_SIZES];
+  }
+  if (fromApi && fromApi.length > 0) {
+    return fromApi;
+  }
+  return [...AGNES_IMAGE_SIZES];
+}
+
+/** 切换到火山时映射小尺寸；已是合法预设或自定义 WxH 则保留。 */
+function mapSizeForImageProvider(provider: string, size: string): string {
+  if (provider !== "volcengine") {
+    return size;
+  }
+  const map: Record<string, string> = {
+    "1024x1024": "2048x2048",
+    "1024x768": "2304x1728",
+    "768x1024": "1728x2304",
+  };
+  if (map[size]) {
+    return map[size];
+  }
+  if ((SEEDREAM_IMAGE_SIZES as readonly string[]).includes(size)) {
+    return size;
+  }
+  if (parseImageWh(size)) {
+    return size.replace("×", "x");
+  }
+  return "2048x2048";
+}
+
+/** 组装自定义尺寸字符串。 */
+function formatCustomImageSize(w: number, h: number): string {
+  return `${Math.max(1, Math.round(w))}x${Math.max(1, Math.round(h))}`;
+}
+
+/** 切换生图服务商时回填推荐模型与 Base URL。 */
+function imageDefaultsForProvider(
+  provider: string,
+  current: { model: string; baseUrl: string },
+): { model: string; baseUrl: string } {
+  if (provider === "volcengine") {
+    return {
+      model:
+        !current.model || current.model.startsWith("agnes-")
+          ? ARK_SEEDREAM_MODEL
+          : current.model,
+      baseUrl:
+        !current.baseUrl || current.baseUrl.includes("agnes-ai.com")
+          ? ARK_IMAGE_BASE_URL
+          : current.baseUrl,
+    };
+  }
+  if (provider === "agnes") {
+    return {
+      model:
+        current.model === ARK_SEEDREAM_MODEL ? "agnes-image-2.1-flash" : current.model,
+      baseUrl:
+        current.baseUrl.includes("volces.com") ? AGNES_IMAGE_BASE_URL : current.baseUrl,
+    };
+  }
+  return current;
+}
+
+/** 切换视频服务商时回填推荐模型与 Base URL。 */
+function videoDefaultsForProvider(
+  provider: string,
+  current: { model: string; baseUrl: string },
+): { model: string; baseUrl: string } {
+  if (provider === "volcengine") {
+    return {
+      model:
+        !current.model || current.model.startsWith("agnes-")
+          ? ARK_SEEDANCE_MODEL
+          : current.model,
+      baseUrl:
+        !current.baseUrl || current.baseUrl.includes("agnes-ai.com")
+          ? ARK_IMAGE_BASE_URL
+          : current.baseUrl,
+    };
+  }
+  if (provider === "agnes") {
+    return {
+      model:
+        current.model === ARK_SEEDANCE_MODEL ? "agnes-video-v2.0" : current.model,
+      baseUrl:
+        current.baseUrl.includes("volces.com") ? AGNES_VIDEO_BASE_URL : current.baseUrl,
+    };
+  }
+  return current;
+}
 
 export function AiSettingsPage({
   config,
@@ -37,8 +196,22 @@ export function AiSettingsPage({
   onBack,
   onRefresh,
 }: AiSettingsPageProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [tab, setTab] = useState<AiConfigTab>("llm");
+
+  /** TTS 默认语言若为 zh-CN/en，反向对齐界面语言与 ui-prefs。 */
+  const syncUiFromTtsLanguage = useCallback(
+    async (raw: string) => {
+      const locale = coerceAppLocale(raw);
+      if (!locale) return;
+      const current = i18n.language === "en" ? "en" : "zh-CN";
+      if (locale !== current) {
+        await i18n.changeLanguage(locale);
+      }
+      await applyAppLocale(locale, { persistRemote: true, syncTts: false });
+    },
+    [i18n],
+  );
 
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
@@ -47,7 +220,9 @@ export function AiSettingsPage({
   const [useLlmReact, setUseLlmReact] = useState(true);
   const [showReactDetails, setShowReactDetails] = useState(true);
   const [temperature, setTemperature] = useState(0.2);
-  const [maxTokens, setMaxTokens] = useState(1024);
+  const [maxTokens, setMaxTokens] = useState(8192);
+  const [contextWindowTokens, setContextWindowTokens] = useState(1_048_576);
+  const [historyKeepMessages, setHistoryKeepMessages] = useState(10);
 
   const [imageEnabled, setImageEnabled] = useState(true);
   const [imageProvider, setImageProvider] = useState("agnes");
@@ -55,6 +230,9 @@ export function AiSettingsPage({
   const [imageBaseUrl, setImageBaseUrl] = useState("");
   const [imageApiKey, setImageApiKey] = useState("");
   const [imageSize, setImageSize] = useState("1024x768");
+  const [imageSizeCustom, setImageSizeCustom] = useState(false);
+  const [imageCustomW, setImageCustomW] = useState(2048);
+  const [imageCustomH, setImageCustomH] = useState(2048);
   const [imageSourceDefault, setImageSourceDefault] = useState<ImageSourceMode>("generate");
   const [imageTextPreset, setImageTextPreset] = useState<"explainer" | "report" | "lecture">("explainer");
   const [comicPreset, setComicPreset] = useState<"manga" | "webtoon" | "ink">("manga");
@@ -119,6 +297,11 @@ export function AiSettingsPage({
   const [exportHeight, setExportHeight] = useState(1080);
   const [exportCrf, setExportCrf] = useState(23);
 
+  const [embeddingEnabled, setEmbeddingEnabled] = useState(true);
+  const [embeddingBaseUrl, setEmbeddingBaseUrl] = useState("https://api.openai.com/v1");
+  const [embeddingModel, setEmbeddingModel] = useState("text-embedding-3-small");
+  const [embeddingApiKey, setEmbeddingApiKey] = useState("");
+
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -133,6 +316,8 @@ export function AiSettingsPage({
     setShowReactDetails(llm.show_react_details ?? true);
     setTemperature(llm.temperature);
     setMaxTokens(llm.max_tokens);
+    setContextWindowTokens(llm.context_window_tokens ?? 1_048_576);
+    setHistoryKeepMessages(llm.history_keep_messages ?? 10);
     setLlmApiKey("");
 
     const img = config.image;
@@ -140,7 +325,18 @@ export function AiSettingsPage({
     setImageProvider(img.provider);
     setImageModel(img.model);
     setImageBaseUrl(img.base_url);
-    setImageSize(img.default_size);
+    const mappedSize = mapSizeForImageProvider(img.provider, img.default_size);
+    const presets = imageSizesForProvider(img.provider, img.available_sizes);
+    if (presets.includes(mappedSize)) {
+      setImageSizeCustom(false);
+      setImageSize(mappedSize);
+    } else {
+      const wh = parseImageWh(mappedSize) ?? { w: 2048, h: 2048 };
+      setImageSizeCustom(true);
+      setImageCustomW(wh.w);
+      setImageCustomH(wh.h);
+      setImageSize(formatCustomImageSize(wh.w, wh.h));
+    }
     setImageApiKey("");
     const pipe = img.pipeline;
     setImageSourceDefault(pipe.source_mode);
@@ -196,6 +392,14 @@ export function AiSettingsPage({
     setExportWidth(exp.width ?? 1920);
     setExportHeight(exp.height ?? 1080);
     setExportCrf(exp.crf ?? 23);
+
+    const emb = config.embedding;
+    if (emb) {
+      setEmbeddingEnabled(emb.enabled ?? true);
+      setEmbeddingBaseUrl(emb.base_url || "https://api.openai.com/v1");
+      setEmbeddingModel(emb.model || "text-embedding-3-small");
+      setEmbeddingApiKey("");
+    }
   }, [config]);
 
   const loadTtsVoices = useCallback(async (locale: string) => {
@@ -238,6 +442,8 @@ export function AiSettingsPage({
         show_react_details: showReactDetails,
         temperature,
         max_tokens: maxTokens,
+        context_window_tokens: contextWindowTokens,
+        history_keep_messages: historyKeepMessages,
       },
       image: {
         enabled: imageEnabled,
@@ -288,6 +494,11 @@ export function AiSettingsPage({
         height: exportHeight,
         crf: exportCrf,
       },
+      embedding: {
+        enabled: embeddingEnabled,
+        base_url: embeddingBaseUrl || undefined,
+        model: embeddingModel || undefined,
+      },
     };
     if (llmApiKey.trim()) patch.llm!.api_key = llmApiKey.trim();
     if (imageApiKey.trim()) patch.image!.api_key = imageApiKey.trim();
@@ -297,6 +508,7 @@ export function AiSettingsPage({
     if (mimoApiKey.trim()) patch.tts!.mimo_api_key = mimoApiKey.trim();
     if (siliconflowApiKey.trim()) patch.tts!.siliconflow_api_key = siliconflowApiKey.trim();
     if (azureSpeechKey.trim()) patch.tts!.azure_speech_key = azureSpeechKey.trim();
+    if (embeddingApiKey.trim()) patch.embedding!.api_key = embeddingApiKey.trim();
     return patch;
   }
 
@@ -311,6 +523,7 @@ export function AiSettingsPage({
         return false;
       }
       const updated = await onSave(buildPatch());
+      await syncUiFromTtsLanguage(ttsLanguage);
       setSaveMsg(
         updated.llm.llm_active
           ? "保存成功，AI 已就绪，可以返回对话。"
@@ -528,16 +741,92 @@ export function AiSettingsPage({
                       />
                     </label>
                     <label className="settings-field">
-                      <span>Max Tokens</span>
+                      <span>输出 Token 上限</span>
                       <input
                         type="number"
                         min={256}
-                        max={8192}
+                        max={393216}
                         step={256}
                         value={maxTokens}
                         onChange={(e) => setMaxTokens(Number(e.target.value))}
                       />
                     </label>
+                  </div>
+                  <div className="settings-row">
+                    <label className="settings-field">
+                      <span>输入 Token 上限</span>
+                      <input
+                        type="number"
+                        min={4096}
+                        max={2_000_000}
+                        step={1024}
+                        value={contextWindowTokens}
+                        onChange={(e) => setContextWindowTokens(Number(e.target.value))}
+                      />
+                    </label>
+                    <label className="settings-field">
+                      <span>压缩保留轮次</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        step={1}
+                        value={historyKeepMessages}
+                        onChange={(e) => setHistoryKeepMessages(Number(e.target.value))}
+                      />
+                    </label>
+                  </div>
+                  <div className="settings-row">
+                    <span className="muted" style={{ fontSize: "0.85rem" }}>
+                      输出上限最大 384K；复核分镜等大 JSON tool 调用建议 32K 以上。常用预设：
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setMaxTokens(8192)}
+                    >
+                      8K
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setMaxTokens(32_768)}
+                    >
+                      32K
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setMaxTokens(393_216)}
+                    >
+                      384K
+                    </button>
+                  </div>
+                  <div className="settings-row">
+                    <span className="muted" style={{ fontSize: "0.85rem" }}>
+                      输入上限默认 1M；仅当预估输入超过该值时触发历史压缩。常用预设：
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setContextWindowTokens(131_072)}
+                    >
+                      128K
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setContextWindowTokens(200_000)}
+                    >
+                      200K
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setContextWindowTokens(1_048_576)}
+                    >
+                      1M
+                    </button>
                   </div>
                 </>
               )}
@@ -545,7 +834,7 @@ export function AiSettingsPage({
               {tab === "image" && (
                 <>
                   <p className="muted settings-intro">
-                    选择生图服务商：Agnes AI（远程）或本地 Stable Diffusion WebUI。本地 SD 不消耗 API 额度。
+                    选择生图服务商：Agnes AI、火山方舟 SeedDream、百炼或本地 Stable Diffusion。
                   </p>
                   <label className="settings-field checkbox-row">
                     <input
@@ -561,7 +850,31 @@ export function AiSettingsPage({
                     <span>服务商</span>
                     <select
                       value={imageProvider}
-                      onChange={(e) => setImageProvider(e.target.value)}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        const defaults = imageDefaultsForProvider(next, {
+                          model: imageModel,
+                          baseUrl: imageBaseUrl,
+                        });
+                        setImageProvider(next);
+                        setImageModel(defaults.model);
+                        setImageBaseUrl(defaults.baseUrl);
+                        const mapped = mapSizeForImageProvider(next, imageSize);
+                        const presets = imageSizesForProvider(
+                          next,
+                          config.image.available_sizes,
+                        );
+                        if (presets.includes(mapped)) {
+                          setImageSizeCustom(false);
+                          setImageSize(mapped);
+                        } else {
+                          const wh = parseImageWh(mapped) ?? { w: 2048, h: 2048 };
+                          setImageSizeCustom(true);
+                          setImageCustomW(wh.w);
+                          setImageCustomH(wh.h);
+                          setImageSize(formatCustomImageSize(wh.w, wh.h));
+                        }
+                      }}
                     >
                       {(config.image.available_providers ?? []).map((p) => (
                         <option key={p.id} value={p.id}>
@@ -745,14 +1058,125 @@ export function AiSettingsPage({
                     </>
                   )}
 
-                  <label className="settings-field">
+                  {imageProvider === "volcengine" && (
+                    <>
+                      <label className="settings-field">
+                        <span>模型</span>
+                        <input
+                          type="text"
+                          value={imageModel}
+                          onChange={(e) => setImageModel(e.target.value)}
+                          placeholder="doubao-seedream-5-0-pro"
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>API Key</span>
+                        <input
+                          type="password"
+                          value={imageApiKey}
+                          onChange={(e) => setImageApiKey(e.target.value)}
+                          placeholder={
+                            config.image.has_api_key ? "已配置（留空不修改）" : "火山方舟 ARK API Key"
+                          }
+                          autoComplete="off"
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>Base URL</span>
+                        <input
+                          type="text"
+                          value={imageBaseUrl}
+                          onChange={(e) => setImageBaseUrl(e.target.value)}
+                          placeholder="https://ark.cn-beijing.volces.com/api/v3"
+                        />
+                      </label>
+                    </>
+                  )}
+
+                  <div className="settings-field">
                     <span>默认尺寸</span>
-                    <select value={imageSize} onChange={(e) => setImageSize(e.target.value)}>
-                      {config.image.available_sizes.map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
+                    <select
+                      value={imageSizeCustom ? CUSTOM_SIZE_VALUE : imageSize}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        if (next === CUSTOM_SIZE_VALUE) {
+                          const wh = parseImageWh(imageSize) ?? {
+                            w: imageProvider === "volcengine" ? 2048 : 1024,
+                            h: imageProvider === "volcengine" ? 2048 : 1024,
+                          };
+                          setImageSizeCustom(true);
+                          setImageCustomW(wh.w);
+                          setImageCustomH(wh.h);
+                          setImageSize(formatCustomImageSize(wh.w, wh.h));
+                          return;
+                        }
+                        setImageSizeCustom(false);
+                        setImageSize(next);
+                      }}
+                    >
+                      <optgroup label="系统预设">
+                        {imageSizesForProvider(
+                          imageProvider,
+                          config.image.available_sizes,
+                        ).map((s) => (
+                          <option key={s} value={s}>
+                            {IMAGE_SIZE_LABELS[s] ?? s}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <option value={CUSTOM_SIZE_VALUE}>自定义像素…</option>
                     </select>
-                  </label>
+                    {imageSizeCustom && (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 8,
+                          alignItems: "center",
+                          marginTop: 8,
+                        }}
+                      >
+                        <input
+                          type="number"
+                          min={64}
+                          max={imageProvider === "volcengine" ? 8192 : 4096}
+                          step={1}
+                          value={imageCustomW}
+                          onChange={(e) => {
+                            const w = Number(e.target.value) || 0;
+                            setImageCustomW(w);
+                            setImageSize(formatCustomImageSize(w, imageCustomH));
+                          }}
+                          aria-label="自定义宽度"
+                          style={{ width: 96 }}
+                        />
+                        <span style={{ opacity: 0.7 }}>×</span>
+                        <input
+                          type="number"
+                          min={64}
+                          max={imageProvider === "volcengine" ? 8192 : 4096}
+                          step={1}
+                          value={imageCustomH}
+                          onChange={(e) => {
+                            const h = Number(e.target.value) || 0;
+                            setImageCustomH(h);
+                            setImageSize(formatCustomImageSize(imageCustomW, h));
+                          }}
+                          aria-label="自定义高度"
+                          style={{ width: 96 }}
+                        />
+                        <span style={{ fontSize: 12, opacity: 0.75 }}>
+                          {imageCustomW * imageCustomH >= 3_686_400
+                            ? `${imageCustomW}×${imageCustomH} · ${Math.round(
+                                (imageCustomW * imageCustomH) / 1_000_000,
+                              )}M 像素`
+                            : imageProvider === "volcengine"
+                              ? `当前 ${imageCustomW * imageCustomH} 像素（火山建议 ≥ 3686400，保存后会自动放大）`
+                              : `${imageCustomW}×${imageCustomH}`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
 
                   {/* ---- 测试生图 ---- */}
                   <div className="settings-field test-image-section">
@@ -853,7 +1277,7 @@ export function AiSettingsPage({
               {tab === "video" && (
                 <>
                   <p className="muted settings-intro">
-                    AI 视频模式所用视频生成 API（默认 Agnes Video，流水线接入中）。
+                    AI 视频模式所用视频生成 API：Agnes Video 或火山方舟 SeedDance。
                   </p>
                   <label className="settings-field checkbox-row">
                     <input
@@ -865,11 +1289,27 @@ export function AiSettingsPage({
                   </label>
                   <label className="settings-field">
                     <span>服务商</span>
-                    <input
-                      type="text"
+                    <select
                       value={videoProvider}
-                      onChange={(e) => setVideoProvider(e.target.value)}
-                    />
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        const defaults = videoDefaultsForProvider(next, {
+                          model: videoModel,
+                          baseUrl: videoBaseUrl,
+                        });
+                        setVideoProvider(next);
+                        setVideoModel(defaults.model);
+                        setVideoBaseUrl(defaults.baseUrl);
+                      }}
+                    >
+                      {(config.video.available_providers ?? [{ id: "agnes", label: "Agnes AI" }]).map(
+                        (p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.label}
+                          </option>
+                        ),
+                      )}
+                    </select>
                   </label>
                   <label className="settings-field">
                     <span>模型</span>
@@ -877,7 +1317,11 @@ export function AiSettingsPage({
                       type="text"
                       value={videoModel}
                       onChange={(e) => setVideoModel(e.target.value)}
-                      placeholder="agnes-video-v2.0"
+                      placeholder={
+                        videoProvider === "volcengine"
+                          ? "doubao-seedance-2-0"
+                          : "agnes-video-v2.0"
+                      }
                     />
                   </label>
                   <label className="settings-field">
@@ -898,7 +1342,11 @@ export function AiSettingsPage({
                       type="text"
                       value={videoBaseUrl}
                       onChange={(e) => setVideoBaseUrl(e.target.value)}
-                      placeholder={config.video.base_url}
+                      placeholder={
+                        videoProvider === "volcengine"
+                          ? config.video.default_base_url_volcengine ?? ARK_IMAGE_BASE_URL
+                          : config.video.base_url
+                      }
                     />
                   </label>
                   <div className="settings-row">
@@ -956,7 +1404,11 @@ export function AiSettingsPage({
                     <input
                       type="text"
                       value={ttsLanguage}
-                      onChange={(e) => setTtsLanguage(e.target.value)}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setTtsLanguage(next);
+                        void syncUiFromTtsLanguage(next);
+                      }}
                     />
                   </label>
                   <label className="settings-field">
@@ -1155,7 +1607,7 @@ export function AiSettingsPage({
               {tab === "export" && (
                 <>
                   <p className="field-hint">
-                    动态图文 / 动态漫画成片通过 FFmpeg 导出。默认使用 pip 安装的内置 FFmpeg；也可填写自定义路径。
+                    故事书成片通过 FFmpeg 导出。默认使用 pip 安装的内置 FFmpeg；也可填写自定义路径。
                   </p>
                   <label className="settings-field settings-checkbox">
                     <input
@@ -1213,6 +1665,56 @@ export function AiSettingsPage({
                       max={28}
                       value={exportCrf}
                       onChange={(e) => setExportCrf(Number(e.target.value))}
+                    />
+                  </label>
+                </>
+              )}
+
+              {tab === "embedding" && (
+                <>
+                  <p className="field-hint">
+                    用于跨剧本人物/场景/道具的向量检索复用。未配置 API Key 时，系统会按规范化名称精确匹配已有共享资产。
+                  </p>
+                  <label className="settings-field settings-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={embeddingEnabled}
+                      onChange={(e) => setEmbeddingEnabled(e.target.checked)}
+                    />
+                    <span>启用 Embedding / RAG 复用</span>
+                  </label>
+                  {config?.embedding && (
+                    <p className="field-hint">
+                      状态：{config.embedding.active ? "已就绪（向量检索）" : "未配置 Key（将回退名称匹配）"}
+                      {config.embedding.has_api_key ? " · 已保存 API Key" : ""}
+                    </p>
+                  )}
+                  <label className="settings-field">
+                    <span>Base URL</span>
+                    <input
+                      type="text"
+                      value={embeddingBaseUrl}
+                      onChange={(e) => setEmbeddingBaseUrl(e.target.value)}
+                      placeholder="https://api.openai.com/v1"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Model</span>
+                    <input
+                      type="text"
+                      value={embeddingModel}
+                      onChange={(e) => setEmbeddingModel(e.target.value)}
+                      placeholder="text-embedding-3-small"
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>API Key{config?.embedding?.has_api_key ? "（已配置，留空不修改）" : ""}</span>
+                    <input
+                      type="password"
+                      value={embeddingApiKey}
+                      onChange={(e) => setEmbeddingApiKey(e.target.value)}
+                      placeholder="sk-…"
+                      autoComplete="off"
                     />
                   </label>
                 </>

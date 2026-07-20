@@ -74,3 +74,35 @@ def test_clear_agent_session_preserves_sqlite(ids, tmp_path):
     archived = sqlite.list_messages("conv1")
     assert len(archived) == 1
     assert archived[0].message_kind.value == "task_brief"
+
+
+def test_persist_hooks_write_conversation_messages(tmp_path, monkeypatch, ids):
+    """schedule_save 经 hooks 应双写 conversation_messages 到 dev_store。"""
+    from core.conversation.index import ConversationIndex
+    from core.conversation.sqlite_store import ConversationSqliteStore
+    from core.store.memory import MemoryStore
+    from core.store.persist import configure_persist_hooks, save_store
+
+    monkeypatch.setenv("SVG_PERSIST_STORE", "1")
+    store_path = tmp_path / "dev_store.json"
+    project_id, script_id = ids
+    mem = MemoryStore()
+    index = ConversationIndex()
+    sqlite = ConversationSqliteStore(db_path=tmp_path / "conv.db")
+    conv_store = ConversationStore(sqlite_store=sqlite)
+    conv = index.create(project_id, script_id, title="测试对话")
+    conv_store.add_user_message(conv.id, project_id, script_id, "明星大乱斗")
+
+    configure_persist_hooks(
+        conversation_index=index,
+        conversation_store=conv_store,
+        path=store_path,
+    )
+    save_store(mem, store_path)
+
+    import json
+
+    raw = json.loads(store_path.read_text(encoding="utf-8"))
+    assert conv.id in raw.get("conversations", {})
+    msg_keys = raw.get("conversation_messages", {})
+    assert any(k.startswith(f"{conv.id}:") for k in msg_keys)

@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from core.edit.export_settings import ExportSettings
+from core.edit.subtitle_style import recommend_subtitle_style
 from core.models.entities import EditClip
 
 _ASS_SPECIAL = re.compile(r"([\\{}])")
@@ -78,8 +79,11 @@ def build_ass_from_subtitle_clips(
 
     play_res_x = max(int(width), 1)
     play_res_y = max(int(height), 1)
-    font_size = max(32, min(72, play_res_y // 18))
-    margin_v = max(40, play_res_y // 12)
+    style = recommend_subtitle_style(play_res_x, play_res_y)
+    ass_style = style["ass"]
+    font_size = int(ass_style["font_size_px"])
+    margin_v = int(ass_style["margin_v_px"])
+    outline_px = int(ass_style.get("outline_px") or 2)
 
     header = (
         "\ufeff[Script Info]\n"
@@ -93,7 +97,7 @@ def build_ass_from_subtitle_clips(
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Default,{font_name},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,"
-        f"0,0,0,0,100,100,0,0,1,2,1,2,40,40,{margin_v},1\n"
+        f"0,0,0,0,100,100,0,0,1,{outline_px},1,2,40,40,{margin_v},1\n"
         "\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
@@ -167,8 +171,11 @@ def build_drawtext_vf_filters(
     """将 subtitle clip 转为 drawtext 滤镜链（ASS 失败时的回退方案）。"""
     if font_name is None:
         font_name, _ = resolve_subtitle_font()
-    font_size = max(32, min(72, max(int(height), 1) // 18))
-    margin_v = max(40, max(int(height), 1) // 12)
+    style = recommend_subtitle_style(max(int(width), 1), max(int(height), 1))
+    ass_style = style["ass"]
+    font_size = int(ass_style["font_size_px"])
+    margin_v = int(ass_style["margin_v_px"])
+    outline_px = int(ass_style.get("outline_px") or 2)
     y_expr = f"h-th-{margin_v}"
     filters: list[str] = []
     for clip in sorted(clips, key=lambda c: (c.start_ms, c.end_ms)):
@@ -183,7 +190,7 @@ def build_drawtext_vf_filters(
             f"text='{text}':"
             f"fontsize={font_size}:"
             f"fontcolor=white:"
-            f"borderw=2:bordercolor=black:"
+            f"borderw={outline_px}:bordercolor=black:"
             f"x=(w-text_w)/2:y={y_expr}:"
             f"enable='between(t,{start_sec:.3f},{end_sec:.3f})'"
         )

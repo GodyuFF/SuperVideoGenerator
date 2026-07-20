@@ -15,6 +15,49 @@ type TimelineChangeListener = (timeline: unknown) => void;
 
 let listeners: TimelineChangeListener[] = [];
 const wsHandlers = new Map<string, () => void>();
+const reloadState = new Map<
+  string,
+  { timer: ReturnType<typeof setTimeout> | null; lastRevision: unknown }
+>();
+
+const RELOAD_DEBOUNCE_MS = 500;
+
+/** 生成 WS 处理器 Map 键。 */
+function wsKey(projectId: string, scriptId: string) {
+  return `${projectId}:${scriptId}`;
+}
+
+/** 防抖调度时间轴 API 重载，并按 revision 去重。 */
+function scheduleDebouncedReload(
+  projectId: string,
+  scriptId: string,
+  revision: unknown,
+  onComplete?: () => void,
+): void {
+  const key = wsKey(projectId, scriptId);
+  let state = reloadState.get(key);
+  if (!state) {
+    state = { timer: null, lastRevision: null };
+    reloadState.set(key, state);
+  }
+
+  if (
+    revision != null &&
+    state.lastRevision != null &&
+    revision === state.lastRevision
+  ) {
+    return;
+  }
+
+  if (state.timer) clearTimeout(state.timer);
+  state.timer = setTimeout(() => {
+    state!.timer = null;
+    if (revision != null) {
+      state!.lastRevision = revision;
+    }
+    void reloadFromApi(projectId, scriptId).finally(() => onComplete?.());
+  }, RELOAD_DEBOUNCE_MS);
+}
 
 /** 按需加载 OpenCut EditorCore，避免进入剪辑 Tab 时同步拉取大包。 */
 async function getEditorCore() {
@@ -47,38 +90,43 @@ function emitEditorEvent(event: EditorEvent) {
   window.dispatchEvent(new CustomEvent("editor:event", { detail: event }));
 }
 
-/** 生成 WS 处理器 Map 键。 */
-function wsKey(projectId: string, scriptId: string) {
-  return `${projectId}:${scriptId}`;
-}
-
 /** 绑定 WebSocket 推送：edit_timeline_updated 时刷新编辑器。 */
 export function bindAgentWebSocketEvents(
-  events: Array<{ type?: string; payload?: unknown }>,
+  events: Array<{ type?: string; payload?: unknown; revision?: unknown }>,
   projectId: string,
   scriptId: string,
 ) {
   const key = wsKey(projectId, scriptId);
   if (wsHandlers.has(key)) return;
 
-  const handler = async (ev: Event) => {
-    const detail = (ev as CustomEvent).detail as { type?: string; script_id?: string };
+  const handler = (ev: Event) => {
+    const detail = (ev as CustomEvent).detail as {
+      type?: string;
+      script_id?: string;
+      revision?: unknown;
+    };
     if (detail?.type !== "edit_timeline_updated") return;
     if (detail.script_id && detail.script_id !== scriptId) return;
-    await reloadFromApi(projectId, scriptId);
-    emitEditorEvent({
-      source: "video-editor",
-      type: "timeline_changed",
-      message: "Agent 已更新时间轴",
+    scheduleDebouncedReload(projectId, scriptId, detail.revision, () => {
+      emitEditorEvent({
+        source: "video-editor",
+        type: "timeline_changed",
+        message: "Agent 已更新时间轴",
+      });
     });
   };
 
   window.addEventListener("svg:ws-event", handler);
-  wsHandlers.set(key, () => window.removeEventListener("svg:ws-event", handler));
+  wsHandlers.set(key, () => {
+    window.removeEventListener("svg:ws-event", handler);
+    const state = reloadState.get(key);
+    if (state?.timer) clearTimeout(state.timer);
+    reloadState.delete(key);
+  });
 
   for (const e of events) {
     if (e.type === "edit_timeline_updated") {
-      void reloadFromApi(projectId, scriptId);
+      scheduleDebouncedReload(projectId, scriptId, e.revision);
     }
   }
 
@@ -90,6 +138,7 @@ export function unbindAgentWebSocketEvents(projectId: string, scriptId: string) 
   const key = wsKey(projectId, scriptId);
   wsHandlers.get(key)?.();
   wsHandlers.delete(key);
+  reloadState.delete(key);
 }
 
 /** 从 API 重新加载时间轴与媒体，并通知各编辑器视图。 */

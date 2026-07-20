@@ -1,6 +1,8 @@
 """通用 ReAct 运行时：Thought → Action → Observation，支持主/子 Agent 复用。"""
 
-from dataclasses import dataclass, field
+import asyncio
+import time
+from dataclasses import dataclass, field, replace
 from typing import Any, Awaitable, Callable
 
 from core.conversation import ConversationStore
@@ -14,24 +16,55 @@ from core.llm.hook.react_guard import (
 )
 from core.llm.hook.return_to_master import ReturnToMasterError
 from core.llm.agent.script_assets import SCRIPT_MUTATION_ACTIONS
+from core.llm.tool_call_batch import BatchExecutionMode, merge_batch_observations
 from core.constants import MAX_REACT_ITERATIONS
 from core.events.emitter import EventEmitter
+from core.logging.perf import log_perf
 from core.logging.setup import get_logger, log_stage
 from core.llm.model.plan_context import PlanSlice
-from core.llm.plan_context import extract_plan_update, format_plan_observation
+from core.llm.model.plan_context import extract_plan_update, format_plan_observation
 from core.models.entities import StepOutput
 
 logger = get_logger("core.agents.react")
 
 
 @dataclass
+class ToolCallDecision:
+    """单条 tool_call 决策（含 LLM 原始 id）。"""
+
+    tool_call_id: str
+    action: str
+    action_input: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ReActDecision:
-    """单轮 ReAct 推理结果。"""
+    """单轮 ReAct 推理结果（可含多个同轮 tool_calls）。"""
 
     thought: str
     action: str
     action_input: dict[str, Any] = field(default_factory=dict)
+    calls: list[ToolCallDecision] = field(default_factory=list)
+    batch_mode: BatchExecutionMode = "parallel"
 
+    def __post_init__(self) -> None:
+        if self.calls:
+            primary = self.calls[0]
+            self.action = primary.action
+            self.action_input = dict(primary.action_input or {})
+        elif self.action:
+            self.calls = [
+                ToolCallDecision(
+                    tool_call_id="",
+                    action=self.action,
+                    action_input=dict(self.action_input or {}),
+                )
+            ]
+
+    @property
+    def is_batch(self) -> bool:
+        """同轮是否包含多个 tool_calls。"""
+        return len(self.calls) > 1
 
 @dataclass
 class AgentRunContext:
@@ -132,6 +165,7 @@ class ReActRunner:
         )
 
         log_stage(logger, "react.agent", "子 Agent ReAct 开始", agent=agent_name, step_id=step_id)
+        agent_start = time.perf_counter()
 
         from core.llm.prompt.context_window import prepare_sub_agent_context
 
@@ -173,6 +207,20 @@ class ReActRunner:
                     conversation_id=ctx.conversation_id,
                 )
                 break
+
+            if decision.is_batch:
+                await self._run_batch_turn(
+                    ctx=ctx,
+                    script_id=script_id,
+                    agent_name=agent_name,
+                    display_name=display_name,
+                    step_id=step_id,
+                    decision=decision,
+                    plan_update=plan_update,
+                    act=act,
+                    loop_guard=loop_guard,
+                )
+                continue
 
             await self._emit_agent_react(
                 script_id,
@@ -300,6 +348,15 @@ class ReActRunner:
             iterations=ctx.iteration,
             outputs=len(ctx.outputs),
         )
+        log_perf(
+            "react.agent",
+            "子 Agent ReAct 结束",
+            duration_ms=(time.perf_counter() - agent_start) * 1000,
+            agent=agent_name,
+            step_id=step_id,
+            iterations=ctx.iteration,
+            outputs=len(ctx.outputs),
+        )
         await self._emit_agent_react(
             script_id,
             agent_name,
@@ -310,6 +367,179 @@ class ReActRunner:
             conversation_id=ctx.conversation_id,
         )
         return ctx.outputs
+
+    async def _run_batch_turn(
+        self,
+        *,
+        ctx: AgentRunContext,
+        script_id: str,
+        agent_name: str,
+        display_name: str,
+        step_id: str,
+        decision: ReActDecision,
+        plan_update: Any,
+        act: ActFn,
+        loop_guard: ReActLoopGuard,
+    ) -> None:
+        """同轮执行多个 tool_calls（白名单并行，否则顺序）。"""
+        batch_mode = decision.batch_mode
+        batch_actions = [
+            {
+                "action": call.action,
+                "action_input": dict(call.action_input or {}),
+                "tool_call_id": call.tool_call_id,
+            }
+            for call in decision.calls
+        ]
+        await self._emit_agent_react(
+            script_id,
+            agent_name,
+            display_name,
+            step_id,
+            "agent_react_action_batch",
+            {
+                "iteration": ctx.iteration,
+                "actions": batch_actions,
+                "batch_size": len(decision.calls),
+                "batch_mode": batch_mode,
+            },
+            conversation_id=ctx.conversation_id,
+        )
+
+        for call in decision.calls:
+            duplicate_obs = loop_guard.record(call.action, call.action_input)
+            if duplicate_obs:
+                ctx.observations.append(duplicate_obs)
+                self._conversations.add_react_turn_batch(
+                    ctx.conversation_id,
+                    ctx.project_id,
+                    script_id,
+                    thought=decision.thought,
+                    calls=[
+                        (
+                            c.tool_call_id,
+                            c.action,
+                            dict(c.action_input or {}),
+                            duplicate_obs if c.action == call.action else "未执行（同轮重复检测中止）",
+                        )
+                        for c in decision.calls
+                    ],
+                    channel="agent",
+                    agent_name=agent_name,
+                    step_id=step_id,
+                )
+                await self._emit_agent_react(
+                    script_id,
+                    agent_name,
+                    display_name,
+                    step_id,
+                    "agent_react_observation",
+                    {
+                        "iteration": ctx.iteration,
+                        "observation": duplicate_obs,
+                        "action": call.action,
+                        "batch_size": len(decision.calls),
+                        "batch_mode": batch_mode,
+                    },
+                    conversation_id=ctx.conversation_id,
+                )
+                raise DuplicateActionAbortError(call.action, duplicate_obs)
+
+        async def _run_one(call: ToolCallDecision) -> tuple[str, str, str | BaseException]:
+            """执行单条 tool_call，普通异常作为结果返回。"""
+            sub_ctx = replace(ctx, current_action_input=dict(call.action_input or {}))
+            try:
+                obs = await wait_or_cancel(script_id, act(call.action, sub_ctx))
+                return call.action, call.tool_call_id, obs
+            except BaseException as e:
+                return call.action, call.tool_call_id, e
+
+        if batch_mode == "sequential":
+            results: list[tuple[str, str, str | BaseException]] = []
+            for call in decision.calls:
+                results.append(await _run_one(call))
+        else:
+            results = await asyncio.gather(*[_run_one(c) for c in decision.calls])
+
+        for item in results:
+            action, _tid, outcome = item
+            if isinstance(outcome, ReturnToMasterError):
+                self._conversations.clear_agent_session(ctx.conversation_id, agent_name)
+                self._conversations.suspend_agent_session(
+                    ctx.conversation_id,
+                    agent_name,
+                    outcome.to_dict(),
+                )
+                raise outcome
+            if isinstance(outcome, EditComposeMissingAssetsError):
+                self._conversations.clear_agent_session(ctx.conversation_id, agent_name)
+                self._conversations.suspend_agent_session(
+                    ctx.conversation_id,
+                    agent_name,
+                    outcome.to_dict(),
+                )
+                raise outcome
+            if isinstance(outcome, (ExecutionCancelledError, ImageGenerationAbortError, TtsAbortError)):
+                raise outcome
+
+        observation = merge_batch_observations(results)
+        if plan_update:
+            ctx.observations.append(format_plan_observation(plan_update))
+        ctx.observations.append(observation)
+
+        for call in decision.calls:
+            if ctx.last_action_ok is not False:
+                ctx.completed_actions.add(call.action)
+
+        persist_calls = []
+        for call, (_action, _tid, outcome) in zip(decision.calls, results, strict=True):
+            if isinstance(outcome, BaseException):
+                obs_text = f"失败：{outcome}"
+            else:
+                obs_text = str(outcome)
+            persist_calls.append(
+                (call.tool_call_id, call.action, dict(call.action_input or {}), obs_text)
+            )
+
+        self._conversations.add_react_turn_batch(
+            ctx.conversation_id,
+            ctx.project_id,
+            script_id,
+            thought=decision.thought,
+            calls=persist_calls,
+            channel="agent",
+            agent_name=agent_name,
+            step_id=step_id,
+        )
+
+        await self._emit_agent_react(
+            script_id,
+            agent_name,
+            display_name,
+            step_id,
+            "agent_react_observation",
+            {
+                "iteration": ctx.iteration,
+                "observation": observation,
+                "actions": batch_actions,
+                "batch_size": len(decision.calls),
+                "batch_mode": batch_mode,
+            },
+            conversation_id=ctx.conversation_id,
+        )
+
+        if agent_name == "script_agent":
+            for call in decision.calls:
+                if call.action in SCRIPT_MUTATION_ACTIONS:
+                    await self._emitter.emit(
+                        {
+                            "type": "assets_changed",
+                            "script_id": script_id,
+                            "agent_name": agent_name,
+                            "action": call.action,
+                            "step_id": step_id,
+                        }
+                    )
 
     async def _emit_agent_react(
         self,

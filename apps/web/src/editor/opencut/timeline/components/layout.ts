@@ -2,7 +2,7 @@ import type { TrackType } from "@opencut/timeline";
 
 export const TIMELINE_TRACK_HEIGHTS_PX: Record<TrackType, number> = {
 	video: 65,
-	text: 25,
+	text: 32,
 	audio: 50,
 	graphic: 25,
 	effect: 25,
@@ -12,7 +12,7 @@ export const KEYFRAME_LANE_HEIGHT_PX = 20;
 export const KEYFRAME_DIAMOND_SIZE_PX = 14;
 export const EXPANDED_GROUP_HEADER_HEIGHT_PX = 18;
 
-export const TIMELINE_TRACK_GAP_PX = 6;
+export const TIMELINE_TRACK_GAP_PX = 8;
 export const TIMELINE_TRACK_LABELS_COLUMN_WIDTH_PX = 112;
 export const TIMELINE_RULER_HEIGHT_PX = 22;
 export const TIMELINE_BOOKMARK_ROW_HEIGHT_PX = 16;

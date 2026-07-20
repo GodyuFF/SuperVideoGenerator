@@ -10,6 +10,7 @@ from core.models.entities import (
     Project,
     Script,
     TextAsset,
+    TextAssetType,
     VideoPlan,
 )
 
@@ -58,7 +59,9 @@ class MemoryStore:
         return self.scripts.get(script_id)
 
     def list_scripts_for_project(self, project_id: str) -> list[Script]:
-        return [s for s in self.scripts.values() if s.project_id == project_id]
+        """列出项目下剧本，按创建时间升序（无 created_at 时回退 id）。"""
+        scripts = [s for s in self.scripts.values() if s.project_id == project_id]
+        return sorted(scripts, key=lambda s: (s.created_at or "", s.id))
 
     def add_text_asset(self, asset: TextAsset) -> TextAsset:
         validated = TextAsset.model_validate(asset.model_dump())
@@ -92,19 +95,69 @@ class MemoryStore:
         return [r for r in self.references.values() if r.target_id == target_id]
 
     def list_assets_for_script(self, script_id: str) -> list[TextAsset]:
-        """返回本片私有资产 + 同项目共享池资产。"""
+        """返回当前剧本可用的文字资产（私有 + 已关联共享）。"""
+        return self.list_visible_text_assets_for_script(script_id)
+
+    def _collect_script_linked_target_ids(self, script_id: str) -> set[str]:
+        """收集当前剧本通过引用边、分镜或画面元素关联到的资产 ID。"""
+        ids = {r.target_id for r in self.list_references_from(script_id)}
+        vp = self.get_video_plan_for_script(script_id)
+        if vp:
+            from core.assets.lineage import shot_reference_ids
+
+            for shot in vp.shots:
+                for ref_ids in shot_reference_ids(shot).values():
+                    for rid in ref_ids:
+                        rid = str(rid).strip()
+                        if rid:
+                            ids.add(rid)
+        from core.models.image_text_asset import normalize_image_text_content
+        from core.models.video_text_asset import normalize_video_clip_content
+
+        for asset in self.text_assets.values():
+            if asset.script_id != script_id or asset.type != TextAssetType.FRAME:
+                continue
+            content = normalize_image_text_content(asset.type, asset.content)
+            for ref_ids in (content.get("element_refs") or {}).values():
+                if isinstance(ref_ids, list):
+                    for rid in ref_ids:
+                        rid = str(rid).strip()
+                        if rid:
+                            ids.add(rid)
+        for asset in self.text_assets.values():
+            if asset.script_id != script_id or asset.type != TextAssetType.VIDEO_CLIP:
+                continue
+            content = normalize_video_clip_content(asset.content)
+            for ref_ids in (content.get("element_refs") or {}).values():
+                if isinstance(ref_ids, list):
+                    for rid in ref_ids:
+                        rid = str(rid).strip()
+                        if rid:
+                            ids.add(rid)
+            for rid in content.get("media_refs") or []:
+                rid = str(rid).strip()
+                if rid:
+                    ids.add(rid)
+        return ids
+
+    def list_visible_text_assets_for_script(self, script_id: str) -> list[TextAsset]:
+        """返回当前剧本看板应展示的文字资产：私有资产 + 已关联或本剧本创建的共享资产。"""
         script = self.scripts.get(script_id)
         if not script:
             return []
-        return [
-            a
-            for a in self.text_assets.values()
-            if a.script_id == script_id
-            or (
-                a.scope.value == "project_shared"
-                and a.project_id == script.project_id
-            )
-        ]
+        linked_ids = self._collect_script_linked_target_ids(script_id)
+        result: list[TextAsset] = []
+        for asset in self.text_assets.values():
+            if asset.project_id != script.project_id:
+                continue
+            if asset.script_id == script_id:
+                result.append(asset)
+                continue
+            if asset.scope != AssetScope.PROJECT_SHARED:
+                continue
+            if asset.source_script_id == script_id or asset.id in linked_ids:
+                result.append(asset)
+        return result
 
     def add_reference(self, ref: AssetReference) -> AssetReference:
         self.references[ref.id] = ref
@@ -146,8 +199,13 @@ class MemoryStore:
         return self.edit_timelines.get(timeline_id)
 
     def add_media_asset(self, asset: MediaAsset) -> MediaAsset:
+        """写入或覆盖媒体资产。"""
         self.media_assets[asset.id] = asset
         return asset
+
+    def get_media_asset(self, media_id: str) -> MediaAsset | None:
+        """按 ID 读取媒体资产；不存在返回 None。"""
+        return self.media_assets.get(media_id)
 
     def list_media_for_script(
         self,

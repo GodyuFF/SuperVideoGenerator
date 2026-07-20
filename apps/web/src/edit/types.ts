@@ -74,6 +74,8 @@ export interface EditCapabilities {
   ffmpeg_available?: boolean;
   ffmpeg_bundled?: boolean;
   export_enabled?: boolean;
+  classic_export_enabled?: boolean;
+  export_via_classic_only?: boolean;
   ffmpeg_path?: string;
   max_video_layers?: number;
   nle_export_enabled?: boolean;

@@ -11,6 +11,7 @@ from core.edit.timeline import (
     timeline_board_items,
 )
 from core.edit.shot_timing import resolve_shot_timings
+from core.edit.subtitle_style import build_subtitle_style_context
 from core.edit.timeline_analysis import build_analyze_summary
 from core.llm.tools.image.scan import build_scan_text_assets_payload
 from core.llm.tools.shared.assets_summary import build_script_assets_payload
@@ -82,14 +83,20 @@ def build_edit_context_payload(store: MemoryStore, script_id: str) -> dict[str, 
     if plan:
         for shot in sorted(plan.shots, key=lambda s: s.order):
             timing = timing_by_shot.get(shot.id)
+            from core.assets.lineage import shot_reference_ids
+            from core.edit.shot_detail_sync import resolve_effective_camera_motion
+
             shot_block: dict[str, Any] = {
                 "id": shot.id,
                 "order": shot.order,
                 "duration_ms": shot.duration_ms,
-                "camera_motion": shot.camera_motion,
-                "narration_text": shot.narration_text,
-                "asset_refs": shot.asset_refs,
-                "variant_refs": shot.variant_refs,
+                "camera_motion": resolve_effective_camera_motion(shot),
+                "title": shot.title,
+                "summary": shot.summary,
+                "asset_refs": shot_reference_ids(shot),
+                "sub_shots": [v.model_dump() for v in shot.sub_shots],
+                "video_tracks": [t.model_dump() for t in shot.video_tracks],
+                "audio_tracks": [t.model_dump() for t in shot.audio_tracks],
                 "resolved": _resolve_shot_media(store, shot, tts_by_shot),
             }
             if timing:
@@ -171,4 +178,9 @@ def build_edit_context_payload(store: MemoryStore, script_id: str) -> dict[str, 
     }
     if not plan:
         payload["message"] = "尚未保存视频计划稿，请先完成 storyboard persist_plan。"
+
+    timeline_meta = timeline.metadata if timeline and isinstance(timeline.metadata, dict) else None
+    payload["subtitle_style_context"] = build_subtitle_style_context(
+        timeline_metadata=timeline_meta,
+    )
     return payload

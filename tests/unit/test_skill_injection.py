@@ -29,7 +29,7 @@ async def test_skill_prefix_injects_task_brief():
     store.add_project(project)
     script = Script(project_id=project.id, title="Skill 剧本", duration_sec=60)
     store.add_script(script)
-    inject_scripted_llm(master, VideoStyleMode.DYNAMIC_IMAGE)
+    inject_scripted_llm(master, VideoStyleMode.STORYBOOK)
     setup_auto_confirm(emitter, confirmation)
 
     conv_id, _ = await master.run_from_message(

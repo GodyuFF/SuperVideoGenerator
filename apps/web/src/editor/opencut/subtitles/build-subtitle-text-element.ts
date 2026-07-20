@@ -15,10 +15,13 @@ import type {
 	TextFontWeight,
 } from "@opencut/text/primitives";
 import type { SubtitleCue, SubtitleStyleOverrides } from "./types";
+import {
+	presetToSubtitleStyleOverrides,
+	recommendSubtitleStyle,
+} from "./subtitle-style-presets";
 
-const SUBTITLE_MAX_WIDTH_RATIO = 0.8;
-const SUBTITLE_BOTTOM_MARGIN_RATIO = 0.05;
-const SUBTITLE_FONT_SIZE = 5;
+const SUBTITLE_MAX_WIDTH_RATIO = 0.85;
+const SUBTITLE_BOTTOM_MARGIN_RATIO = 0.08;
 const MEASUREMENT_CANVAS_SIZE = 4096;
 
 function quoteFontFamily({ fontFamily }: { fontFamily: string }): string {
@@ -125,8 +128,10 @@ function measureWrappedTextBlock({
 
 function resolveSubtitleStyle({
 	style,
+	canvasSize,
 }: {
 	style: SubtitleStyleOverrides | undefined;
+	canvasSize: { width: number; height: number };
 }): {
 	fontFamily: string;
 	fontSize: number;
@@ -140,17 +145,19 @@ function resolveSubtitleStyle({
 	background: TextBackground;
 	placement: NonNullable<SubtitleStyleOverrides["placement"]>;
 } {
+	const preset = recommendSubtitleStyle(canvasSize);
+	const presetStyle = presetToSubtitleStyleOverrides(preset);
 	const fontSize =
 		style?.fontSizeRatioOfPlayHeight != null
 			? style.fontSizeRatioOfPlayHeight * FONT_SIZE_SCALE_REFERENCE
-			: (style?.fontSize ?? SUBTITLE_FONT_SIZE);
+			: (style?.fontSize ?? presetStyle.fontSize);
 
 	return {
 		fontFamily: style?.fontFamily ?? "Arial",
 		fontSize,
-		color: style?.color ?? "#ffffff",
-		textAlign: style?.textAlign ?? "center",
-		fontWeight: style?.fontWeight ?? "bold",
+		color: style?.color ?? presetStyle.color ?? "#ffffff",
+		textAlign: style?.textAlign ?? presetStyle.textAlign ?? "center",
+		fontWeight: style?.fontWeight ?? presetStyle.fontWeight ?? "bold",
 		fontStyle: style?.fontStyle ?? "normal",
 		textDecoration: style?.textDecoration ?? "none",
 		letterSpacing: style?.letterSpacing ?? DEFAULTS.text.letterSpacing,
@@ -161,10 +168,16 @@ function resolveSubtitleStyle({
 			...(style?.background ?? {}),
 		},
 		placement: {
-			verticalAlign: style?.placement?.verticalAlign ?? "bottom",
+			verticalAlign:
+				style?.placement?.verticalAlign ??
+				presetStyle.placement?.verticalAlign ??
+				"bottom",
 			marginLeftRatio: style?.placement?.marginLeftRatio,
 			marginRightRatio: style?.placement?.marginRightRatio,
-			marginVerticalRatio: style?.placement?.marginVerticalRatio,
+			marginVerticalRatio:
+				style?.placement?.marginVerticalRatio ??
+				presetStyle.placement?.marginVerticalRatio ??
+				SUBTITLE_BOTTOM_MARGIN_RATIO,
 		},
 	};
 }
@@ -264,6 +277,7 @@ export function buildSubtitleTextElement({
 	const ctx = createMeasurementContext();
 	const style = resolveSubtitleStyle({
 		style: caption.style,
+		canvasSize,
 	});
 	const fontFamily = quoteFontFamily({
 		fontFamily: style.fontFamily,

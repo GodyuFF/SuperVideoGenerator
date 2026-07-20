@@ -1,0 +1,486 @@
+/**
+ * 关系图 React Flow 主题样式（令牌见 styles/design-system.css）。
+ */
+
+.graph-board-root {
+  position: relative;
+  flex: 1;
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--svf-graph-canvas);
+  border: 1px solid var(--svf-frame);
+}
+
+.graph-board-canvas {
+  flex: 1;
+  min-height: 440px;
+}
+
+.graph-board-root .react-flow {
+  background: var(--svf-graph-canvas);
+}
+
+.graph-board-root .react-flow__background pattern circle {
+  fill: var(--svf-graph-dot);
+}
+
+.graph-board-root .react-flow__edge-path {
+  stroke: var(--svf-graph-edge);
+  stroke-width: 1.5;
+  transition: stroke 0.15s ease;
+}
+
+.graph-board-root .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--svf-graph-edge-hover);
+}
+
+.graph-board-root .react-flow__edge-text {
+  fill: var(--svf-muted);
+  font-size: 10px;
+}
+
+.graph-board-root .react-flow__controls {
+  border: 1px solid var(--svf-graph-minimap-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--svf-shadow-sm);
+}
+
+.graph-board-root .react-flow__controls-button {
+  background: var(--svf-graph-controls-bg);
+  border-bottom: 1px solid var(--svf-graph-controls-border);
+  color: var(--svf-graph-controls-fg);
+  width: 28px;
+  height: 28px;
+}
+
+.graph-board-root .react-flow__controls-button:hover {
+  background: var(--svf-graph-controls-hover);
+  color: var(--svf-text);
+}
+
+.graph-board-root .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.graph-board-root .react-flow__minimap {
+  border-radius: 8px;
+  border: 1px solid var(--svf-graph-minimap-border);
+  background: var(--svf-graph-minimap-bg);
+  overflow: hidden;
+}
+
+.graph-board-root .react-flow__minimap-mask {
+  fill: var(--svf-graph-minimap-mask);
+  stroke: var(--svf-graph-minimap-stroke);
+  stroke-width: 1;
+}
+
+/* ---- 自定义节点 ---- */
+
+.graph-asset-node {
+  width: 168px;
+  min-height: 56px;
+  display: flex;
+  align-items: stretch;
+  border-radius: 8px;
+  background: var(--svf-graph-node-bg);
+  border: 1px solid var(--svf-graph-node-border);
+  box-shadow: 0 2px 12px var(--svf-graph-node-shadow);
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+  cursor: pointer;
+}
+
+.graph-asset-node:hover {
+  transform: scale(1.02);
+  border-color: var(--svf-graph-node-border-hover);
+  box-shadow: 0 4px 18px var(--svf-graph-node-shadow-hover);
+}
+
+.graph-asset-node.is-selected {
+  border-color: var(--svf-accent);
+  box-shadow:
+    0 0 0 1px var(--svf-accent),
+    0 0 22px color-mix(in srgb, var(--node-accent) 45%, transparent);
+}
+
+.graph-asset-node-bar {
+  width: 4px;
+  flex-shrink: 0;
+  border-radius: 8px 0 0 8px;
+  background: var(--node-accent, var(--svf-graph-kind-fallback));
+}
+
+.graph-asset-node-body {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  justify-content: center;
+}
+
+.graph-asset-node-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--svf-graph-node-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-asset-node-subtitle {
+  font-size: 10px;
+  color: var(--svf-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-asset-handle {
+  width: 6px !important;
+  height: 6px !important;
+  background: var(--svf-graph-handle) !important;
+  border: none !important;
+  opacity: 0;
+}
+
+.graph-asset-node:hover .graph-asset-handle,
+.graph-asset-node.is-selected .graph-asset-handle {
+  opacity: 1;
+}
+
+/* kind 色条：随页面主题令牌切换 */
+.graph-asset-node[data-kind="project"] {
+  --node-accent: var(--svf-graph-kind-project);
+}
+.graph-asset-node[data-kind="script"] {
+  --node-accent: var(--svf-graph-kind-script);
+}
+.graph-asset-node[data-kind="character"] {
+  --node-accent: var(--svf-graph-kind-character);
+}
+.graph-asset-node[data-kind="scene"] {
+  --node-accent: var(--svf-graph-kind-scene);
+}
+.graph-asset-node[data-kind="prop"] {
+  --node-accent: var(--svf-graph-kind-prop);
+}
+.graph-asset-node[data-kind="plot"] {
+  --node-accent: var(--svf-graph-kind-plot);
+}
+.graph-asset-node[data-kind="frame"] {
+  --node-accent: var(--svf-graph-kind-frame);
+}
+.graph-asset-node[data-kind="video_clip"] {
+  --node-accent: var(--svf-graph-kind-video_clip);
+}
+.graph-asset-node[data-kind="video_plan"] {
+  --node-accent: var(--svf-graph-kind-video_plan);
+}
+.graph-asset-node[data-kind="image"] {
+  --node-accent: var(--svf-graph-kind-image);
+}
+.graph-asset-node[data-kind="video"] {
+  --node-accent: var(--svf-graph-kind-video);
+}
+.graph-asset-node[data-kind="audio"] {
+  --node-accent: var(--svf-graph-kind-audio);
+}
+.graph-asset-node[data-kind="final"] {
+  --node-accent: var(--svf-graph-kind-final);
+}
+
+/* ---- 图例 ---- */
+
+.graph-board-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 0.85rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.72rem;
+  color: var(--svf-muted);
+  background: var(--svf-graph-legend-bg);
+  border-top: 1px solid var(--svf-graph-legend-border);
+}
+
+.graph-board-legend .legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 0.3rem;
+  vertical-align: middle;
+  background: var(--svf-graph-kind-fallback);
+}
+
+.graph-board-legend .legend-dot[data-kind="project"] {
+  background: var(--svf-graph-kind-project);
+}
+.graph-board-legend .legend-dot[data-kind="script"] {
+  background: var(--svf-graph-kind-script);
+}
+.graph-board-legend .legend-dot[data-kind="character"] {
+  background: var(--svf-graph-kind-character);
+}
+.graph-board-legend .legend-dot[data-kind="scene"] {
+  background: var(--svf-graph-kind-scene);
+}
+.graph-board-legend .legend-dot[data-kind="prop"] {
+  background: var(--svf-graph-kind-prop);
+}
+.graph-board-legend .legend-dot[data-kind="plot"] {
+  background: var(--svf-graph-kind-plot);
+}
+.graph-board-legend .legend-dot[data-kind="frame"] {
+  background: var(--svf-graph-kind-frame);
+}
+.graph-board-legend .legend-dot[data-kind="video_clip"] {
+  background: var(--svf-graph-kind-video_clip);
+}
+.graph-board-legend .legend-dot[data-kind="video_plan"] {
+  background: var(--svf-graph-kind-video_plan);
+}
+.graph-board-legend .legend-dot[data-kind="image"] {
+  background: var(--svf-graph-kind-image);
+}
+.graph-board-legend .legend-dot[data-kind="video"] {
+  background: var(--svf-graph-kind-video);
+}
+.graph-board-legend .legend-dot[data-kind="audio"] {
+  background: var(--svf-graph-kind-audio);
+}
+.graph-board-legend .legend-dot[data-kind="final"] {
+  background: var(--svf-graph-kind-final);
+}
+
+/* ---- 侧栏 Inspector ---- */
+
+.graph-node-inspector {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(280px, calc(100% - 24px));
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem 1rem 1rem;
+  border-radius: 10px;
+  background: var(--svf-graph-inspector-bg);
+  border: 1px solid var(--svf-graph-inspector-border);
+  backdrop-filter: blur(12px);
+  box-shadow: -8px 0 32px var(--svf-graph-inspector-shadow);
+  overflow-y: auto;
+}
+
+.graph-inspector-beam {
+  position: absolute;
+  left: -48px;
+  top: 28px;
+  width: 44px;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--inspector-accent) 0%, transparent),
+    var(--inspector-accent),
+    var(--svf-accent)
+  );
+  border-radius: 2px;
+  animation: graph-inspector-beam-in 0.45s ease-out;
+  pointer-events: none;
+}
+
+@keyframes graph-inspector-beam-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0.2);
+    transform-origin: left center;
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-inspector-beam {
+    animation: none;
+  }
+}
+
+.graph-inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.graph-inspector-kind {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--inspector-accent, var(--svf-graph-kind-fallback));
+}
+
+.graph-node-inspector[data-kind="project"] {
+  --inspector-accent: var(--svf-graph-kind-project);
+}
+.graph-node-inspector[data-kind="script"] {
+  --inspector-accent: var(--svf-graph-kind-script);
+}
+.graph-node-inspector[data-kind="character"] {
+  --inspector-accent: var(--svf-graph-kind-character);
+}
+.graph-node-inspector[data-kind="scene"] {
+  --inspector-accent: var(--svf-graph-kind-scene);
+}
+.graph-node-inspector[data-kind="prop"] {
+  --inspector-accent: var(--svf-graph-kind-prop);
+}
+.graph-node-inspector[data-kind="plot"] {
+  --inspector-accent: var(--svf-graph-kind-plot);
+}
+.graph-node-inspector[data-kind="frame"] {
+  --inspector-accent: var(--svf-graph-kind-frame);
+}
+.graph-node-inspector[data-kind="video_clip"] {
+  --inspector-accent: var(--svf-graph-kind-video_clip);
+}
+.graph-node-inspector[data-kind="video_plan"] {
+  --inspector-accent: var(--svf-graph-kind-video_plan);
+}
+.graph-node-inspector[data-kind="image"] {
+  --inspector-accent: var(--svf-graph-kind-image);
+}
+.graph-node-inspector[data-kind="video"] {
+  --inspector-accent: var(--svf-graph-kind-video);
+}
+.graph-node-inspector[data-kind="audio"] {
+  --inspector-accent: var(--svf-graph-kind-audio);
+}
+.graph-node-inspector[data-kind="final"] {
+  --inspector-accent: var(--svf-graph-kind-final);
+}
+
+.graph-inspector-close {
+  border: none;
+  background: transparent;
+  color: var(--svf-muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.graph-inspector-close:hover {
+  color: var(--svf-text);
+}
+
+.graph-inspector-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--svf-text);
+  line-height: 1.35;
+}
+
+.graph-inspector-subtitle {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--svf-muted);
+  line-height: 1.4;
+}
+
+.graph-inspector-id-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.graph-inspector-id {
+  font-size: 0.65rem;
+  color: var(--svf-muted);
+  word-break: break-all;
+  flex: 1;
+  min-width: 0;
+}
+
+.graph-inspector-section h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--svf-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.graph-inspector-edge-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.graph-inspector-edge-btn {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--svf-graph-inspector-edge-border);
+  border-radius: 6px;
+  background: var(--svf-graph-inspector-edge-bg);
+  padding: 0.4rem 0.5rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.graph-inspector-edge-btn:hover {
+  background: var(--svf-graph-inspector-edge-hover-bg);
+  border-color: var(--svf-graph-inspector-edge-hover-border);
+}
+
+.graph-inspector-edge-label {
+  font-size: 0.8125rem;
+  color: var(--svf-graph-inspector-edge-label);
+}
+
+.graph-inspector-edge-rel {
+  font-size: 0.68rem;
+  color: var(--svf-muted);
+}
+
+.graph-inspector-footer {
+  margin-top: auto;
+  padding-top: 0.5rem;
+}
+
+.graph-inspector-open {
+  width: 100%;
+}
+
+.board-graph-tab {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 480px;
+}
+
+.board-content:has(.board-graph-tab) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}

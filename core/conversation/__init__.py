@@ -5,7 +5,6 @@ from core.conversation.persist import load_conversations, save_conversations
 from core.conversation.sqlite_store import ConversationSqliteStore
 from core.conversation.store import (
     ConversationMessage,
-    ConversationRole,
     MessageKind,
     MessageRole,
     ConversationStore,
@@ -15,7 +14,6 @@ from core.conversation.store import (
 __all__ = [
     "ConversationIndex",
     "ConversationMessage",
-    "ConversationRole",
     "ConversationSqliteStore",
     "ConversationStore",
     "MessageKind",

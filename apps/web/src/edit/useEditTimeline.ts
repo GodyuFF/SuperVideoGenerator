@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { saveExportAndReveal } from "../utils/exportDownload";
 import type { EditTimelineData } from "./types";
 
 const API = "/api";
@@ -28,8 +29,11 @@ export function useEditTimeline(
   /** Pending save data — stored separately so debounced saves don't capture stale closures */
   const pendingSave = useRef<EditTimelineData | null>(null);
 
-  const fetchTimeline = useCallback(async () => {
-    setLoading(true);
+  const fetchTimeline = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const res = await fetch(
@@ -49,7 +53,9 @@ export function useEditTimeline(
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [projectId, scriptId]);
 
@@ -60,6 +66,29 @@ export function useEditTimeline(
     }
     void fetchTimeline();
   }, [fetchTimeline, enabled]);
+
+  /** 将乐观锁 revision 与 bridge / API 最新值对齐（打开剪辑弹窗时调用）。 */
+  const syncRevision = useCallback((revision: number) => {
+    if (Number.isFinite(revision) && revision >= 0) {
+      latestRevision.current = revision;
+    }
+  }, []);
+
+  /** 从服务端拉取当前 revision，供 PATCH 冲突后重试使用。 */
+  const refetchRevision = useCallback(async (): Promise<number> => {
+    try {
+      const res = await fetch(
+        `${API}/projects/${projectId}/scripts/${scriptId}/edit-timeline`,
+      );
+      if (!res.ok) return latestRevision.current;
+      const data = (await res.json()) as EditTimelineData;
+      latestRevision.current = data.revision ?? latestRevision.current;
+      setTimeline((prev) => (prev ? { ...prev, revision: data.revision } : prev));
+      return latestRevision.current;
+    } catch {
+      return latestRevision.current;
+    }
+  }, [projectId, scriptId]);
 
   const saveTimeline = useCallback(
     async (next: EditTimelineData): Promise<EditTimelineData | undefined> => {
@@ -95,18 +124,11 @@ export function useEditTimeline(
           }
         );
         if (res.status === 409) {
-          // Revision conflict — re-fetch and retry once with fresh revision
-          const body = await res.json().catch(() => ({}));
-          const detail = (body.detail || "") as string;
-          const match = /当前\s*(\d+)/.exec(detail);
-          if (match) {
-            latestRevision.current = parseInt(match[1], 10);
-          }
-          // Retry once with the updated revision
+          await refetchRevision();
           const retryHeaders: Record<string, string> = {
             "Content-Type": "application/json",
+            "If-Match": String(latestRevision.current),
           };
-          retryHeaders["If-Match"] = String(latestRevision.current);
           const retryRes = await fetch(
             `${API}/projects/${projectId}/scripts/${scriptId}/edit-timeline`,
             {
@@ -118,7 +140,7 @@ export function useEditTimeline(
                 duration_ms: next.duration_ms,
                 metadata: next.metadata,
               }),
-            }
+            },
           );
           if (!retryRes.ok) {
             const retryBody = await retryRes.json().catch(() => ({}));
@@ -145,7 +167,7 @@ export function useEditTimeline(
         setSaving(false);
       }
     },
-    [projectId, scriptId]
+    [projectId, scriptId, refetchRevision]
   );
 
   const scheduleSave = useCallback(
@@ -341,17 +363,15 @@ export function useEditTimeline(
     [projectId, scriptId, flushSave]
   );
 
-  /** 下载导出的视频到本地 */
-  const downloadExport = useCallback(
-    async (url: string, filename?: string) => {
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename || `export_${scriptId}_${Date.now()}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+  /** 保存导出文件到本机并在资源管理器中定位项目 exports 目录。 */
+  const saveAndRevealExport = useCallback(
+    async (url: string, suggestedFilename?: string) => {
+      if (!url) {
+        throw new Error("导出 URL 为空");
+      }
+      return saveExportAndReveal(projectId, scriptId, url, suggestedFilename);
     },
-    [scriptId]
+    [projectId, scriptId],
   );
 
   return {
@@ -361,12 +381,13 @@ export function useEditTimeline(
     error,
     saving,
     fetchTimeline,
+    syncRevision,
     scheduleSave,
     saveTimeline,
     flushSave,
     exportVideo,
     exportVideoNoSubtitles,
     exportNleProject,
-    downloadExport,
+    saveAndRevealExport,
   };
 }

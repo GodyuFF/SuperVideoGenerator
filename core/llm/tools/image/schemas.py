@@ -29,11 +29,7 @@ IMAGE_GENERATE_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "source_text_asset_id": {
                         "type": "string",
-                        "description": "文字资产 ID（与 asset_id 二选一）",
-                    },
-                    "asset_id": {
-                        "type": "string",
-                        "description": "同 source_text_asset_id，兼容字段",
+                        "description": "文字资产 ID",
                     },
                 },
             },

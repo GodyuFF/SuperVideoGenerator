@@ -31,16 +31,28 @@ class ToolRegistry:
             raise ValueError(f"tool 已注册：{spec.name}")
         self._tools[spec.name] = spec
 
+    def register_many(self, specs: list[ToolSpec]) -> None:
+        """批量注册 tool。"""
+        for spec in specs:
+            self.register(spec)
+
     def get(self, name: str) -> ToolSpec | None:
         return self._tools.get(name)
 
     def has(self, name: str) -> bool:
         return name in self._tools
 
-    def list_tools(self, agent: str | None = None) -> list[ToolSpec]:
+    def list_tools(
+        self,
+        agent: str | None = None,
+        *,
+        sources: set[str] | None = None,
+    ) -> list[ToolSpec]:
         specs = list(self._tools.values())
         if agent:
             specs = [s for s in specs if s.agent == agent]
+        if sources is not None:
+            specs = [s for s in specs if s.source in sources]
         return sorted(specs, key=lambda s: s.name)
 
     def input_schema(self, name: str) -> dict[str, Any]:
@@ -70,7 +82,9 @@ class ToolRegistry:
                 ok=False,
             )
         try:
-            validate_against_schema(arguments, spec.input_schema, label="输入")
+            validate_against_schema(
+                arguments, spec.input_schema, label="输入", tool_name=name
+            )
         except ValueError as e:
             return ToolResult(
                 observation=str(e),
@@ -103,7 +117,10 @@ class ToolRegistry:
         if spec.output_schema and result.ok:
             try:
                 validate_against_schema(
-                    result.structured, spec.output_schema, label="输出"
+                    result.structured,
+                    spec.output_schema,
+                    label="输出",
+                    tool_name=name,
                 )
             except ValueError as e:
                 return ToolResult(
@@ -192,8 +209,29 @@ _REGISTRY: ToolRegistry | None = None
 def get_tool_registry() -> ToolRegistry:
     global _REGISTRY
     if _REGISTRY is None:
-        from core.llm.tools.bootstrap import register_all_tools
+        import time
 
+        from core.llm.tools.bootstrap import register_all_tools
+        from core.extensions.tool_loader import load_extension_tools
+        from core.logging.perf import log_perf
+
+        start = time.perf_counter()
         _REGISTRY = ToolRegistry()
         register_all_tools(_REGISTRY)
+        load_extension_tools(_REGISTRY)
+        log_perf(
+            "startup",
+            "tool_registry 构建完成",
+            duration_ms=(time.perf_counter() - start) * 1000,
+            tool_count=len(_REGISTRY.list_tools()),
+        )
     return _REGISTRY
+
+
+def reset_tool_registry() -> None:
+    """清空 Registry 单例（测试用）。"""
+    global _REGISTRY
+    _REGISTRY = None
+    from core.llm.tools.shared import agent_tools
+
+    agent_tools._AGENT_TOOLS_CACHE = None

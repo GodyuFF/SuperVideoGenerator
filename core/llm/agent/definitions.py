@@ -7,6 +7,7 @@ from core.llm.agent.llm_agents import (
     ImageAgent,
     ScriptAgent,
     StoryboardAgent,
+    StoryboardRefineAgent,
     TTSAgent,
     VideoAgent,
 )
@@ -56,7 +57,17 @@ AGENT_DEFINITIONS: dict[str, AgentDefinition] = {
             "load_context",
             "create_shots",
             "create_frames",
+            "create_video_clips",
             "persist_plan",
+        ],
+    ),
+    "storyboard_refine_agent": _def(
+        "storyboard_refine_agent",
+        "分镜复核 Agent",
+        action_pipeline=[
+        "sync_actual_assets",
+        "update_frames",
+            "persist_review",
         ],
     ),
     "video_agent": _def("video_agent", "视频 Agent"),
@@ -68,6 +79,7 @@ AGENT_CLASSES: dict[str, type] = {
     "script_agent": ScriptAgent,
     "image_agent": ImageAgent,
     "storyboard_agent": StoryboardAgent,
+    "storyboard_refine_agent": StoryboardRefineAgent,
     "video_agent": VideoAgent,
     "tts_agent": TTSAgent,
     "editing_agent": EditingAgent,

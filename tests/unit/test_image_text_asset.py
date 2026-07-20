@@ -4,19 +4,17 @@ from core.llm.agent.script_assets import create_text_asset_for_action
 from core.models.entities import AssetScope, Project, Script, TextAssetType
 from core.models.image_text_asset import (
     normalize_image_text_content,
-    upgrade_text_asset_content,
 )
 from core.store.memory import MemoryStore
 from tests.support.image_text_fixtures import prop_content
 
 
-def test_normalize_image_text_content_migrates_appearance():
+def test_normalize_image_text_content_ignores_legacy_appearance_key():
     content = normalize_image_text_content(
         TextAssetType.CHARACTER,
         {"appearance": "橙色毛发的老虎"},
     )
-    assert content["description"] == "橙色毛发的老虎"
-    assert content["summary"] == ""
+    assert content.get("description", "") == ""
 
 
 def test_normalize_image_text_content_preserves_traits():
@@ -32,6 +30,21 @@ def test_normalize_image_text_content_preserves_traits():
     assert content["description"] == "银色复古相机"
     assert content["category"] == "日用品"
     assert content["tags"] == ["复古", "摄影"]
+
+
+def test_normalize_preserves_variant_refs_on_frame_and_character():
+    """图文 content 规范化保留关联子形象 variant_refs。"""
+    refs = {"ta_char_1": "var_expr_1"}
+    frame = normalize_image_text_content(
+        TextAssetType.FRAME,
+        {"summary": "画面", "element_refs": {"character": ["ta_char_1"]}, "variant_refs": refs},
+    )
+    assert frame["variant_refs"] == refs
+    char = normalize_image_text_content(
+        TextAssetType.CHARACTER,
+        {"description": "主角", "variant_refs": refs},
+    )
+    assert char["variant_refs"] == refs
 
 
 def test_create_prop_shared_and_linked():
@@ -52,26 +65,10 @@ def test_create_prop_shared_and_linked():
             category="武器",
         ),
         observation="",
-    )
+    ).asset
     assert prop.type == TextAssetType.PROP
     assert prop.scope == AssetScope.PROJECT_SHARED
     assert prop.content["description"].startswith("古铜色长剑")
     assert prop.content.get("image_prompt")
     assert prop.reuse_policy == "shared"
 
-
-    store = MemoryStore()
-    project = Project(title="p1")
-    store.add_project(project)
-    from core.models.entities import TextAsset
-
-    asset = TextAsset(
-        project_id=project.id,
-        type=TextAssetType.SCENE,
-        name="旧场景",
-        content={"description": "森林"},
-        scope=AssetScope.PROJECT_SHARED,
-    )
-    upgraded = upgrade_text_asset_content(asset)
-    assert upgraded.content["description"] == "森林"
-    assert "visual_style" in upgraded.content

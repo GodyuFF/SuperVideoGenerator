@@ -61,6 +61,10 @@ class ImageTextAssetContentBase(BaseModel):
     prompt_version: int = 0
     prompt_locked: bool = False
     image_variants: list[dict[str, Any]] = Field(default_factory=list)
+    """同类型参考图：character→character、scene→scene 等；禁止环引用。"""
+    element_refs: dict[str, list[str]] = Field(default_factory=dict)
+    """关联资产 → 子形象（variant id）；缺省时用主形象/primary。"""
+    variant_refs: dict[str, str] = Field(default_factory=dict)
 
 
 class CharacterTraits(BaseModel):
@@ -81,6 +85,7 @@ class CharacterTraits(BaseModel):
     default_expression: str = ""
     default_pose: str = ""
     accessories: str = ""
+    tts_voice: str = ""
 
 
 class SceneTraits(BaseModel):
@@ -130,6 +135,7 @@ class CharacterContent(ImageTextAssetContentBase):
     default_expression: str = ""
     default_pose: str = ""
     accessories: str = ""
+    tts_voice: str = ""
 
 
 class SceneContent(ImageTextAssetContentBase):
@@ -162,15 +168,17 @@ class PropContent(ImageTextAssetContentBase):
 
 
 class FrameContent(ImageTextAssetContentBase):
-    """分镜画面：多参考图合成，element_refs 指向空镜/角色/物品。"""
+    """剧本画面（frame）文字资产：可选经 `sub_shots[].images[].frame_asset_id` 关联子镜。
 
-    element_refs: dict[str, list[str]] = Field(default_factory=dict)
-    variant_refs: dict[str, str] = Field(default_factory=dict)
+    `element_refs` 指向空镜/角色/物品/画面；生图后 `media_id` 回填至对应子镜 `images[]`。
+    """
+
     shot_id: str = ""
     composition_prompt: str = ""
     reference_order: list[str] = Field(
         default_factory=lambda: ["scene", "character", "prop"]
     )
+    visual_beats_snapshot: list[dict[str, Any]] = Field(default_factory=list)
 
 
 _CONTENT_MODEL: dict[str, type[BaseModel]] = {
@@ -204,7 +212,7 @@ _TRAIT_LABELS_ZH: dict[str, str] = {
     "default_expression": "默认表情",
     "default_pose": "默认姿态",
     "accessories": "配饰",
-    "location": "地点",
+    "tts_voice": "TTS 音色",
     "time_of_day": "时段",
     "weather": "天气",
     "lighting": "光线",
@@ -247,6 +255,7 @@ _TRAIT_LABELS_EN: dict[str, str] = {
     "default_expression": "default expression",
     "default_pose": "default pose",
     "accessories": "accessories",
+    "tts_voice": "tts voice",
     "location": "location",
     "time_of_day": "time of day",
     "weather": "weather",
@@ -297,14 +306,6 @@ def trait_label(key: str, language: str = "zh") -> str:
     if language == "en":
         return trait_label_en(key)
     return trait_label_zh(key)
-
-
-def _legacy_description(raw: dict[str, Any]) -> str:
-    for key in ("description", "appearance", "text", "body"):
-        val = raw.get(key)
-        if isinstance(val, str) and val.strip():
-            return val.strip()
-    return ""
 
 
 def parse_image_variants(content: dict[str, Any]) -> list[ImageVariant]:
@@ -478,15 +479,21 @@ def normalize_image_text_content(asset_type: Any, raw: Any) -> dict[str, Any]:
     model_cls = _CONTENT_MODEL.get(type_val, ImageTextAssetContentBase)
 
     if isinstance(raw, str) and raw.strip():
-        raw = {"description": raw.strip()}
+        if type_val == ImageTextAssetType.FRAME.value:
+            raw = {"image_prompt": raw.strip()}
+        else:
+            raw = {"description": raw.strip()}
     elif not isinstance(raw, dict):
         raw = {}
 
     merged = dict(raw)
-    if not merged.get("description"):
-        legacy = _legacy_description(merged)
-        if legacy:
-            merged["description"] = legacy
+    if isinstance(merged.get("description"), str):
+        merged["description"] = merged["description"].strip()
+    if type_val == ImageTextAssetType.FRAME.value:
+        if not str(merged.get("image_prompt") or "").strip():
+            legacy = str(merged.get("description") or "").strip()
+            if legacy:
+                merged["image_prompt"] = legacy
 
     if "tags" in merged and not isinstance(merged["tags"], list):
         tags = merged["tags"]
@@ -514,8 +521,10 @@ def normalize_image_text_content(asset_type: Any, raw: Any) -> dict[str, Any]:
         if not isinstance(result.get("element_refs"), dict):
             result["element_refs"] = {}
         if not result.get("reference_order"):
-            result["reference_order"] = ["scene", "character", "prop"]
+            result["reference_order"] = ["scene", "character", "prop", "frame"]
         return result
+    if not isinstance(result.get("element_refs"), dict):
+        result["element_refs"] = {}
     if isinstance(raw.get("image_variants"), list):
         result = merge_incoming_variants(result, raw["image_variants"])
     return ensure_image_variants(result)
@@ -602,21 +611,3 @@ def image_text_asset_from_text_asset(
 ) -> ImageTextAsset:
     return ImageTextAsset.from_text_asset(asset, images=images)
 
-
-def upgrade_text_asset_content(asset: TextAsset) -> TextAsset:
-    """惰性升级图文资产 content 结构。"""
-    if not is_image_text_asset(asset.type):
-        return asset
-    normalized = normalize_image_text_content(asset.type, asset.content)
-    normalized = ensure_image_variants(
-        normalized, primary_media_id=asset.primary_media_id
-    )
-    if not str(normalized.get("image_prompt", "")).strip():
-        from core.assets.image_prompt import apply_composed_prompts
-
-        normalized = apply_composed_prompts(
-            asset.type, normalized, preserve_prompt_lock=True
-        )
-    if normalized == asset.content:
-        return asset
-    return asset.model_copy(update={"content": normalized})

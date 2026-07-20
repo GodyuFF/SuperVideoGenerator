@@ -15,36 +15,279 @@ from core.models.entities import (
     EditTimeline,
     EditVideoLayer,
     MediaAssetType,
+    Shot,
     VideoPlan,
-    VideoPlanShot,
     new_id,
 )
 from core.store.memory import MemoryStore
 
 TRACK_KEYS = ("video", "audio", "subtitle")
+AUDIO_SUBTITLE_KEYS = ("audio", "subtitle")
 MAX_VIDEO_LAYERS = 5
 DEFAULT_LAYER_NAME = "主画面"
 
 
+def _audio_media_accessible(store: MemoryStore, media_id: str) -> bool:
+    """判断音频 media 是否可播放（非 superseded 且本地/远程可访问）。"""
+    from core.llm.tools.shared.media_list import resolve_media_access
+
+    media = store.media_assets.get(media_id)
+    if media is None or media.type != MediaAssetType.AUDIO:
+        return False
+    meta = media.metadata or {}
+    if meta.get("superseded"):
+        return False
+    access = resolve_media_access(media.url or "")
+    return bool(access.get("is_accessible"))
+
+
+def _voice_clip_media_by_shot(store: MemoryStore, script_id: str) -> dict[str, str]:
+    """从 VideoPlan 镜内 voice clip 收集 shot → 首选 media_id（按 clip 顺序）。"""
+    out: dict[str, str] = {}
+    for plan in store.video_plans.values():
+        if plan.script_id != script_id:
+            continue
+        for shot in plan.shots:
+            for track in shot.audio_tracks:
+                if track.kind != "voice":
+                    continue
+                for clip in track.clips:
+                    mid = (clip.media_id or "").strip()
+                    if mid and _audio_media_accessible(store, mid):
+                        out.setdefault(shot.id, mid)
+                        break
+                if shot.id in out:
+                    break
+    return out
+
+
 def build_tts_by_shot(store: MemoryStore, script_id: str) -> dict[str, str]:
-    """从已落盘 AUDIO 资产的 metadata.shot_id 构建 shot → asset 映射。"""
-    mapping: dict[str, str] = {}
+    """从镜内 voice clip 与 AUDIO 资产 metadata 构建 shot → asset 映射。"""
+    mapping = _voice_clip_media_by_shot(store, script_id)
     for media in store.list_media_for_script(script_id):
         if media.type != MediaAssetType.AUDIO:
             continue
-        shot_id = str((media.metadata or {}).get("shot_id") or "").strip()
-        if shot_id:
-            mapping[shot_id] = media.id
+        meta = media.metadata or {}
+        if meta.get("superseded"):
+            continue
+        shot_id = str(meta.get("shot_id") or "").strip()
+        if not shot_id or shot_id in mapping:
+            continue
+        mapping[shot_id] = media.id
     return mapping
 
 
+_DURATION_PROBE_DRIFT_RATIO = 0.05
+DURATION_DRIFT_REFRESH_MS = 200
+
+
+def _resolve_audio_media_duration_info(
+    store: MemoryStore,
+    media,
+    *,
+    prefer_probe: bool = True,
+    refresh_metadata: bool = True,
+) -> dict[str, Any]:
+    """解析音频素材时长详情：duration_ms、duration_source、metadata_duration_ms。"""
+    from core.llm.tools.shared.media_list import resolve_media_access
+    from core.media.duration_probe import probe_media_duration_ms
+
+    meta_ms = int((media.metadata or {}).get("duration_ms") or 0)
+    if not prefer_probe:
+        source = "metadata" if meta_ms > 0 else "none"
+        return {
+            "duration_ms": meta_ms,
+            "duration_source": source,
+            "metadata_duration_ms": meta_ms,
+        }
+
+    access = resolve_media_access(media.url)
+    probed = probe_media_duration_ms(str(access.get("file_path") or ""), media.type)
+    if probed is None or probed <= 0:
+        source = "metadata" if meta_ms > 0 else "none"
+        return {
+            "duration_ms": meta_ms,
+            "duration_source": source,
+            "metadata_duration_ms": meta_ms,
+        }
+    if meta_ms <= 0:
+        if refresh_metadata:
+            _maybe_refresh_media_duration_metadata(store, media, probed)
+        return {
+            "duration_ms": probed,
+            "duration_source": "probed",
+            "metadata_duration_ms": 0,
+        }
+    drift = abs(probed - meta_ms) / max(probed, 1)
+    if drift > _DURATION_PROBE_DRIFT_RATIO:
+        if refresh_metadata:
+            _maybe_refresh_media_duration_metadata(store, media, probed)
+        return {
+            "duration_ms": probed,
+            "duration_source": "probed",
+            "metadata_duration_ms": meta_ms,
+        }
+    return {
+        "duration_ms": meta_ms,
+        "duration_source": "metadata",
+        "metadata_duration_ms": meta_ms,
+    }
+
+
+def _effective_audio_media_duration_ms(
+    store: MemoryStore,
+    media,
+    *,
+    prefer_probe: bool = True,
+    refresh_metadata: bool = True,
+) -> int:
+    """解析音频素材有效时长：metadata 与本地探测取更可靠值。"""
+    info = _resolve_audio_media_duration_info(
+        store,
+        media,
+        prefer_probe=prefer_probe,
+        refresh_metadata=refresh_metadata,
+    )
+    return int(info.get("duration_ms") or 0)
+
+
 def _shot_tts_duration_ms(store: MemoryStore, audio_ref: str | None) -> int:
+    """读取镜头 TTS 时长；metadata 偏短或缺失时回退本地文件探测。"""
     if not audio_ref:
         return 0
     media = store.media_assets.get(audio_ref)
     if not media:
         return 0
-    return int((media.metadata or {}).get("duration_ms") or 0)
+    return _effective_audio_media_duration_ms(store, media, refresh_metadata=True)
+
+
+def shot_tts_duration_info(store: MemoryStore, audio_ref: str | None) -> dict[str, Any]:
+    """读取镜头 TTS 时长详情（含 duration_source）。"""
+    if not audio_ref:
+        return {"duration_ms": 0, "duration_source": "none", "metadata_duration_ms": 0}
+    media = store.media_assets.get(audio_ref)
+    if not media:
+        return {"duration_ms": 0, "duration_source": "none", "metadata_duration_ms": 0}
+    return _resolve_audio_media_duration_info(store, media, refresh_metadata=True)
+
+
+def _maybe_refresh_media_duration_metadata(
+    store: MemoryStore,
+    media,
+    effective_ms: int,
+) -> None:
+    """探测时长与 metadata 偏差较大时回写 store（供 enrich 路径使用）。"""
+    if effective_ms <= 0:
+        return
+    meta_ms = int((media.metadata or {}).get("duration_ms") or 0)
+    if meta_ms > 0 and abs(effective_ms - meta_ms) / max(effective_ms, 1) <= _DURATION_PROBE_DRIFT_RATIO:
+        return
+    updated_meta = {**(media.metadata or {}), "duration_ms": effective_ms}
+    store.media_assets[media.id] = media.model_copy(update={"metadata": updated_meta})
+
+
+def sync_audio_clip_durations_to_media(
+    store: MemoryStore,
+    timeline: EditTimeline,
+) -> EditTimeline:
+    """将 audio/subtitle clip 区间与素材真实时长对齐（跳过 user_locked）。"""
+    from core.edit.shot_timing import _find_video_clip_for_shot
+    from core.edit.timeline_analysis import DURATION_MISMATCH_THRESHOLD_MS
+
+    plan = store.get_video_plan_for_script(timeline.script_id)
+    shots_by_id = {s.id: s for s in plan.shots} if plan and plan.shots else {}
+
+    audio_clips = list(timeline.tracks.get("audio", []))
+    if not audio_clips:
+        return timeline
+
+    updated_audio: list[EditClip] = []
+    audio_span_by_shot: dict[str, tuple[int, int]] = {}
+
+    for clip in audio_clips:
+        if _clip_is_user_protected(clip):
+            updated_audio.append(clip)
+            shot_id = str((clip.metadata or {}).get("shot_id") or "").strip()
+            if shot_id:
+                audio_span_by_shot[shot_id] = (clip.start_ms, clip.end_ms)
+            continue
+
+        asset_ref = str(clip.asset_ref or "").strip()
+        media = store.media_assets.get(asset_ref) if asset_ref else None
+        if media is None or media.type != MediaAssetType.AUDIO:
+            updated_audio.append(clip)
+            continue
+
+        media_ms = _effective_audio_media_duration_ms(store, media)
+        if media_ms <= 0:
+            updated_audio.append(clip)
+            continue
+
+        _maybe_refresh_media_duration_metadata(store, media, media_ms)
+
+        start_ms = int(clip.start_ms or 0)
+        end_ms = int(clip.end_ms or start_ms)
+        clip_span = max(end_ms - start_ms, 0)
+        if clip_span >= media_ms - DURATION_MISMATCH_THRESHOLD_MS:
+            updated_audio.append(clip)
+            shot_id = str((clip.metadata or {}).get("shot_id") or "").strip()
+            if not shot_id:
+                shot_id = str((media.metadata or {}).get("shot_id") or "").strip()
+            if shot_id:
+                audio_span_by_shot[shot_id] = (start_ms, end_ms)
+            continue
+
+        target_end = start_ms + media_ms
+        shot_id = str((clip.metadata or {}).get("shot_id") or "").strip()
+        if not shot_id:
+            shot_id = str((media.metadata or {}).get("shot_id") or "").strip()
+        shot = shots_by_id.get(shot_id) if shot_id else None
+        # narration_master / balanced：配音为主，扩展视频终点而非钳制音频
+        # visual_master：画面为主，音频仍不超过视频终点
+        policy = str(getattr(shot, "sync_policy", "") or "narration_master") if shot else "narration_master"
+        if shot is not None and policy == "visual_master":
+            video_clip = _find_video_clip_for_shot(timeline, shot)
+            if video_clip is not None:
+                target_end = min(target_end, int(video_clip.end_ms))
+
+        if target_end <= start_ms:
+            updated_audio.append(clip)
+            continue
+
+        extended = clip.model_copy(update={"end_ms": target_end})
+        updated_audio.append(extended)
+        if shot_id:
+            audio_span_by_shot[shot_id] = (start_ms, target_end)
+
+    tracks = dict(timeline.tracks)
+    tracks["audio"] = updated_audio
+
+    subtitle_clips = list(tracks.get("subtitle", []))
+    if subtitle_clips and audio_span_by_shot:
+        updated_subtitle: list[EditClip] = []
+        for clip in subtitle_clips:
+            if _clip_is_user_protected(clip):
+                updated_subtitle.append(clip)
+                continue
+            shot_id = str((clip.metadata or {}).get("shot_id") or "").strip()
+            span = audio_span_by_shot.get(shot_id) if shot_id else None
+            if span is None:
+                updated_subtitle.append(clip)
+                continue
+            start_ms, end_ms = span
+            updated_subtitle.append(
+                clip.model_copy(update={"start_ms": start_ms, "end_ms": end_ms})
+            )
+        tracks["subtitle"] = updated_subtitle
+
+    max_end = max(
+        (c.end_ms for c in updated_audio),
+        default=timeline.duration_ms,
+    )
+    for layer in timeline.video_layers:
+        for c in layer.clips:
+            max_end = max(max_end, c.end_ms)
+    return timeline.model_copy(update={"tracks": tracks, "duration_ms": max(max_end, timeline.duration_ms)})
 
 
 def _parse_focal(raw: Any) -> tuple[float, float] | None:
@@ -220,31 +463,19 @@ def _normalize_clip_motion(clip: EditClip) -> EditClip:
 
 def normalize_timeline_motions(timeline: EditTimeline) -> EditTimeline:
     """将 video clip 的 motion / motion_detail.type 归一化为 capabilities 枚举。"""
-    timeline = ensure_video_layers(timeline)
-    if timeline.video_layers:
-        layers = [
-            layer.model_copy(
-                update={"clips": [_normalize_clip_motion(c) for c in layer.clips]}
-            )
-            for layer in timeline.video_layers
-        ]
-        timeline = timeline.model_copy(update={"video_layers": layers})
-        sync_legacy_video_track(timeline)
+    if not timeline.video_layers:
         return timeline
-    video = timeline.tracks.get("video", [])
-    if not video:
-        return timeline
-    tracks = dict(timeline.tracks)
-    tracks["video"] = [_normalize_clip_motion(c) for c in video]
-    return timeline.model_copy(update={"tracks": tracks})
+    layers = [
+        layer.model_copy(
+            update={"clips": [_normalize_clip_motion(c) for c in layer.clips]}
+        )
+        for layer in timeline.video_layers
+    ]
+    return timeline.model_copy(update={"video_layers": layers})
 
 
-def normalize_video_layers(
-    raw_layers: list[Any] | None,
-    *,
-    legacy_video_clips: list[EditClip] | None = None,
-) -> list[EditVideoLayer]:
-    """解析 video_layers；空时从 legacy tracks.video 迁移为单层。"""
+def normalize_video_layers(raw_layers: list[Any] | None) -> list[EditVideoLayer]:
+    """解析 video_layers 列表为 EditVideoLayer。"""
     layers: list[EditVideoLayer] = []
     if isinstance(raw_layers, list):
         for idx, raw in enumerate(raw_layers[:MAX_VIDEO_LAYERS]):
@@ -277,52 +508,47 @@ def normalize_video_layers(
             )
     if layers:
         layers.sort(key=lambda layer: layer.z_index)
-        return layers
-    if legacy_video_clips:
-        layer_id = new_id("vly")
-        clips = [
-            c.model_copy(
-                update={
-                    "layer_id": layer_id,
-                    "transform": c.transform or default_clip_transform(),
-                }
-            )
-            for c in legacy_video_clips
-        ]
-        return [
-            EditVideoLayer(
-                id=layer_id,
-                name=DEFAULT_LAYER_NAME,
-                z_index=0,
-                clips=clips,
-            )
-        ]
+    return layers
+
+
+def video_layers_from_agent_clips(clips: list[EditClip]) -> list[EditVideoLayer]:
+    """将 Agent 扁平 video clip 列表包装为单层 video_layers。"""
+    if not clips:
+        return []
+    layer_id = new_id("vly")
+    wrapped = [
+        c.model_copy(
+            update={
+                "layer_id": layer_id,
+                "transform": c.transform or default_clip_transform(),
+            }
+        )
+        for c in clips
+    ]
+    return [
+        EditVideoLayer(
+            id=layer_id,
+            name=DEFAULT_LAYER_NAME,
+            z_index=0,
+            clips=wrapped,
+        )
+    ]
+
+
+def resolve_agent_video_layers(
+    agent_video_layers: list[EditVideoLayer] | None,
+    agent_video_clips: list[EditClip] | None = None,
+) -> list[EditVideoLayer]:
+    """解析 Agent 输入的 video_layers 或扁平 video clips。"""
+    if agent_video_layers:
+        return agent_video_layers
+    if agent_video_clips:
+        return video_layers_from_agent_clips(agent_video_clips)
     return []
 
 
-def ensure_video_layers(timeline: EditTimeline) -> EditTimeline:
-    """确保 timeline 含 video_layers（从 tracks.video 迁移）。"""
-    if timeline.video_layers:
-        return timeline
-    legacy = list(timeline.tracks.get("video", []))
-    if not legacy:
-        return timeline
-    layers = normalize_video_layers(None, legacy_video_clips=legacy)
-    return timeline.model_copy(update={"video_layers": layers})
-
-
-def sync_legacy_video_track(timeline: EditTimeline) -> None:
-    """将 video_layers 扁平化写入 tracks.video（向后兼容）。"""
-    timeline = ensure_video_layers(timeline)
-    flat: list[EditClip] = []
-    for layer in sorted(timeline.video_layers, key=lambda item: item.z_index):
-        for clip in layer.clips:
-            flat.append(clip.model_copy(update={"layer_id": layer.id}))
-    timeline.tracks["video"] = flat
-
-
 def flat_video_clips(timeline: EditTimeline) -> list[EditClip]:
-    timeline = ensure_video_layers(timeline)
+    """从 video_layers 扁平化读取全部 video clip。"""
     out: list[EditClip] = []
     for layer in sorted(timeline.video_layers, key=lambda item: item.z_index):
         out.extend(layer.clips)
@@ -334,7 +560,7 @@ def serialize_clip_item(
     timeline: EditTimeline,
     clip: EditClip,
     *,
-    shot_by_id: dict[str, VideoPlanShot],
+    shot_by_id: dict[str, Shot],
 ) -> dict[str, Any]:
     from core.edit.asset_resolver import resolve_clip_media
 
@@ -373,11 +599,11 @@ def serialize_clip_item(
 
 
 def normalize_tracks(tracks: dict[str, Any] | None) -> dict[str, list[EditClip]]:
-    """将 LLM/JSON 轨道数据规范为 EditClip 列表。"""
-    out: dict[str, list[EditClip]] = {k: [] for k in TRACK_KEYS}
+    """将 LLM/JSON 轨道数据规范为 audio/subtitle EditClip 列表。"""
+    out: dict[str, list[EditClip]] = {k: [] for k in AUDIO_SUBTITLE_KEYS}
     if not isinstance(tracks, dict):
         return out
-    for key in TRACK_KEYS:
+    for key in AUDIO_SUBTITLE_KEYS:
         raw_list = tracks.get(key) or []
         if not isinstance(raw_list, list):
             continue
@@ -385,7 +611,7 @@ def normalize_tracks(tracks: dict[str, Any] | None) -> dict[str, list[EditClip]]
             if not isinstance(raw, dict):
                 continue
             track = str(raw.get("track", key))
-            if track not in TRACK_KEYS:
+            if track not in AUDIO_SUBTITLE_KEYS:
                 track = key
             clip = _parse_clip_from_raw(raw, track=track)
             if clip:
@@ -394,25 +620,68 @@ def normalize_tracks(tracks: dict[str, Any] | None) -> dict[str, list[EditClip]]
     return out
 
 
-def timeline_duration_ms(timeline: EditTimeline) -> int:
-    if timeline.duration_ms > 0:
-        return timeline.duration_ms
+def extract_agent_video_clips(tracks: dict[str, Any] | None) -> list[EditClip]:
+    """从 Agent tracks 字典提取扁平 video clip 列表。"""
+    if not isinstance(tracks, dict):
+        return []
+    raw_list = tracks.get("video") or []
+    if not isinstance(raw_list, list):
+        return []
+    clips: list[EditClip] = []
+    for raw in raw_list:
+        if not isinstance(raw, dict):
+            continue
+        clip = _parse_clip_from_raw(raw, track="video")
+        if clip:
+            clips.append(clip)
+    clips.sort(key=lambda c: (c.start_ms, c.end_ms))
+    return clips
+
+
+def _max_clip_end_ms(timeline: EditTimeline) -> int:
+    """各轨 clip 终点最大值（毫秒）。"""
     max_end = 0
-    timeline = ensure_video_layers(timeline)
     for layer in timeline.video_layers:
         for clip in layer.clips:
-            max_end = max(max_end, clip.end_ms)
+            max_end = max(max_end, int(clip.end_ms or 0))
     for clips in timeline.tracks.values():
         for clip in clips:
-            if clip.track != "video":
-                max_end = max(max_end, clip.end_ms)
+            max_end = max(max_end, int(clip.end_ms or 0))
     return max_end
+
+
+def _max_video_end_ms(timeline: EditTimeline) -> int:
+    """视频层 clip 终点最大值（毫秒）。"""
+    max_end = 0
+    for layer in timeline.video_layers:
+        for clip in layer.clips:
+            max_end = max(max_end, int(clip.end_ms or 0))
+    return max_end
+
+
+def timeline_duration_ms(timeline: EditTimeline) -> int:
+    """成片有效时长：以视频层终点为准，避免孤立音频误剪拖长 duration_ms。"""
+    video_end = _max_video_end_ms(timeline)
+    all_end = _max_clip_end_ms(timeline)
+    if video_end > 0:
+        return video_end
+    if all_end > 0:
+        return all_end
+    stored = int(timeline.duration_ms or 0)
+    return stored if stored > 0 else 0
+
+
+def sync_timeline_duration_ms(timeline: EditTimeline) -> EditTimeline:
+    """将 duration_ms 与轨 clip 终点对齐后写回时间轴。"""
+    duration = timeline_duration_ms(timeline)
+    if duration <= 0:
+        return timeline
+    return timeline.model_copy(update={"duration_ms": duration})
 
 
 def validate_timeline_clips(timeline: EditTimeline) -> list[str]:
     """返回重叠/非法片段警告（不阻断保存）。"""
     warnings: list[str] = []
-    timeline = ensure_video_layers(timeline)
     for layer in timeline.video_layers:
         prev_end = -1
         for clip in layer.clips:
@@ -452,7 +721,6 @@ def build_timeline_layer_summary(
 ) -> dict[str, Any]:
     """紧凑图层摘要：每层 clip 时间/transform/asset_ref 与同层重叠标记。"""
     del store
-    timeline = ensure_video_layers(timeline)
     warnings = validate_timeline_clips(timeline)
     same_layer_overlaps: list[dict[str, Any]] = []
     video_layers_out: list[dict[str, Any]] = []
@@ -541,107 +809,57 @@ def compile_timeline_from_shots(
     plan: VideoPlan,
     tts_by_shot: dict[str, str] | None = None,
 ) -> EditTimeline:
-    """从 VideoPlan 镜头确定性编译三轨时间轴（LLM 漏轨时的 fallback）。"""
-    from core.edit.edit_capabilities import resolve_motion
+    """把 VideoPlan 镜内多轨结构确定性投影为 EditTimeline（OpenCut 可剪辑工程）。
 
-    if tts_by_shot is None:
-        tts_by_shot = build_tts_by_shot(store, script_id)
-    else:
-        tts_by_shot = dict(tts_by_shot)
-    auto_tts = build_tts_by_shot(store, script_id)
-    for shot_id, asset_id in auto_tts.items():
-        tts_by_shot.setdefault(shot_id, asset_id)
-    video_clips: list[EditClip] = []
-    audio_clips: list[EditClip] = []
-    subtitle_clips: list[EditClip] = []
-    cursor = 0
-    shots = sorted(plan.shots, key=lambda s: s.order)
+    单一转换路径：委托 core.edit.shot_flatten 逐镜展开镜内 video/audio/subtitle 轨为
+    全局绝对时间的多层时间轴。分镜是权威源，媒体已绑定在镜内 clip 上（无 fallback 编译）。
+    """
+    del tts_by_shot  # 媒体已绑定在镜内 clip，无需外部 TTS 映射
+    from core.edit.shot_flatten import compile_timeline_from_shots as _project
 
-    for shot in shots:
-        duration = max(shot.duration_ms, 1000)
-        audio_ref = tts_by_shot.get(shot.id)
-        tts_duration = _shot_tts_duration_ms(store, audio_ref)
-        if tts_duration > duration:
-            duration = tts_duration
-        start = cursor
-        end = cursor + duration
-        image_id = resolve_shot_image_ref(store, shot)
-        video_label = f"镜{shot.order + 1} · {shot.camera_motion}"
-        if shot.narration_text:
-            video_label += f" · {shot.narration_text[:40]}"
-        shot_source_refs = EditClipSourceRefs(
-            shot_id=shot.id,
-            video_plan_shot_order=shot.order,
-        )
-        video_clips.append(
-            EditClip(
-                track="video",
-                start_ms=start,
-                end_ms=end,
-                label=video_label,
-                asset_ref=image_id,
-                motion=resolve_motion(shot.camera_motion or "ken_burns_in"),
-                transform=default_clip_transform(),
-                source_refs=shot_source_refs,
-                metadata={"shot_id": shot.id, "order": shot.order},
-            )
-        )
-        narration = shot.narration_text.strip()
-        if narration or audio_ref:
-            audio_clips.append(
-                EditClip(
-                    track="audio",
-                    start_ms=start,
-                    end_ms=end,
-                    label=narration or f"镜{shot.order + 1} 配音",
-                    asset_ref=audio_ref,
-                    metadata={"shot_id": shot.id},
-                )
-            )
-        if narration:
-            subtitle_clips.append(
-                EditClip(
-                    track="subtitle",
-                    start_ms=start,
-                    end_ms=end,
-                    label=narration,
-                    metadata={"shot_id": shot.id},
-                )
-            )
-        cursor = end
-
-    main_layer_id = new_id("vly")
-    video_layers = [
-        EditVideoLayer(
-            id=main_layer_id,
-            name=DEFAULT_LAYER_NAME,
-            z_index=0,
-            clips=[
-                c.model_copy(update={"layer_id": main_layer_id, "transform": default_clip_transform()})
-                for c in video_clips
-            ],
-        )
-    ]
-    timeline = EditTimeline(
-        script_id=script_id,
-        plan_id=plan.id,
-        duration_ms=cursor,
-        tracks={
-            "video": video_clips,
-            "audio": audio_clips,
-            "subtitle": subtitle_clips,
-        },
-        video_layers=video_layers,
-    )
-    return timeline
+    timeline = _project(plan.shots, script_id=script_id, plan_id=plan.id)
+    return normalize_timeline_motions(timeline)
 
 
-def resolve_shot_image_ref(store: MemoryStore, shot: VideoPlanShot) -> str | None:
-    refs = shot.asset_refs or {}
-    variant_refs = shot.variant_refs or {}
+def _clip_is_user_locked(clip: EditClip) -> bool:
+    """仅显式 user_locked 的 clip 才禁止系统调整时长（edited_by=user 不算锁定）。"""
+    return bool((clip.metadata or {}).get("user_locked"))
 
-    def _resolve_ref(ref_str: str) -> str | None:
-        media = store.media_assets.get(ref_str)
+
+def realign_edit_timeline_from_plan(store: MemoryStore, script_id: str) -> bool:
+    """从分镜计划稿重新投影剪辑时间轴（仅 editing_agent 域显式调用；禁止侧效自动触发）。"""
+    timeline = store.get_edit_timeline_for_script(script_id)
+    if timeline is not None and timeline.user_edited:
+        return False
+    plan = store.get_video_plan_for_script(script_id)
+    if not plan or not plan.shots:
+        return False
+    compiled = compile_timeline_from_shots(store, script_id=script_id, plan=plan)
+    updates = {
+        "revision": (timeline.revision + 1) if timeline else 0,
+        "last_edited_by": "system_tts_sync",
+        "updated_at": _timeline_now(),
+    }
+    if timeline is not None:
+        updates["id"] = timeline.id
+    store.set_edit_timeline(compiled.model_copy(update=updates))
+    return True
+
+
+def realign_edit_timeline_durations_from_plan(store: MemoryStore, script_id: str) -> bool:
+    """镜内结构为权威源：时长同步即重新投影（用户手改时间轴由镜内回写驱动）。"""
+    return realign_edit_timeline_from_plan(store, script_id)
+
+
+def resolve_shot_image_ref(store: MemoryStore, shot: Shot) -> str | None:
+    """解析分镜主画面（frame）图片 media。
+
+    仅返回可访问的 IMAGE：优先子镜 images[] 已绑定 media，其次 frame 文字资产
+    primary_media。不接受视频 media，不回退 video_tracks / videos[] / scene。
+    """
+
+    def _accessible_image(media_id: str) -> str | None:
+        media = store.media_assets.get(media_id)
         if (
             media
             and media.type == MediaAssetType.IMAGE
@@ -649,47 +867,64 @@ def resolve_shot_image_ref(store: MemoryStore, shot: VideoPlanShot) -> str | Non
             and not str(media.url).startswith("placeholder:")
         ):
             return media.id
-        text = store.get_text_asset(ref_str)
-        if text:
-            vid = variant_refs.get(ref_str, "")
-            if vid:
-                from core.models.image_text_asset import (
-                    normalize_image_text_content,
-                    resolve_variant_media_id,
-                )
-
-                content = normalize_image_text_content(text.type, text.content)
-                mid = resolve_variant_media_id(content, vid)
-                if mid:
-                    return mid
-            if text.primary_media_id:
-                return text.primary_media_id
-            script_ids = {text.script_id} if text else set()
-            for script in store.scripts.values():
-                script_ids.add(script.id)
-            for sid in script_ids:
-                for media in store.list_media_for_script(sid):
-                    if (
-                        media.source_asset_id == ref_str
-                        and media.type == MediaAssetType.IMAGE
-                        and media.url
-                    ):
-                        return media.id
         return None
 
-    for key in ("frame", "image"):
-        for ref_id in refs.get(key) or []:
-            mid = _resolve_ref(str(ref_id))
+    def _from_frame_asset(frame_asset_id: str) -> str | None:
+        fid = (frame_asset_id or "").strip()
+        if not fid:
+            return None
+        asset = store.text_assets.get(fid)
+        if not asset or not asset.primary_media_id:
+            return None
+        return _accessible_image(asset.primary_media_id)
+
+    for sub in shot.sub_shots:
+        for img in sub.images:
+            if img.media_id:
+                mid = _accessible_image(img.media_id)
+                if mid:
+                    return mid
+            mid = _from_frame_asset(img.frame_asset_id)
             if mid:
                 return mid
+    return None
 
-    # 纯空镜镜头：仅 scene 且无 frame 时允许 scene 背景板
-    if not refs.get("frame"):
-        for ref_id in refs.get("scene") or []:
-            mid = _resolve_ref(str(ref_id))
-            if mid:
-                return mid
 
+def resolve_shot_video_ref(store: MemoryStore, shot: Shot) -> str | None:
+    """解析分镜主视频 media：优先视频轨，其次子镜 videos[]。
+
+    仅返回可访问的 VIDEO；不把画面位 images[] 中的误绑视频当作规范来源。
+    """
+
+    def _accessible_video(media_id: str) -> str | None:
+        media = store.media_assets.get(media_id)
+        if (
+            media
+            and media.type == MediaAssetType.VIDEO
+            and media.url
+            and not str(media.url).startswith("placeholder:")
+        ):
+            return media.id
+        return None
+
+    for track in sorted(shot.video_tracks, key=lambda t: t.z_index):
+        for clip in track.clips:
+            if clip.media_id and str(getattr(clip, "source_kind", "") or "") == "video":
+                mid = _accessible_video(clip.media_id)
+                if mid:
+                    return mid
+    for track in sorted(shot.video_tracks, key=lambda t: t.z_index):
+        for clip in track.clips:
+            if clip.media_id:
+                mid = _accessible_video(clip.media_id)
+                if mid:
+                    return mid
+    for sub in shot.sub_shots:
+        for vid in sub.videos:
+            if vid.media_id:
+                mid = _accessible_video(vid.media_id)
+                if mid:
+                    return mid
     return None
 
 
@@ -700,67 +935,9 @@ def enrich_timeline_audio_from_store(
     *,
     skip_subtitle_enrich: bool = False,
 ) -> EditTimeline:
-    """从 Store TTS 与 VideoPlan 补齐缺失的 audio/subtitle 轨（不覆盖 user_locked clip）。"""
-    if plan is None:
-        plan = store.get_video_plan_for_script(timeline.script_id)
-    if not plan or not plan.shots:
-        return timeline
-
-    reference = compile_timeline_from_shots(store, script_id=timeline.script_id, plan=plan)
-    tts_by_shot = build_tts_by_shot(store, timeline.script_id)
-    if not tts_by_shot and not reference.tracks.get("audio"):
-        return timeline
-
-    ref_by_shot: dict[str, dict[str, EditClip]] = {"audio": {}, "subtitle": {}}
-    for track_name in ("audio", "subtitle"):
-        for clip in reference.tracks.get(track_name, []):
-            shot_id = str((clip.metadata or {}).get("shot_id") or "").strip()
-            if shot_id:
-                ref_by_shot[track_name][shot_id] = clip
-
-    tracks = dict(timeline.tracks)
-    for track_name in ("audio", "subtitle"):
-        if skip_subtitle_enrich and track_name == "subtitle":
-            continue
-        existing = list(tracks.get(track_name, []))
-        ref_clips = reference.tracks.get(track_name, [])
-        if not existing and ref_clips:
-            tracks[track_name] = ref_clips
-            continue
-
-        merged: list[EditClip] = []
-        covered_shots: set[str] = set()
-        for clip in existing:
-            if _clip_is_user_protected(clip):
-                merged.append(clip)
-                shot_id = str((clip.metadata or {}).get("shot_id") or "").strip()
-                if shot_id:
-                    covered_shots.add(shot_id)
-                continue
-            shot_id = str((clip.metadata or {}).get("shot_id") or "").strip()
-            if (
-                track_name == "audio"
-                and not clip.asset_ref
-                and shot_id
-                and shot_id in tts_by_shot
-            ):
-                merged.append(
-                    clip.model_copy(update={"asset_ref": tts_by_shot[shot_id]})
-                )
-                covered_shots.add(shot_id)
-            else:
-                merged.append(clip)
-                if shot_id:
-                    covered_shots.add(shot_id)
-
-        for shot_id, ref_clip in ref_by_shot[track_name].items():
-            if shot_id in covered_shots:
-                continue
-            merged.append(ref_clip)
-        merged.sort(key=lambda c: (c.start_ms, c.end_ms))
-        tracks[track_name] = merged
-
-    return timeline.model_copy(update={"tracks": tracks})
+    """镜内多轨为权威源，投影已含 audio/subtitle 轨；此处仅归一化返回（无补齐/降级）。"""
+    del plan, skip_subtitle_enrich
+    return timeline
 
 
 def finalize_merged_timeline(
@@ -770,15 +947,73 @@ def finalize_merged_timeline(
     *,
     skip_subtitle_enrich: bool = False,
 ) -> EditTimeline:
-    """Agent merge / 导出前：补齐 audio/subtitle 并归一化运镜。"""
-    from core.edit.subtitle_align import enrich_subtitles_from_audio
-
-    timeline = enrich_timeline_audio_from_store(
-        store, timeline, plan, skip_subtitle_enrich=skip_subtitle_enrich
-    )
-    if not skip_subtitle_enrich:
-        timeline = enrich_subtitles_from_audio(store, timeline, plan)
+    """导出/写回前：对齐音频 clip 时长、按主轨扩展视频槽位，并归一化运镜。"""
+    del skip_subtitle_enrich
+    timeline = sync_audio_clip_durations_to_media(store, timeline)
+    timeline = _extend_video_clips_for_narration_master(store, timeline, plan)
     return normalize_timeline_motions(timeline)
+
+
+def _extend_video_clips_for_narration_master(
+    store: MemoryStore,
+    timeline: EditTimeline,
+    plan: VideoPlan | None,
+) -> EditTimeline:
+    """narration_master：当同镜配音长于视频 clip 时，扩展视频终点以匹配音频。"""
+    from core.edit.shot_timing import _find_audio_clip_for_shot, _find_video_clip_for_shot
+
+    if plan is None or not plan.shots:
+        plan = store.get_video_plan_for_script(timeline.script_id)
+    if plan is None or not plan.shots:
+        return timeline
+
+    # shot_id → 需要扩展到的绝对终点
+    extend_end_by_shot: dict[str, int] = {}
+    for shot in plan.shots:
+        policy = str(getattr(shot, "sync_policy", "") or "narration_master")
+        if policy == "visual_master":
+            continue
+        audio_clip = _find_audio_clip_for_shot(timeline, shot)
+        video_clip = _find_video_clip_for_shot(timeline, shot)
+        if audio_clip is None or video_clip is None:
+            continue
+        if int(audio_clip.end_ms) > int(video_clip.end_ms) + 500:
+            extend_end_by_shot[shot.id] = int(audio_clip.end_ms)
+
+    if not extend_end_by_shot:
+        return timeline
+
+    def _clip_shot_id(clip: EditClip) -> str:
+        if clip.source_refs and clip.source_refs.shot_id:
+            return clip.source_refs.shot_id.strip()
+        return str((clip.metadata or {}).get("shot_id") or "").strip()
+
+    new_layers: list = []
+    changed = False
+    max_end = timeline.duration_ms
+    for layer in timeline.video_layers:
+        new_clips = []
+        for clip in layer.clips:
+            sid = _clip_shot_id(clip)
+            target = extend_end_by_shot.get(sid)
+            if target is not None and int(clip.end_ms) < target:
+                meta = dict(clip.metadata or {})
+                # 保留已有 rate/freeze；若无 freeze 则标记需垫帧
+                if not meta.get("freeze_tail_ms") and not meta.get("playback_rate"):
+                    meta["freeze_tail_ms"] = target - int(clip.end_ms)
+                new_clips.append(clip.model_copy(update={"end_ms": target, "metadata": meta}))
+                changed = True
+                max_end = max(max_end, target)
+            else:
+                new_clips.append(clip)
+                max_end = max(max_end, int(clip.end_ms))
+        new_layers.append(layer.model_copy(update={"clips": new_clips}))
+
+    if not changed:
+        return timeline
+    return timeline.model_copy(
+        update={"video_layers": new_layers, "duration_ms": max(max_end, timeline.duration_ms)}
+    )
 
 
 def merge_timeline_with_fallback(
@@ -795,15 +1030,14 @@ def merge_timeline_with_fallback(
 ) -> EditTimeline:
     """优先使用 LLM 轨道；空轨时用 shots 编译补齐；支持 merge/replace。"""
     normalized = normalize_tracks(llm_tracks)
-    video_layers = normalize_video_layers(
-        llm_video_layers if isinstance(llm_video_layers, list) else None,
-        legacy_video_clips=normalized.get("video"),
+    agent_video = extract_agent_video_clips(llm_tracks)
+    parsed_layers = (
+        normalize_video_layers(llm_video_layers)
+        if isinstance(llm_video_layers, list)
+        else None
     )
-    if video_layers:
-        normalized["video"] = [
-            c for layer in video_layers for c in layer.clips
-        ]
-    has_any = bool(video_layers) or any(normalized[k] for k in TRACK_KEYS)
+    video_layers = resolve_agent_video_layers(parsed_layers, agent_video or None)
+    has_any = bool(video_layers) or any(normalized[k] for k in AUDIO_SUBTITLE_KEYS)
     if has_any and plan:
         if existing is not None and mode in ("merge", "replace"):
             return finalize_merged_timeline(
@@ -819,17 +1053,22 @@ def merge_timeline_with_fallback(
                 plan,
                 skip_subtitle_enrich=skip_subtitle_enrich,
             )
-        duration = max(
-            (c.end_ms for clips in normalized.values() for c in clips),
-            default=0,
-        )
+        ends = [
+            c.end_ms for clips in normalized.values() for c in clips
+        ] + [
+            c.end_ms for layer in video_layers for c in layer.clips
+        ]
+        duration = max(ends, default=0)
+        audio_subtitle_tracks = {
+            k: list(normalized.get(k, [])) for k in AUDIO_SUBTITLE_KEYS
+        }
         return finalize_merged_timeline(
             store,
             EditTimeline(
                 script_id=script_id,
                 plan_id=plan.id,
                 duration_ms=duration,
-                tracks=normalized,
+                tracks=audio_subtitle_tracks,
                 video_layers=video_layers,
                 last_edited_by="agent",
                 updated_at=_timeline_now(),
@@ -925,38 +1164,42 @@ def merge_agent_timeline(
 ) -> EditTimeline:
     """Agent 写入时间轴：merge 保留用户 clip，replace/create 全量替换。"""
     if existing is None or mode == "create":
-        duration = max(
-            (c.end_ms for clips in agent_tracks.values() for c in clips),
-            default=0,
-        )
-        layers = agent_video_layers or normalize_video_layers(
-            None, legacy_video_clips=agent_tracks.get("video", [])
+        ends = [
+            c.end_ms for clips in agent_tracks.values() for c in clips
+        ] + [
+            c.end_ms for layer in (agent_video_layers or []) for c in layer.clips
+        ]
+        duration = max(ends, default=0)
+        layers = resolve_agent_video_layers(
+            agent_video_layers,
+            agent_tracks.get("video"),
         )
         return EditTimeline(
             script_id=script_id,
             plan_id=plan_id,
             duration_ms=duration,
-            tracks={k: list(agent_tracks.get(k, [])) for k in TRACK_KEYS},
+            tracks={k: list(agent_tracks.get(k, [])) for k in AUDIO_SUBTITLE_KEYS},
             video_layers=layers,
             last_edited_by="agent",
             updated_at=_timeline_now(),
         )
 
-    existing = ensure_video_layers(existing)
-
     if mode == "replace" or not existing.user_edited:
-        duration = max(
-            (c.end_ms for clips in agent_tracks.values() for c in clips),
-            default=existing.duration_ms,
-        )
-        layers = agent_video_layers or normalize_video_layers(
-            None, legacy_video_clips=agent_tracks.get("video", [])
+        ends = [
+            c.end_ms for clips in agent_tracks.values() for c in clips
+        ] + [
+            c.end_ms for layer in (agent_video_layers or []) for c in layer.clips
+        ]
+        duration = max(ends, default=existing.duration_ms)
+        layers = resolve_agent_video_layers(
+            agent_video_layers,
+            agent_tracks.get("video"),
         )
         return existing.model_copy(
             update={
                 "plan_id": plan_id or existing.plan_id,
                 "duration_ms": duration or timeline_duration_ms(existing),
-                "tracks": {k: list(agent_tracks.get(k, [])) for k in TRACK_KEYS},
+                "tracks": {k: list(agent_tracks.get(k, [])) for k in AUDIO_SUBTITLE_KEYS},
                 "video_layers": layers,
                 "revision": existing.revision + 1,
                 "last_edited_by": "agent",
@@ -964,8 +1207,8 @@ def merge_agent_timeline(
             }
         )
 
-    merged_tracks: dict[str, list[EditClip]] = {k: [] for k in TRACK_KEYS}
-    for key in TRACK_KEYS:
+    merged_tracks: dict[str, list[EditClip]] = {k: [] for k in AUDIO_SUBTITLE_KEYS}
+    for key in AUDIO_SUBTITLE_KEYS:
         existing_clips = list(existing.tracks.get(key, []))
         agent_clips = list(agent_tracks.get(key, []))
         protected = {c.id: c for c in existing_clips if _clip_is_user_protected(c)}
@@ -989,18 +1232,20 @@ def merge_agent_timeline(
         merged.sort(key=lambda c: (c.start_ms, c.end_ms))
         merged_tracks[key] = merged
 
-    agent_layers = agent_video_layers or normalize_video_layers(
-        None, legacy_video_clips=agent_tracks.get("video", [])
+    agent_layers = resolve_agent_video_layers(
+        agent_video_layers,
+        agent_tracks.get("video"),
     )
     merged_layers = merge_agent_video_layers(
         existing.video_layers, agent_layers, mode="merge"
     )
-    merged_tracks["video"] = [c for layer in merged_layers for c in layer.clips]
 
-    duration = max(
-        (c.end_ms for clips in merged_tracks.values() for c in clips),
-        default=existing.duration_ms,
-    )
+    ends = [
+        c.end_ms for clips in merged_tracks.values() for c in clips
+    ] + [
+        c.end_ms for layer in merged_layers for c in layer.clips
+    ]
+    duration = max(ends, default=existing.duration_ms)
     return existing.model_copy(
         update={
             "plan_id": plan_id or existing.plan_id,
@@ -1021,7 +1266,6 @@ def timeline_board_items(
     """供看板 API 使用的序列化结构。"""
     from core.edit.asset_resolver import shot_by_id_for_script
 
-    timeline = ensure_video_layers(timeline)
     shot_by_id = shot_by_id_for_script(store, timeline.script_id)
     tracks_out: dict[str, list[dict[str, Any]]] = {}
     for key in TRACK_KEYS:

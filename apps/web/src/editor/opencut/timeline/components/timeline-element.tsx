@@ -87,9 +87,13 @@ import {
 	getExpansionHeight,
 	type ExpandedRow,
 } from "./expanded-layout";
+import {
+	getClipDisplayTier,
+	getClipVisualWidth,
+	type ClipDisplayTier,
+} from "./clip-display";
 
 const KEYFRAME_INDICATOR_MIN_WIDTH_PX = 40;
-const ELEMENT_RING_WIDTH_PX = 1.5;
 
 const PixelsPerSecondContext = createContext<number | null>(null);
 const THUMBNAIL_ASPECT_RATIO = 16 / 9;
@@ -271,6 +275,10 @@ export function TimelineElement({
 		time: displayedDuration,
 		zoomLevel,
 	});
+	const displayTier = getClipDisplayTier(elementWidth);
+	const visualWidth = getClipVisualWidth(elementWidth);
+	const elementIndex =
+		track.elements.findIndex((item) => item.id === element.id) + 1;
 	const timelinePixelsPerSecond = getTimelinePixelsPerSecond({ zoomLevel });
 	const elementLeft = timelineTimeToSnappedPixels({
 		time: displayedStartTime,
@@ -377,9 +385,10 @@ export function TimelineElement({
 				<ContextMenuTrigger asChild>
 					<div
 						className="absolute top-0 select-none"
+						data-display-tier={displayTier}
 						style={{
 							left: `${elementLeft}px`,
-							width: `${elementWidth}px`,
+							width: `${visualWidth}px`,
 							height:
 								expandedRows.length > 0
 									? `${baseTrackHeight + expansionHeight}px`
@@ -396,8 +405,9 @@ export function TimelineElement({
 							track={track}
 							isSelected={isSelected}
 							isExpanded={expandedRows.length > 0}
-							baseTrackHeight={baseTrackHeight}
 							expandedContent={expandedContent}
+							displayTier={displayTier}
+							elementIndex={elementIndex}
 							onElementClick={onElementClick}
 							onElementMouseDown={onElementMouseDown}
 							onResizeStart={onResizeStart}
@@ -518,8 +528,9 @@ function ElementInner({
 	track,
 	isSelected,
 	isExpanded,
-	baseTrackHeight,
 	expandedContent,
+	displayTier,
+	elementIndex,
 	onElementClick,
 	onElementMouseDown,
 	onResizeStart,
@@ -530,8 +541,9 @@ function ElementInner({
 	track: TimelineTrack;
 	isSelected: boolean;
 	isExpanded: boolean;
-	baseTrackHeight: number;
 	expandedContent: React.ReactNode;
+	displayTier: ClipDisplayTier;
+	elementIndex: number;
 	onElementClick: (params: {
 		event: React.MouseEvent;
 		element: TimelineElementType;
@@ -552,59 +564,46 @@ function ElementInner({
 	const isReducedOpacity =
 		(canElementBeHidden(visibleElement) && visibleElement.hidden) ||
 		isDropTarget;
+	const trackType = getTrackTypeForElementType({
+		elementType: element.type,
+	});
 	return (
-		<div
-			className="absolute top-0 bottom-0"
-			style={{
-				left: `${ELEMENT_RING_WIDTH_PX}px`,
-				right: `${ELEMENT_RING_WIDTH_PX}px`,
-			}}
-		>
+		<div className="absolute inset-0">
 			<div
-				className="absolute inset-0 rounded-sm"
-				style={
-					isSelected
-						? {
-								boxShadow: `0 0 0 ${ELEMENT_RING_WIDTH_PX}px var(--primary)`,
-							}
-						: undefined
-				}
+				className={cn(
+					"absolute inset-0 overflow-hidden rounded-sm",
+					getTimelineElementClassName({ type: trackType }),
+					isSelected && "svf-timeline-clip--selected",
+					isExpanded && "bg-background",
+					isReducedOpacity && "opacity-50",
+				)}
+				data-display-tier={displayTier}
 			>
-				<div
+				<button
+					type="button"
+					tabIndex={-1}
 					className={cn(
-						"absolute inset-0 overflow-hidden rounded-sm",
-						isExpanded && "bg-background",
+						"svf-timeline-clip-hit absolute inset-0 size-full flex flex-col",
+						"border-0 bg-transparent p-0 m-0 appearance-none shadow-none",
+						"outline-none focus:outline-none focus-visible:ring-0",
+						"active:bg-transparent hover:bg-transparent",
 					)}
+					onClick={(event) => onElementClick({ event, element })}
+					onMouseDown={(event) => onElementMouseDown({ event, element })}
 				>
-					<button
-						type="button"
-						tabIndex={-1}
-						className="absolute inset-0 size-full flex flex-col"
-						onClick={(event) => onElementClick({ event, element })}
-						onMouseDown={(event) => onElementMouseDown({ event, element })}
-					>
-						<div
-							className={cn(
-								"flex shrink-0 items-center overflow-hidden",
-								getTimelineElementClassName({
-									type: getTrackTypeForElementType({
-										elementType: element.type,
-									}),
-								}),
-								isReducedOpacity && "opacity-50",
-							)}
-							style={{ height: `${baseTrackHeight}px` }}
-						>
-							<div className="flex flex-1 min-h-0 h-full items-center overflow-hidden">
-								<ElementContent element={visibleElement} track={track} />
-							</div>
-						</div>
-						{expandedContent}
-					</button>
-				</div>
+					<div className="flex h-full w-full min-h-0 items-center overflow-hidden">
+						<ElementContent
+							element={visibleElement}
+							track={track}
+							displayTier={displayTier}
+							elementIndex={elementIndex}
+						/>
+					</div>
+					{expandedContent}
+				</button>
 			</div>
 
-			{isSelected && (
+			{isSelected && displayTier !== "bar" && (
 				<>
 					<ResizeHandle
 						side="left"
@@ -624,6 +623,7 @@ function ElementInner({
 	);
 }
 
+/** 时间轴 clip 左右裁切透明热区（hover 时 CSS 显示细线指示）。 */
 function ResizeHandle({
 	side,
 	element,
@@ -646,9 +646,13 @@ function ResizeHandle({
 		<button
 			type="button"
 			className={cn(
-				"absolute top-0 bottom-0 w-2",
-				isLeft ? "-left-1 cursor-w-resize" : "-right-1 cursor-e-resize",
+				"svf-timeline-resize-handle absolute top-0 bottom-0 min-w-[6px] w-1",
+				"border-0 bg-transparent p-0 m-0 appearance-none shadow-none",
+				"outline-none focus:outline-none focus-visible:ring-0",
+				"active:bg-transparent hover:bg-transparent",
+				isLeft ? "left-0 cursor-w-resize" : "right-0 cursor-e-resize",
 			)}
+			data-resize-side={side}
 			onMouseDown={(event) => onResizeStart({ event, element, track, side })}
 			onClick={(event) => event.stopPropagation()}
 			aria-label={
@@ -656,7 +660,7 @@ function ResizeHandle({
 					? tTimeline("leftResizeHandle")
 					: tTimeline("rightResizeHandle")
 			}
-		></button>
+		/>
 	);
 }
 
@@ -907,81 +911,154 @@ function ExpandedKeyframeLanes({
 interface ElementContentProps {
 	element: TimelineElementType;
 	track: TimelineTrack;
+	displayTier: ClipDisplayTier;
+	elementIndex: number;
 }
 
+/** 按展示档位渲染字幕 clip 内容，窄块避免文字重叠。 */
 function TextElementContent({
 	element,
+	displayTier,
+	elementIndex,
 }: {
 	element: Extract<TimelineElementType, { type: "text" }>;
+	displayTier: ClipDisplayTier;
+	elementIndex: number;
 }) {
+	const content =
+		typeof element.params.content === "string" ? element.params.content : "";
+
+	if (displayTier === "bar") {
+		return <div className="size-full" title={content} />;
+	}
+
+	if (displayTier === "compact") {
+		return (
+			<div
+				className="flex size-full items-center justify-start pl-1"
+				title={content}
+			>
+				<span className="text-[10px] text-white/90">#{elementIndex}</span>
+			</div>
+		);
+	}
+
 	return (
-		<div className="flex size-full items-center justify-start pl-2">
-			<span className="truncate text-xs text-white">
-				{typeof element.params.content === "string" ? element.params.content : ""}
-			</span>
+		<div
+			className="flex size-full items-center justify-start pl-1"
+			title={content}
+		>
+			<span className="truncate text-xs text-white">{content}</span>
 		</div>
 	);
 }
 
 function EffectElementContent({
 	element,
+	displayTier,
 }: {
 	element: Extract<TimelineElementType, { type: "effect" }>;
+	displayTier: ClipDisplayTier;
 }) {
+	if (displayTier === "bar") {
+		return <div className="size-full" title={element.name} />;
+	}
 	return (
-		<div className="flex size-full items-center justify-start gap-1 pl-2">
+		<div
+			className="flex size-full items-center justify-start gap-1 pl-1"
+			title={element.name}
+		>
 			<HugeiconsIcon
 				icon={MagicWand05Icon}
-				className="size-4 shrink-0 text-white"
+				className={cn(
+					"shrink-0 text-white",
+					displayTier === "compact" ? "size-3" : "size-4",
+				)}
 			/>
-			<span className="truncate text-xs text-white">{element.name}</span>
+			{displayTier === "full" && (
+				<span className="truncate text-xs text-white">{element.name}</span>
+			)}
 		</div>
 	);
 }
 
 function StickerElementContent({
 	element,
+	displayTier,
 }: {
 	element: Extract<TimelineElementType, { type: "sticker" }>;
+	displayTier: ClipDisplayTier;
 }) {
+	if (displayTier === "bar") {
+		return <div className="size-full" title={element.name} />;
+	}
 	return (
-		<div className="flex size-full items-center gap-2 pl-2">
-			<Image
-				src={resolveStickerId({
-					stickerId: element.stickerId,
-					options: { width: 20, height: 20 },
-				})}
-				alt={element.name}
-				className="size-4 shrink-0"
-				width={20}
-				height={20}
-				unoptimized
-			/>
-			<span className="truncate text-xs text-white">{element.name}</span>
+		<div
+			className="flex size-full items-center gap-1 pl-1"
+			title={element.name}
+		>
+			{displayTier === "full" && (
+				<Image
+					src={resolveStickerId({
+						stickerId: element.stickerId,
+						options: { width: 20, height: 20 },
+					})}
+					alt={element.name}
+					className="size-4 shrink-0"
+					width={20}
+					height={20}
+					unoptimized
+				/>
+			)}
+			<span
+				className={cn(
+					"truncate text-white",
+					displayTier === "compact" ? "text-[10px]" : "text-xs",
+				)}
+			>
+				{displayTier === "compact" ? "…" : element.name}
+			</span>
 		</div>
 	);
 }
 
 function GraphicElementContent({
 	element,
+	displayTier,
 }: {
 	element: Extract<TimelineElementType, { type: "graphic" }>;
+	displayTier: ClipDisplayTier;
 }) {
+	if (displayTier === "bar") {
+		return <div className="size-full" title={element.name} />;
+	}
 	return (
-		<div className="flex size-full items-center gap-2 pl-2">
-			<Image
-				src={buildGraphicPreviewUrl({
-					definitionId: element.definitionId,
-					params: element.params,
-					size: 20,
-				})}
-				alt={element.name}
-				className="size-4 shrink-0"
-				width={20}
-				height={20}
-				unoptimized
-			/>
-			<span className="truncate text-xs text-white">{element.name}</span>
+		<div
+			className="flex size-full items-center gap-1 pl-1"
+			title={element.name}
+		>
+			{displayTier === "full" && (
+				<Image
+					src={buildGraphicPreviewUrl({
+						definitionId: element.definitionId,
+						params: element.params,
+						size: 20,
+					})}
+					alt={element.name}
+					className="size-4 shrink-0"
+					width={20}
+					height={20}
+					unoptimized
+				/>
+			)}
+			<span
+				className={cn(
+					"truncate text-white",
+					displayTier === "compact" ? "text-[10px]" : "text-xs",
+				)}
+			>
+				{displayTier === "compact" ? "…" : element.name}
+			</span>
 		</div>
 	);
 }
@@ -989,10 +1066,13 @@ function GraphicElementContent({
 function AudioElementContent({
 	element,
 	trackId,
+	displayTier,
 }: {
 	element: AudioElement;
 	trackId: string;
+	displayTier: ClipDisplayTier;
 }) {
+	const { tTimeline } = useOpencutT();
 	const pixelsPerSecond = useContext(PixelsPerSecondContext);
 	if (pixelsPerSecond === null) {
 		throw new Error(
@@ -1027,7 +1107,11 @@ function AudioElementContent({
 	if (audioBuffer || audioUrl || sourceFile) {
 		return (
 			<div className="group/audio relative size-full">
-				<MediaElementHeader name={mediaLabel} hasFade={false} />
+				<MediaElementHeader
+					name={mediaLabel}
+					hasFade={false}
+					displayTier={displayTier}
+				/>
 				<div className="absolute inset-x-0 top-5 bottom-0 overflow-hidden">
 					<AudioWaveform
 						sourceKey={sourceKey}
@@ -1049,11 +1133,25 @@ function AudioElementContent({
 
 	return (
 		<div className="group/audio relative size-full">
-			<div className="flex size-full items-center pl-2">
-				<span className="text-foreground/80 truncate text-xs">
-					{element.name}
-				</span>
-			</div>
+			{displayTier !== "bar" && (
+				<div className="flex size-full flex-col justify-center gap-0.5 pl-1 pr-1">
+					<span
+						className={cn(
+							"text-foreground/80 truncate",
+							displayTier === "compact" ? "text-[10px]" : "text-xs",
+						)}
+						title={element.name}
+					>
+						{displayTier === "compact" ? "…" : element.name}
+					</span>
+					<span
+						className="truncate text-[10px] text-amber-500/90"
+						title={tTimeline("audioClipHydrationMissing")}
+					>
+						{tTimeline("audioClipHydrationMissing")}
+					</span>
+				</div>
+			)}
 			<AudioVolumeLine element={element} trackId={trackId} />
 		</div>
 	);
@@ -1092,9 +1190,11 @@ function EffectsButton({
 function TiledMediaContent({
 	element,
 	track,
+	displayTier,
 }: {
 	element: VideoElement | ImageElement;
 	track: TimelineTrack;
+	displayTier: ClipDisplayTier;
 }) {
 	const mediaAssets = useEditor((e) => e.media.getAssets());
 
@@ -1105,9 +1205,18 @@ function TiledMediaContent({
 			: (mediaAsset?.thumbnailUrl ?? mediaAsset?.url);
 
 	if (!imageUrl) {
+		if (displayTier === "bar") {
+			return <div className="size-full" title={element.name} />;
+		}
 		return (
-			<span className="text-foreground/80 truncate text-xs">
-				{element.name}
+			<span
+				className={cn(
+					"text-foreground/80 truncate",
+					displayTier === "compact" ? "text-[10px] pl-1" : "text-xs",
+				)}
+				title={element.name}
+			>
+				{displayTier === "compact" ? "…" : element.name}
 			</span>
 		);
 	}
@@ -1136,6 +1245,7 @@ function TiledMediaContent({
 					) : null
 				}
 				hasFade={true}
+				displayTier={displayTier}
 			/>
 		</>
 	);
@@ -1145,12 +1255,20 @@ function MediaElementHeader({
 	name,
 	leading,
 	hasFade,
+	displayTier,
 }: {
 	name?: string | null;
 	leading?: ReactNode;
 	hasFade?: boolean;
+	displayTier: ClipDisplayTier;
 }) {
+	if (displayTier === "bar") {
+		return null;
+	}
 	if (!name && !leading) {
+		return null;
+	}
+	if (displayTier === "compact" && !leading) {
 		return null;
 	}
 
@@ -1171,21 +1289,39 @@ function MediaElementHeader({
 	);
 }
 
-function ElementContent({ element, track }: ElementContentProps) {
+function ElementContent({ element, track, displayTier, elementIndex }: ElementContentProps) {
 	switch (element.type) {
 		case "text":
-			return <TextElementContent element={element} />;
+			return (
+				<TextElementContent
+					element={element}
+					displayTier={displayTier}
+					elementIndex={elementIndex}
+				/>
+			);
 		case "effect":
-			return <EffectElementContent element={element} />;
+			return <EffectElementContent element={element} displayTier={displayTier} />;
 		case "sticker":
-			return <StickerElementContent element={element} />;
+			return <StickerElementContent element={element} displayTier={displayTier} />;
 		case "graphic":
-			return <GraphicElementContent element={element} />;
+			return <GraphicElementContent element={element} displayTier={displayTier} />;
 		case "audio":
-			return <AudioElementContent element={element} trackId={track.id} />;
+			return (
+				<AudioElementContent
+					element={element}
+					trackId={track.id}
+					displayTier={displayTier}
+				/>
+			);
 		case "video":
 		case "image":
-			return <TiledMediaContent element={element} track={track} />;
+			return (
+				<TiledMediaContent
+					element={element}
+					track={track}
+					displayTier={displayTier}
+				/>
+			);
 	}
 }
 

@@ -25,7 +25,7 @@ def test_sync_text_from_image_auto_patch():
         asset_name="道具",
         content=prop_content(summary="道具", description="旧描述"),
         observation="",
-    )
+    ).asset
     media = MediaAsset(
         id="media_search_patch",
         project_id=project.id,
@@ -84,7 +84,7 @@ def test_sync_skipped_for_generated_image():
         asset_name="道具",
         content=prop_content(summary="道具", description="描述"),
         observation="",
-    )
+    ).asset
     media = MediaAsset(
         id="media_gen",
         project_id=project.id,
@@ -136,7 +136,7 @@ def test_scan_sync_pending_false_for_generated_image():
         asset_name="道具",
         content=prop_content(summary="道具", description="测试道具描述足够长用于通过校验。"),
         observation="",
-    )
+    ).asset
     media = MediaAsset(
         id="media_gen2",
         project_id=project.id,
@@ -170,7 +170,7 @@ def test_scan_sync_pending_true_for_search_image():
         asset_name="道具",
         content=prop_content(summary="道具", description="测试道具描述足够长用于通过校验。"),
         observation="",
-    )
+    ).asset
     media = MediaAsset(
         id="media_search",
         project_id=project.id,
@@ -204,7 +204,7 @@ def test_scan_includes_source_mode_and_sync_pending():
         asset_name="道具",
         content=prop_content(summary="道具", description="测试道具描述足够长用于通过校验。"),
         observation="",
-    )
+    ).asset
     payload = build_scan_text_assets_payload(store, script.id)
     assert "source_mode" in payload
     assert payload["assets"][0].get("sync_pending") is False

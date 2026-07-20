@@ -2,6 +2,31 @@
 
 const API = "/api";
 
+export async function generateTextAssetDraft(
+  projectId: string,
+  scriptId: string,
+  body: {
+    asset_type: string;
+    summary: string;
+    name?: string;
+    hints?: Record<string, unknown>;
+  },
+) {
+  const r = await fetch(
+    `${API}/projects/${projectId}/scripts/${scriptId}/assets/generate-draft`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(String(data.detail ?? `AI 生成失败 (${r.status})`));
+  }
+  return r.json() as Promise<{ name: string; content: Record<string, unknown> }>;
+}
+
 export async function createTextAsset(
   projectId: string,
   scriptId: string,
@@ -30,7 +55,14 @@ export async function deleteTextAsset(
   );
   if (!r.ok) {
     const data = await r.json().catch(() => ({}));
-    throw new Error(String(data.detail ?? `删除失败 (${r.status})`));
+    const detail = data.detail;
+    const message =
+      typeof detail === "object" && detail && "message" in detail
+        ? String((detail as { message?: string }).message)
+        : typeof detail === "string"
+          ? detail
+          : `删除失败 (${r.status})`;
+    throw new Error(message);
   }
   return r.json();
 }

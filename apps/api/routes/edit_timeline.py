@@ -21,6 +21,7 @@ from core.edit.nle_export import NleExportError, export_timeline_to_premiere_pac
 from core.edit.edit_capabilities import load_edit_capabilities
 from core.edit.timeline_service import (
     TimelineRevisionError,
+    empty_timeline_view,
     get_timeline_for_script,
     patch_timeline,
     validate_timeline_for_script,
@@ -49,6 +50,7 @@ class AnalyzeEditTimelineRequest(BaseModel):
     layer_ids: list[str] | None = None
     include_hints: bool = True
     include_shot_alignment: bool = True
+    include_analysis: bool = True
 
 
 @router.get("/edit/capabilities")
@@ -59,12 +61,28 @@ def get_edit_capabilities():
 
 @router.get("/projects/{project_id}/scripts/{script_id}/edit-timeline")
 def get_edit_timeline(project_id: str, script_id: str):
+    """获取剪辑时间轴；未生成时返回空结构（200），非 404。"""
     script = state.store.get_script(script_id)
     if not script or script.project_id != project_id:
         raise HTTPException(404, "剧本不存在")
+    from core.edit.shot_detail_sync import (
+        lazy_sync_storyboard_if_needed,
+        refresh_shot_tts_durations_if_drifted,
+    )
+
+    changed = lazy_sync_storyboard_if_needed(state.store, script_id)
+    refreshed, _ = refresh_shot_tts_durations_if_drifted(state.store, script_id)
+    if changed or refreshed:
+        from core.store.persist import schedule_save
+
+        schedule_save(
+            state.store,
+            conversation_index=state.conversation_index,
+            conversation_store=None,
+        )
     data = get_timeline_for_script(state.store, script_id)
     if data is None:
-        raise HTTPException(404, "剪辑时间轴不存在")
+        return empty_timeline_view(editable=ScriptEditGuard.is_editable(script))
     data["editable"] = ScriptEditGuard.is_editable(script)
     return data
 
@@ -127,16 +145,26 @@ def post_analyze_edit_timeline(
     if not script or script.project_id != project_id:
         raise HTTPException(404, "剧本不存在")
     timeline = state.store.get_edit_timeline_for_script(script_id)
-    if timeline is None:
-        raise HTTPException(404, "剪辑时间轴不存在")
     req_body = body or AnalyzeEditTimelineRequest()
+    if timeline is None:
+        from core.edit.timeline_analysis import AnalyzeTimelineResult
+
+        start_ms = req_body.start_ms if req_body.start_ms is not None else 0
+        end_ms = req_body.end_ms if req_body.end_ms is not None else 0
+        return AnalyzeTimelineResult(
+            range={"start_ms": start_ms, "end_ms": end_ms},
+            warnings=["尚无剪辑时间轴"],
+        ).to_dict()
     request = AnalyzeTimelineRequest(
         start_ms=req_body.start_ms,
         end_ms=req_body.end_ms,
         tracks=req_body.tracks,
         layer_ids=req_body.layer_ids,
-        include_hints=req_body.include_hints,
-        include_shot_alignment=req_body.include_shot_alignment,
+        include_hints=req_body.include_hints if req_body.include_analysis else False,
+        include_shot_alignment=(
+            req_body.include_shot_alignment if req_body.include_analysis else False
+        ),
+        include_analysis=req_body.include_analysis,
     )
     result = analyze_edit_timeline(state.store, timeline, request)
     return result.to_dict()
@@ -148,7 +176,7 @@ def _run_export_worker(job_id: str, project_id: str, script_id: str) -> dict[str
         raise FfmpegExportError("剪辑时间轴不存在")
 
     script = state.store.get_script(script_id)
-    style_mode = script.style_mode if script else VideoStyleMode.DYNAMIC_IMAGE
+    style_mode = script.style_mode if script else VideoStyleMode.STORYBOOK
     fin_id = new_id("media")
     out_path = prepare_export_output_path(project_id, script_id, fin_id)
     result = export_timeline_to_mp4(
@@ -292,6 +320,11 @@ async def post_export_timeline(project_id: str, script_id: str):
     script = state.store.get_script(script_id)
     if not script or script.project_id != project_id:
         raise HTTPException(404, "剧本不存在")
+
+    from core.edit.export_settings import CLASSIC_EXPORT_ONLY_MESSAGE, get_export_manager
+
+    if not get_export_manager().is_ffmpeg_export_enabled():
+        raise HTTPException(status_code=403, detail=CLASSIC_EXPORT_ONLY_MESSAGE)
 
     job = create_export_job(project_id, script_id)
     job_id = job.id

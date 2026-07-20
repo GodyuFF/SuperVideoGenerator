@@ -42,6 +42,25 @@ VIDEO_FROM_TIMELINE_SCHEMA: dict[str, Any] = {
 VIDEO_SCHEMAS: dict[str, dict[str, Any]] = {
     "load_shots": STORYBOARD_LOAD_SCHEMA,
     "generate_clips": VIDEO_CLIPS_SCHEMA,
+    "scan_video_clips": READ_ONLY_QUERY_SCHEMA,
+    "generate_video_clips": {
+        "type": "object",
+        "properties": {
+            "observation": _OBSERVATION,
+            "asset_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "可选：限定 video_clip 资产 ID",
+            },
+            "video_clip_asset_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "asset_ids 别名",
+            },
+        },
+        "required": ["observation"],
+        "additionalProperties": True,
+    },
     "generate_from_timeline": VIDEO_FROM_TIMELINE_SCHEMA,
     "list_videos": READ_ONLY_QUERY_SCHEMA,
 }

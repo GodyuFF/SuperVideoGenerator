@@ -54,7 +54,7 @@ def test_compose_extra_slices_for_keyframes(timeline_store):
         ]
     )
     plan_data = compose_timeline_plan(
-        timeline_store, timeline, style_mode=VideoStyleMode.DYNAMIC_IMAGE
+        timeline_store, timeline, style_mode=VideoStyleMode.STORYBOOK
     )
     slices = plan_data["composite_slices"]
     widths = [

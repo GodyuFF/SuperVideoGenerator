@@ -39,5 +39,6 @@
   "ariaPreviewCanvas": "预览画布",
   "ariaEditText": "编辑文字",
   "ariaDragAdjustValue": "拖动调整数值",
-  "ariaResetDefault": "恢复默认值"
+  "ariaResetDefault": "恢复默认值",
+  "audioClipHydrationMissing": "音频未加载，无波形。请检查素材或重新生成配音。"
 }

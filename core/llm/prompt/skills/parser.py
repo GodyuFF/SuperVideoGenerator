@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.llm.prompt.skills.loader import resolve_skill_id
+from core.llm.prompt.skills import resolve_skill_id
 
 
 def parse_skill_command(message: str) -> tuple[str | None, str]:

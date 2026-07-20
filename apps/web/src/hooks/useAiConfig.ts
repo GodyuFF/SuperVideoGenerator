@@ -1,6 +1,7 @@
 /** 统一 AI 配置：拉取与更新 /api/ai/config */
 
 import { useCallback, useEffect, useState } from "react";
+import { apiFetch } from "../lib/apiFetch";
 import { formatApiError } from "./useApi";
 import type { AiConfig, AiConfigPatch } from "../types";
 
@@ -15,7 +16,7 @@ export function useAiConfig() {
     setError(null);
     setLoading(true);
     try {
-      const r = await fetch(`${API}/config`);
+      const r = await apiFetch(`${API}/config`);
       if (!r.ok) {
         const err = (await r.json().catch(() => null)) as Record<string, unknown> | null;
         throw new Error(formatApiError(err, r.statusText));
@@ -55,6 +56,3 @@ export function useAiConfig() {
 
   return { config, loading, error, refresh, update, isAiReady, needsAiConfig };
 }
-
-/** @deprecated 使用 useAiConfig */
-export const useLlmConfig = useAiConfig;

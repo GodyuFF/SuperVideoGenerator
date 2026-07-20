@@ -20,6 +20,10 @@ dependencies = [
     "pydub>=0.25",
     "openai>=1.0",
     "imageio-ffmpeg>=0.5.1",
+    "mcp>=1.7",
+    "torch>=2.0",
+    "torchaudio>=2.0",
+    "whisperx>=3.1.0",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +35,13 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["core*", "apps*"]
+
+[project.entry-points."svg.tools"]
+web_search = "core.extensions.builtin.web_search:register_tools"
+
+[project.entry-points."svg.skills"]
+
+[project.entry-points."svg.mcp_servers"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

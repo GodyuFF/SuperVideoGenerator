@@ -34,7 +34,7 @@ def test_goal_mode_excludes_ask_user_from_available_actions():
         "proj",
         "script",
         "测试",
-        VideoStyleMode.DYNAMIC_IMAGE,
+        VideoStyleMode.STORYBOOK,
         GenerationMode.AUTO,
         execution_mode=ExecutionMode.GOAL,
     )
@@ -59,7 +59,7 @@ async def test_goal_mode_skips_a2ui_and_completes():
     store.add_project(project)
     script = Script(project_id=project.id, title="自主剧本", duration_sec=60)
     store.add_script(script)
-    inject_scripted_llm(master, VideoStyleMode.DYNAMIC_IMAGE)
+    inject_scripted_llm(master, VideoStyleMode.STORYBOOK)
 
     a2ui_events: list[dict] = []
 

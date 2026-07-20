@@ -1,13 +1,13 @@
 {
   "title": "执行计划",
   "goalPrefix": "目标：{{goal}}",
-  "defaultHint": "发送对话后按流水线顺序执行",
+  "defaultHint": "发送对话后按实际需求动态委派子 Agent",
   "progressAria": "计划进度",
   "progressText": "{{done}}/{{total}} 步完成 · {{percent}}%",
   "currentStatus": "当前状态（AI）",
   "remainingPlan": "后续计划",
   "statusHistory": "状态历史（{{count}}）",
-  "pipelineHint": "剧本 → 设定 → 分镜 → 图片 → [视频] → 配音 → 剪辑",
+  "pipelineHint": "步骤按实际委派顺序追加，非固定模板",
   "scriptStatus": {
     "draft": "草稿",
     "planned": "已规划",

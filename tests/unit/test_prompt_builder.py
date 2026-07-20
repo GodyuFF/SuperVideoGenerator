@@ -98,6 +98,21 @@ def test_build_action_system_includes_protocol():
     assert "本 Agent 行动字段" not in system
 
 
+def test_build_react_static_system_includes_profile_hint():
+    """子 Agent ReAct 静态 system 应合并 action_hint。"""
+    from core.llm.prompt.builder import build_react_static_system
+    from core.llm.prompt.registry import get_agent_role_prompt
+
+    role = get_agent_role_prompt("storyboard_agent", PromptProfile.STORYBOOK)
+    system = build_react_static_system(
+        role,
+        agent_name="storyboard_agent",
+        profile=PromptProfile.STORYBOOK,
+    )
+    assert "audio_tracks" in system
+    assert "模式补充" in system
+
+
 def test_build_react_state_turn_content_includes_header_and_json():
     state_json = build_react_state_json(
         task_brief="设计剧本",

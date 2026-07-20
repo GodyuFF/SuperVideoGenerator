@@ -12,10 +12,11 @@ def test_ai_config_public_sections():
     reset_image_gen_settings()
     mgr = AiConfigManager(LLMConfigManager(), ImageGenConfigManager())
     public = mgr.get_public_config()
-    assert set(public.keys()) == {"llm", "image", "video", "tts", "export"}
+    assert set(public.keys()) == {"llm", "image", "video", "tts", "export", "embedding"}
     assert public["image"]["provider"] == "agnes"
     assert "pipeline" in public["image"]
     assert "llm_active" in public["llm"]
+    assert "has_api_key" in public["embedding"]
 
 
 def test_ai_config_update_image_api_and_pipeline(tmp_path, monkeypatch):
@@ -64,6 +65,39 @@ def test_ai_config_persist_and_reload(tmp_path, monkeypatch):
     public = mgr2.get_public_config()
     assert public["llm"]["has_api_key"] is True
     assert public["llm"]["model"] == "deepseek-chat"
+
+
+def test_ai_config_embedding_persist(tmp_path, monkeypatch):
+    """Embedding 分区可写入 ai_config.json 并在重载后生效。"""
+    from core.rag.settings import EmbeddingConfigManager, reset_embedding_manager
+
+    reset_image_gen_settings()
+    reset_embedding_manager()
+    config_path = tmp_path / "ai_config.json"
+    monkeypatch.setattr("core.llm.ai_config.DEFAULT_PATH", config_path)
+    emb = EmbeddingConfigManager()
+    mgr = AiConfigManager(
+        LLMConfigManager(), ImageGenConfigManager(), embedding=emb, path=config_path
+    )
+    updated = mgr.update(
+        embedding={
+            "api_key": "sk-emb-test",
+            "base_url": "https://example.com/v1",
+            "model": "text-embedding-3-large",
+        }
+    )
+    assert updated["embedding"]["has_api_key"] is True
+    assert updated["embedding"]["model"] == "text-embedding-3-large"
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["embedding"]["api_key"] == "sk-emb-test"
+
+    reset_embedding_manager()
+    emb2 = EmbeddingConfigManager()
+    mgr2 = AiConfigManager(
+        LLMConfigManager(), ImageGenConfigManager(), embedding=emb2, path=config_path
+    )
+    assert mgr2.embedding.resolved_api_key() == "sk-emb-test"
+    assert mgr2.embedding.get_settings().base_url == "https://example.com/v1"
 
 
 def test_ai_config_show_react_details_persist(tmp_path, monkeypatch):

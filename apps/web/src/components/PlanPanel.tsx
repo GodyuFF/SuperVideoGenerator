@@ -2,7 +2,9 @@
  * 执行计划面板：展示 PlanDocument、AI 回写的 plan_status / remaining_plan 与步骤进度。
  */
 
+import { memo } from "react";
 import { MediaPreview } from "./MediaPreview";
+import { ImageGenProgressInline } from "./ImageGenProgressInline";
 import { useAppTranslation } from "../i18n/useAppTranslation";
 import type { PlanViewState } from "../types";
 import { planProgress, scriptStatusLabel, stepStatusLabel } from "../utils/planLabels";
@@ -18,7 +20,8 @@ interface PlanPanelProps {
   onAbort?: () => void;
 }
 
-export function PlanPanel({
+/** 执行计划面板（memo 隔离 plan 更新与聊天流式重绘）。 */
+export const PlanPanel = memo(function PlanPanel({
   plan,
   scriptStatus,
   projectId,
@@ -138,6 +141,14 @@ export function PlanPanel({
                 {step.error && (
                   <p className="plan-step-error">{step.error}</p>
                 )}
+                {step.image_gen_progress && step.image_gen_progress.total > 0 && (
+                  <ImageGenProgressInline
+                    total={step.image_gen_progress.total}
+                    items={step.image_gen_progress.items}
+                    projectId={projectId}
+                    scriptId={scriptId}
+                  />
+                )}
                 {(step.outputs?.length ?? 0) > 0 && (
                   <ul className="plan-step-outputs">
                     {step.outputs!.map((o) => {
@@ -177,4 +188,18 @@ export function PlanPanel({
       )}
     </section>
   );
-}
+}, (prev, next) => {
+  return (
+    prev.plan.version === next.plan.version &&
+    prev.plan.steps === next.plan.steps &&
+    prev.plan.runtime_summary === next.plan.runtime_summary &&
+    prev.plan.plan_status_history === next.plan.plan_status_history &&
+    prev.plan.last_remaining_plan === next.plan.last_remaining_plan &&
+    prev.scriptStatus === next.scriptStatus &&
+    prev.isRunning === next.isRunning &&
+    prev.isAborting === next.isAborting &&
+    prev.projectId === next.projectId &&
+    prev.scriptId === next.scriptId &&
+    prev.onAbort === next.onAbort
+  );
+});

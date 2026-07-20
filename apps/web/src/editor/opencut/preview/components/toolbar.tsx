@@ -2,6 +2,12 @@ import { useState, useEffect } from "react";
 import { useEditor } from "@opencut/editor/use-editor";
 import { formatTimecode } from "opencut-wasm";
 import { invokeAction } from "@opencut/actions";
+import { toast } from "sonner";
+import { isSvfProjectKey } from "@opencut/svf-integration";
+import {
+  getSvfProjectMediaCache,
+  isSvfMediaReadyForDecode,
+} from "../../../adapter/SvfMediaBridge";
 import { EditableTimecode } from "@opencut/components/editable-timecode";
 import { Button } from "@opencut/components/ui/button";
 import {
@@ -77,8 +83,8 @@ function TimecodeDisplay() {
 				onTimeChange={({ time }) => editor.playback.seek({ time })}
 				className="text-center"
 			/>
-			<span className="text-muted-foreground px-2 font-mono text-xs">/</span>
-			<span className="text-muted-foreground font-mono text-xs">
+			<span className="svf-preview-timecode-meta px-2 font-mono text-xs">/</span>
+			<span className="svf-preview-timecode-meta font-mono text-xs">
 				{formatTimecode({
 					time: totalDuration,
 					format: "HH:MM:SS:FF",
@@ -131,6 +137,19 @@ function ZoomSelect() {
 function PlayPauseButton() {
 	const { tShortcuts } = useOpencutT();
 	const isPlaying = useEditor((e) => e.playback.getIsPlaying());
+	const projectKey = useEditor((e) => e.project.getActiveOrNull()?.metadata.id ?? "");
+	const mediaNotReady =
+		Boolean(projectKey) &&
+		isSvfProjectKey(projectKey) &&
+		!isSvfMediaReadyForDecode(getSvfProjectMediaCache(projectKey));
+
+	const handleTogglePlay = () => {
+		if (mediaNotReady) {
+			toast.error("媒体尚未加载完成，请等待水合结束或刷新后重试。");
+			return;
+		}
+		invokeAction("toggle-play");
+	};
 
 	return (
 		<Tooltip>
@@ -138,7 +157,8 @@ function PlayPauseButton() {
 				<Button
 					variant="text"
 					size="icon"
-					onClick={() => invokeAction("toggle-play")}
+					disabled={mediaNotReady}
+					onClick={handleTogglePlay}
 				>
 					<HugeiconsIcon icon={isPlaying ? PauseIcon : PlayIcon} />
 				</Button>

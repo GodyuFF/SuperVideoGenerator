@@ -28,9 +28,9 @@ class ReturnToMasterError(Exception):
         resume = self.structured.get("resume_hint")
         if resume:
             header += f"\n\n续跑提示：{resume}"
-        suggested = self.structured.get("suggested_delegates")
+        suggested = self.structured.get("suggested_agent_ids")
         if suggested:
-            header += f"\n\n建议主编排：{', '.join(suggested)}"
+            header += f"\n\n建议主编排 agent_id：{', '.join(suggested)}"
         return header
 
     def to_dict(self) -> dict[str, Any]:

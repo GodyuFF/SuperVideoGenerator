@@ -54,12 +54,16 @@ class EditComposeMissingAssetsError(ReturnToMasterError):
         structured: dict[str, Any] = {}
         suggested: list[str] = []
         if validation_report is not None:
+            from core.llm.master.actions import STEP_META
+
             for item in getattr(validation_report, "missing_items", []) or []:
                 upstream = getattr(item, "suggested_upstream", None)
                 if upstream and upstream != "none":
-                    delegate = f"delegate_{upstream}"
-                    if delegate not in suggested:
-                        suggested.append(delegate)
+                    agent_id = STEP_META.get(str(upstream), {}).get(
+                        "agent", str(upstream)
+                    )
+                    if agent_id not in suggested:
+                        suggested.append(str(agent_id))
             structured["missing_items"] = [
                 {
                     "category": getattr(m, "category", ""),
@@ -70,8 +74,8 @@ class EditComposeMissingAssetsError(ReturnToMasterError):
                 for m in getattr(validation_report, "missing_items", []) or []
             ]
         if suggested:
-            structured["suggested_delegates"] = suggested
-        structured["resume_hint"] = "上游补全后重新 delegate_edit_compose"
+            structured["suggested_agent_ids"] = suggested
+        structured["resume_hint"] = "上游补全后重新委派 editing_agent（agent_id）"
         super().__init__(
             action,
             message,

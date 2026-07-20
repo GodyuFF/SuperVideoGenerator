@@ -20,6 +20,44 @@ def api_ctx():
 
 
 @pytest.mark.asyncio
+async def test_get_edit_timeline_empty_before_storyboard():
+    """未生成分镜/剪辑时 GET edit-timeline 应返回 200 空时间轴，而非 404。"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post("/api/projects", json={"title": "空时间轴测试"})
+        pid = r.json()["id"]
+        r = await client.post(f"/api/projects/{pid}/scripts", json={"title": "S1"})
+        sid = r.json()["id"]
+
+        r = await client.get(f"/api/projects/{pid}/scripts/{sid}/edit-timeline")
+        assert r.status_code == 200
+        body = r.json()
+        assert body.get("duration_ms") == 0
+        assert body.get("revision") == 0
+        assert body.get("tracks", {}).get("video") == []
+        assert body.get("video_layers") == []
+        assert body.get("editable") is True
+
+
+@pytest.mark.asyncio
+async def test_get_video_plan_empty_before_storyboard():
+    """未分镜时 GET video-plan 应返回 200 空计划稿，而非 404。"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post("/api/projects", json={"title": "空视频计划测试"})
+        pid = r.json()["id"]
+        r = await client.post(f"/api/projects/{pid}/scripts", json={"title": "S1"})
+        sid = r.json()["id"]
+
+        r = await client.get(f"/api/projects/{pid}/scripts/{sid}/video-plan")
+        assert r.status_code == 200
+        body = r.json()
+        assert body.get("shots") == []
+        assert body.get("shot_timings") == []
+        assert body.get("script_id") == sid
+
+
+@pytest.mark.asyncio
 async def test_get_edit_capabilities():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -30,6 +68,21 @@ async def test_get_edit_capabilities():
     assert "transitions" in data
     assert data.get("nle_export_enabled") is True
     assert "premiere" in (data.get("nle_export_formats") or [])
+    assert data.get("classic_export_enabled") is True
+    assert data.get("export_enabled") is False
+
+
+@pytest.mark.asyncio
+async def test_post_export_rejected_when_classic_only(api_ctx):
+    """默认禁用 FFmpeg 导出时 POST export 应返回 403。"""
+    project_id, script_id = api_ctx
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post(
+            f"/api/projects/{project_id}/scripts/{script_id}/export",
+        )
+    assert res.status_code == 403
+    assert "剪辑助手" in res.json().get("detail", "")
 
 
 @pytest.mark.asyncio

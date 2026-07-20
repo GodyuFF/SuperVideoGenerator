@@ -1,6 +1,7 @@
 /** 全屏独立剪辑页（哈希 #/project/.../script/.../edit）。 */
 
 import { useEffect } from "react";
+import { Toaster } from "../editor/opencut/components/ui/sonner";
 import { useEditTimeline } from "../edit/useEditTimeline";
 import { EditorStudioContent } from "../editor/EditorStudioContent";
 import { bindEditWsEvents, unbindEditWsEvents } from "../editor/editWsBinding";
@@ -43,6 +44,7 @@ export function EditorStudioPage({ projectId, scriptId, onExit }: EditorStudioPa
 
   return (
     <div className="editor-studio-page">
+      <Toaster position="top-center" style={{ zIndex: 10002 }} />
       <EditorStudioContent
         projectId={projectId}
         scriptId={scriptId}

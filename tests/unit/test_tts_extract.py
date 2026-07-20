@@ -3,8 +3,9 @@
 import pytest
 
 from core.llm.tools.tts.extract import build_narration_payload, format_narration_observation
-from core.models.entities import VideoPlan, VideoPlanShot, new_id
+from core.models.entities import VideoPlan, new_id
 from core.store.memory import MemoryStore
+from tests.support.shot_fixtures import make_shot
 
 
 @pytest.fixture
@@ -18,23 +19,14 @@ def test_build_narration_payload_from_plan(store):
         id=new_id("plan"),
         script_id=script_id,
         shots=[
-            VideoPlanShot(
-                id="shot_a",
-                order=0,
-                duration_ms=3000,
-                narration_text="第一句旁白",
+            make_shot(order=0, duration_ms=3000, text="第一句旁白").model_copy(
+                update={"id": "shot_a"}
             ),
-            VideoPlanShot(
-                id="shot_b",
-                order=1,
-                duration_ms=2000,
-                narration_text="",
+            make_shot(order=1, duration_ms=2000, text="").model_copy(
+                update={"id": "shot_b"}
             ),
-            VideoPlanShot(
-                id="shot_c",
-                order=2,
-                duration_ms=4000,
-                narration_text="第三句旁白",
+            make_shot(order=2, duration_ms=4000, text="第三句旁白").model_copy(
+                update={"id": "shot_c"}
             ),
         ],
     )

@@ -3,7 +3,6 @@
 from core.llm.prompt.builder import (
     build_action_system,
     build_action_user,
-    build_react_json_user,
     build_react_system,
     get_summary_system_prompt,
     render_template,
@@ -53,7 +52,6 @@ __all__ = [
     "COMPRESSION_SNIPPET_CHARS",
     "build_action_system",
     "build_action_user",
-    "build_react_json_user",
     "build_react_system",
     "default_role_prompt",
     "extract_role_summary",

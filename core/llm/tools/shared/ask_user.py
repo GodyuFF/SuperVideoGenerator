@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from core.llm.a2ui.manager import ConfirmationManager, ConfirmationRejectedError
+from core.llm.a2ui.manager import (
+    ConfirmationManager,
+    ConfirmationRejectedError,
+    ConfirmationTimeoutError,
+)
 from core.llm.a2ui.schemas import A2UIComponent
 
 
@@ -21,21 +25,8 @@ def format_ask_user_observation(observation: str, values: dict[str, Any]) -> str
 
 
 def normalize_ask_user_action_input(action_input: dict[str, Any]) -> dict[str, Any]:
-    """兼容 ACTION 历史中 Python repr 导致的 raw 字段。"""
-    if "questions" in action_input:
-        return action_input
-    raw = action_input.get("raw")
-    if raw is None:
-        return action_input
-    from core.llm.json_parse import parse_llm_json_object
-
-    try:
-        parsed = parse_llm_json_object(str(raw))
-        if isinstance(parsed, dict):
-            return parsed
-    except ValueError:
-        pass
-    return action_input
+    """规范化 ask_user_question 的 action_input。"""
+    return dict(action_input or {})
 
 
 def merge_user_answers_into_brief(task_brief: str, values: dict[str, Any]) -> str:
@@ -118,6 +109,8 @@ async def execute_ask_user_question(
             step_id=step_id or None,
             conversation_id=conversation_id or None,
         )
+    except ConfirmationTimeoutError:
+        return "用户确认超时，未收到回答。", {}
     except ConfirmationRejectedError as e:
         return f"用户取消了补充信息请求：{e}", {}
 

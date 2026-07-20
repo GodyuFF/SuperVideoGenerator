@@ -4,8 +4,9 @@ from core.llm.master import action_kind, action_label
 
 
 def test_action_label_delegate():
-    assert action_label("delegate_script_design") == "委派 · 剧本与文字资产设计"
-    assert action_kind("delegate_script_design") == "delegate"
+    assert action_label("delegate_agent", agent_id="script_agent") == "委派 · 剧本 Agent"
+    assert action_kind("delegate_agent") == "delegate"
+    assert action_label("delegate_agent") == "委派 · 子 Agent"
 
 
 def test_action_label_tool():

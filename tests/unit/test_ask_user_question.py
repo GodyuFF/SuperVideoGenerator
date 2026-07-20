@@ -15,7 +15,7 @@ from core.llm.tools.shared.agent_tools import ASK_USER_QUESTION_ACTION, pipeline
 from core.events.emitter import EventEmitter
 from core.llm.master import create_master_react_session
 from core.models.entities import GenerationMode, VideoStyleMode
-from core.llm.tools_schema import build_master_react_tools, build_sub_agent_react_tools
+from core.llm.prompt.tools.registry import build_master_react_tools, build_sub_agent_react_tools
 from core.llm.prompt.tools.schemas import action_input_schema
 
 
@@ -42,7 +42,7 @@ def test_master_session_available_actions_include_ask_user_question():
         project_id="p1",
         script_id="s1",
         user_message="测试",
-        style_mode=VideoStyleMode.DYNAMIC_IMAGE,
+        style_mode=VideoStyleMode.STORYBOOK,
         generation_mode=GenerationMode.AUTO,
     )
     actions = session.available_actions()
@@ -92,14 +92,14 @@ def test_questions_to_components_select_defaults_to_first_option():
                 "component": "select",
                 "required": True,
                 "options": [
-                    {"label": "动态图片", "value": "dynamic_image"},
+                    {"label": "故事书", "value": "storybook"},
                     {"label": "AI 视频", "value": "ai_video"},
                 ],
             }
         ]
     )
     assert len(components) == 1
-    assert components[0].value == "dynamic_image"
+    assert components[0].value == "storybook"
 
 
 def test_questions_to_components_select_keeps_explicit_default():
@@ -113,7 +113,7 @@ def test_questions_to_components_select_keeps_explicit_default():
                 "component": "select",
                 "default": "ai_video",
                 "options": [
-                    {"label": "动态图片", "value": "dynamic_image"},
+                    {"label": "故事书", "value": "storybook"},
                     {"label": "AI 视频", "value": "ai_video"},
                 ],
             }

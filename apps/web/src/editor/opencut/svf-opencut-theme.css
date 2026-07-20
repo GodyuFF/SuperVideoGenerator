@@ -35,7 +35,7 @@ html.dark.svf-opencut-active {
   --secondary-border: hsl(214 8% 22%);
   --secondary-foreground: hsl(210 9% 91%);
   --muted: hsl(214 8% 22%);
-  --muted-foreground: hsl(214 5% 45%);
+  --muted-foreground: hsl(210 9% 72%);
   --accent: hsl(214 10% 14%);
   --accent-foreground: hsl(210 9% 91%);
   --destructive: hsl(354 91% 54%);
@@ -73,7 +73,7 @@ html.dark.svf-opencut-active {
   --secondary-border: hsl(214 8% 22%);
   --secondary-foreground: hsl(210 9% 91%);
   --muted: hsl(214 8% 22%);
-  --muted-foreground: hsl(214 5% 45%);
+  --muted-foreground: hsl(210 9% 72%);
   --accent: hsl(214 10% 14%);
   --accent-foreground: hsl(210 9% 91%);
   --destructive: hsl(354 91% 54%);
@@ -108,7 +108,7 @@ html.dark.svf-opencut-active {
   --secondary-border: hsl(214 8% 22%);
   --secondary-foreground: hsl(210 9% 91%);
   --muted: hsl(214 8% 22%);
-  --muted-foreground: hsl(214 5% 45%);
+  --muted-foreground: hsl(210 9% 72%);
   --accent: hsl(214 10% 14%);
   --accent-foreground: hsl(210 9% 91%);
   --border: hsl(214 8% 22%);
@@ -198,6 +198,13 @@ html.dark.svf-opencut-active .border-r {
   padding: 0.25rem 0.5rem !important;
 }
 
+/* 全屏剪辑弹窗（z=10000）内 Radix Portal 弹出层须更高，否则导出/菜单不可见 */
+.editor-studio-modal-overlay [data-radix-popper-content-wrapper],
+.editor-studio-page .svf-editor-overlay-content,
+.svf-editor-overlay-content {
+  z-index: 10001 !important;
+}
+
 /* 剪辑 Tab 内嵌预览 — 面板细节（主容器见文件顶部） */
 .opencut-preview-pane .panel {
   border: none;
@@ -227,15 +234,19 @@ html.dark.svf-opencut-active .opencut-preview-pane [class*="grid-cols-[1fr_auto_
   background: hsl(220 20% 97%);
 }
 
-.editor-studio-content-body .opencut-classic-root.svf-opencut-theme.dark {
-  border-radius: 8px;
-  border: 1px solid hsl(214 8% 22%);
+.editor-studio-content-body .opencut-classic-root.svf-opencut-theme.dark,
+.editor-studio-modal-shell .opencut-classic-root.svf-opencut-theme.dark,
+.editor-studio-page-shell .opencut-classic-root.svf-opencut-theme.dark {
+  border-radius: 0;
+  border: none;
   overflow: hidden;
 }
 
-.editor-studio-content-body .opencut-classic-root.svf-opencut-theme.light {
-  border-radius: 8px;
-  border: 1px solid hsl(220 12% 84%);
+.editor-studio-content-body .opencut-classic-root.svf-opencut-theme.light,
+.editor-studio-modal-shell .opencut-classic-root.svf-opencut-theme.light,
+.editor-studio-page-shell .opencut-classic-root.svf-opencut-theme.light {
+  border-radius: 0;
+  border: none;
   overflow: hidden;
 }
 
@@ -263,7 +274,7 @@ html.dark.svf-opencut-active .opencut-preview-pane [class*="grid-cols-[1fr_auto_
 html.dark.svf-opencut-active .edit-tab-preview-paused {
   border: 1px dashed hsl(214 8% 22%);
   background: hsl(214 14% 10%);
-  color: hsl(214 5% 45%);
+  color: hsl(210 9% 72%);
 }
 
 .svf-opencut-theme.light .edit-tab-preview-paused,
@@ -318,7 +329,7 @@ html.light.svf-opencut-active section[data-svf-region="timeline"] .scrollbar-thi
 
 .svf-opencut-theme.dark .text-muted-foreground,
 html.dark.svf-opencut-active .text-muted-foreground {
-  color: hsl(214 5% 45%) !important;
+  color: hsl(210 9% 72%) !important;
 }
 
 .svf-opencut-theme.light .text-muted-foreground,
@@ -486,7 +497,7 @@ html.dark.svf-opencut-active .panel {
   --accent: hsl(214 10% 14%) !important;
   --accent-foreground: hsl(210 9% 91%) !important;
   --muted: hsl(214 8% 22%) !important;
-  --muted-foreground: hsl(214 5% 45%) !important;
+  --muted-foreground: hsl(210 9% 72%) !important;
   --background: hsl(214 25% 8%) !important;
   --foreground: hsl(210 9% 91%) !important;
   --border: hsl(214 8% 22%) !important;
@@ -662,9 +673,10 @@ html.light.svf-opencut-active .bg-accent.border-b {
 
 /* 媒体水合失败提示 */
 .svf-media-hydration-warn {
-  background: var(--svf-gold-soft, rgba(201, 162, 39, 0.14));
-  border-color: var(--svf-frame, hsl(214 8% 22%));
-  color: var(--svf-gold, #c9a227);
+  background: color-mix(in srgb, var(--destructive, #dc2626) 12%, transparent);
+  border-color: color-mix(in srgb, var(--destructive, #dc2626) 35%, transparent);
+  color: var(--destructive, #dc2626);
+  font-weight: 500;
 }
 
 /* SVF 令牌桥接：非 shadcn 区域直接引用设计系统变量 */
@@ -717,30 +729,175 @@ html.dark.svf-opencut-active,
   background-image: none !important;
 }
 
-/* 时间轴 clip 中性灰底（细色条由 theme.ts 提供） */
+/* 时间轴 clip：分轨半透明胶片色 + 左色条，铺满轨道高度与时间宽度 */
 .svf-opencut-theme .svf-timeline-clip {
-  background-color: var(--svf-surface-3, #1f2638) !important;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  background-color: var(--svf-timeline-surface, #1a2030) !important;
   border: 1px solid var(--svf-frame, #2a3347) !important;
+  border-top-color: transparent !important;
+  border-bottom-color: transparent !important;
   border-left-width: 3px !important;
+  border-right-color: var(--svf-frame, #2a3347) !important;
   color: var(--svf-text, #e6eaf2) !important;
 }
 
+.svf-opencut-theme .svf-timeline-clip--text,
+.svf-opencut-theme .svf-timeline-clip--audio {
+  border-radius: 1px !important;
+  border-top-color: transparent !important;
+  border-bottom-color: transparent !important;
+}
+
 .svf-opencut-theme .svf-timeline-clip--video {
-  border-left-color: var(--svf-accent, #e0634a) !important;
+  background-color: hsl(11 55% 42% / 0.28) !important;
+  border-left-color: hsl(11 73% 59%) !important;
 }
 
 .svf-opencut-theme .svf-timeline-clip--text {
-  border-left-color: var(--svf-success, #4dbb8a) !important;
+  background-color: hsl(158 40% 36% / 0.3) !important;
+  border-left-color: hsl(158 61% 41%) !important;
 }
 
 .svf-opencut-theme .svf-timeline-clip--audio {
-  border-left-color: var(--svf-info, #6b9fd4) !important;
+  background-color: hsl(203 45% 40% / 0.28) !important;
+  border-left-color: hsl(203 55% 55%) !important;
 }
 
 .svf-opencut-theme .svf-timeline-clip--graphic {
+  background-color: hsl(48 45% 38% / 0.28) !important;
   border-left-color: var(--svf-gold, #c9a227) !important;
 }
 
 .svf-opencut-theme .svf-timeline-clip--effect {
+  background-color: hsl(214 12% 28% / 0.45) !important;
   border-left-color: var(--svf-text-muted, #8b95a8) !important;
+}
+
+.svf-opencut-theme .svf-timeline-clip[data-display-tier="bar"] {
+  border-left-width: 2px !important;
+  padding: 0 !important;
+}
+
+.svf-opencut-theme .svf-timeline-clip[data-display-tier="compact"] {
+  padding-left: 4px !important;
+  font-size: 10px !important;
+}
+
+/* 选中 clip：内描边，避免 box-shadow 撑出大红块 */
+.svf-opencut-theme .svf-timeline-clip--selected {
+  outline: 1.5px solid hsl(11 73% 59% / 0.85) !important;
+  outline-offset: -1.5px !important;
+}
+
+/* 时间轴内部按钮：透明热区，覆盖全局 button border-radius */
+section[data-svf-region="timeline"] .svf-timeline-resize-handle,
+section[data-svf-region="timeline"] .svf-timeline-clip-hit,
+.svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle,
+.svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-clip-hit {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+section[data-svf-region="timeline"] .svf-timeline-resize-handle,
+.svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle {
+  position: absolute;
+}
+
+section[data-svf-region="timeline"] .svf-timeline-resize-handle::after,
+.svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  pointer-events: none;
+  transition: background-color 120ms ease;
+}
+
+section[data-svf-region="timeline"] .svf-timeline-resize-handle[data-resize-side="left"]::after,
+.svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle[data-resize-side="left"]::after {
+  left: 0;
+}
+
+section[data-svf-region="timeline"] .svf-timeline-resize-handle[data-resize-side="right"]::after,
+.svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle[data-resize-side="right"]::after {
+  right: 0;
+}
+
+section[data-svf-region="timeline"] .svf-timeline-resize-handle:hover::after,
+section[data-svf-region="timeline"] .svf-timeline-resize-handle:focus-visible::after,
+.svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle:hover::after,
+.svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle:focus-visible::after {
+  background: hsl(11 73% 59% / 0.75);
+}
+
+/* ========== 文字对比度：时间码、次要文案、时间轴刻度 ========== */
+
+.svf-opencut-theme ::selection,
+html.svf-opencut-active ::selection {
+  background: hsl(214 8% 35%);
+  color: hsl(210 9% 96%);
+}
+
+.svf-opencut-theme.dark .svf-preview-timecode-current,
+html.dark.svf-opencut-active .svf-preview-timecode-current {
+  color: hsl(210 9% 96%) !important;
+  background: hsl(214 10% 18%);
+  border: 1px solid hsl(214 8% 30%);
+  border-radius: 4px;
+}
+
+.svf-opencut-theme.light .svf-preview-timecode-current,
+html.light.svf-opencut-active .svf-preview-timecode-current {
+  color: hsl(222 28% 14%) !important;
+  background: hsl(220 14% 94%);
+  border: 1px solid hsl(220 12% 84%);
+  border-radius: 4px;
+}
+
+.svf-opencut-theme.dark .svf-preview-timecode-meta,
+html.dark.svf-opencut-active .svf-preview-timecode-meta {
+  color: hsl(210 9% 72%) !important;
+}
+
+.svf-opencut-theme.light .svf-preview-timecode-meta,
+html.light.svf-opencut-active .svf-preview-timecode-meta {
+  color: hsl(220 10% 38%) !important;
+}
+
+.svf-opencut-theme.dark .svf-timeline-ruler-label,
+html.dark.svf-opencut-active .svf-timeline-ruler-label {
+  color: hsl(210 9% 70%) !important;
+}
+
+.svf-opencut-theme.light .svf-timeline-ruler-label,
+html.light.svf-opencut-active .svf-timeline-ruler-label {
+  color: hsl(220 10% 40%) !important;
+}
+
+.svf-opencut-theme.dark .svf-properties-empty-hint,
+html.dark.svf-opencut-active .svf-properties-empty-hint {
+  color: hsl(210 9% 68%) !important;
+}
+
+.svf-opencut-theme.light .svf-properties-empty-hint,
+html.light.svf-opencut-active .svf-properties-empty-hint {
+  color: hsl(220 10% 40%) !important;
+}
+
+.svf-opencut-theme .svf-timeline-clip .text-muted-foreground,
+html.svf-opencut-active .svf-timeline-clip .text-muted-foreground {
+  color: hsl(210 9% 88%) !important;
+}
+
+section[data-svf-region="timeline"] .text-muted-foreground,
+.svf-opencut-theme section[data-svf-region="timeline"] .text-muted-foreground {
+  color: hsl(210 9% 72%) !important;
 }

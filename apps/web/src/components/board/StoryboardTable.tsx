@@ -1,134 +1,172 @@
 /**
- * 分镜计划稿表格：镜号、时间、旁白/对白、画面、运镜、配音。
+ * 分镜紧凑表格：精简列、行点击开详情。
  */
 
+import { useAppTranslation } from "../../i18n/useAppTranslation";
+import { AssetImagePreview } from "../AssetImagePreview";
 import { MediaPreview } from "../MediaPreview";
-import type { BoardView } from "../../types/board";
-
-/** 将毫秒格式化为 m:ss.s（与后端 time_label 一致）。 */
-function formatMs(ms: number): string {
-  const totalSec = Math.max(0, ms) / 1000;
-  const minutes = Math.floor(totalSec / 60);
-  const seconds = totalSec % 60;
-  const secStr = seconds.toFixed(1);
-  const paddedSec = secStr.length >= 4 ? secStr : secStr.padStart(4, "0");
-  return `${minutes}:${paddedSec}`;
-}
+import {
+  formatShotDurationDisplay,
+  type StoryboardShotView,
+} from "./storyboardShared";
 
 interface StoryboardTableProps {
-  board: BoardView;
+  shots: StoryboardShotView[];
   projectId?: string | null;
   scriptId?: string | null;
+  mergeMode?: boolean;
+  mergeSelection?: string[];
+  onOpenShot?: (shot: StoryboardShotView) => void;
 }
 
-/** 分镜 Tab 表格视图。 */
-export function StoryboardTable({ board, projectId, scriptId }: StoryboardTableProps) {
-  const items = board.items ?? [];
-  if (items.length === 0) {
-    return <p className="muted">分镜计划稿将在 storyboard_agent 完成后显示。</p>;
+/** 分镜紧凑表格视图。 */
+export function StoryboardTable({
+  shots,
+  projectId,
+  scriptId,
+  mergeMode = false,
+  mergeSelection = [],
+  onOpenShot,
+}: StoryboardTableProps) {
+  const { t } = useAppTranslation("board");
+
+  if (shots.length === 0) {
+    return <p className="muted">{t("storyboard.empty")}</p>;
   }
 
   return (
-    <div className="storyboard-table-wrap">
-      <table className="storyboard-table">
+    <div className="storyboard-table-wrap storyboard-table-wrap--compact">
+      <table className="storyboard-table storyboard-table--compact">
         <thead>
           <tr>
-            <th>镜号</th>
-            <th>时间</th>
-            <th>旁白 / 对白</th>
-            <th>画面</th>
-            <th>运镜</th>
-            <th>配音</th>
+            {mergeMode ? <th className="storyboard-table-merge-col" aria-hidden /> : null}
+            <th>{t("storyboard.colNum")}</th>
+            <th>{t("storyboard.colTime")}</th>
+            <th>{t("storyboard.colDialogue")}</th>
+            <th>{t("storyboard.colFrame")}</th>
+            <th>{t("storyboard.colMotion")}</th>
+            <th>{t("storyboard.colTts")}</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((raw, index) => {
-            const shot = raw as Record<string, unknown>;
-            const startMs = Number(shot.start_ms ?? 0);
-            const endMs = Number(shot.end_ms ?? startMs + Number(shot.duration_ms ?? 0));
-            const timeLabel =
-              typeof shot.time_label === "string" && shot.time_label
-                ? shot.time_label
-                : `${formatMs(startMs)} – ${formatMs(endMs)}`;
-            const timelineSource =
-              shot.timeline_source === "edit_timeline"
-                ? "剪辑时间轴"
-                : shot.timeline_source === "plan_estimate"
-                  ? "计划估算"
-                  : "";
-            const durationMs = Number(shot.duration_ms ?? 0);
-            const narration = String(shot.narration_text ?? "").trim();
-            const subtitleLines = Array.isArray(shot.subtitle_lines)
-              ? (shot.subtitle_lines as Array<Record<string, unknown>>)
-              : [];
-            const charNames = Array.isArray(shot.character_names)
-              ? (shot.character_names as string[]).filter(Boolean)
-              : [];
-            const frameUrl = shot.frame_preview_url ? String(shot.frame_preview_url) : "";
-            const frameName = shot.frame_asset_name ? String(shot.frame_asset_name) : "";
-            const camera = String(shot.camera_motion ?? "static");
-            const ttsUrl = shot.tts_audio_url ? String(shot.tts_audio_url) : "";
-
+          {shots.map((shot) => {
+            const selected = mergeSelection.includes(shot.id);
+            const activate = () => onOpenShot?.(shot);
             return (
-              <tr key={String(shot.id)}>
-                <td className="storyboard-table-num">{Number(shot.order ?? index) + 1}</td>
+              <tr
+                key={shot.id}
+                className={`${onOpenShot ? "storyboard-table-row--clickable" : ""}${
+                  mergeMode && selected ? " storyboard-table-row--merge-selected" : ""
+                }`.trim() || undefined}
+                role={onOpenShot ? "button" : undefined}
+                tabIndex={onOpenShot ? 0 : undefined}
+                onClick={onOpenShot ? activate : undefined}
+                onKeyDown={
+                  onOpenShot
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          activate();
+                        }
+                      }
+                    : undefined
+                }
+                aria-pressed={mergeMode ? selected : undefined}
+              >
+                {mergeMode ? (
+                  <td className="storyboard-table-merge-col" onClick={(e) => e.stopPropagation()}>
+                    <label className="storyboard-merge-check">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={activate}
+                        aria-label={t("storyboard.edit.mergeSelect", { num: shot.displayNumber })}
+                      />
+                    </label>
+                  </td>
+                ) : null}
+                <td className="storyboard-table-num">{shot.displayNumber}</td>
                 <td className="storyboard-table-time">
-                  <span>{timeLabel}</span>
-                  {timelineSource ? (
-                    <span className="muted storyboard-table-duration">({timelineSource})</span>
+                  <span className="tabular-nums">{shot.time_label}</span>
+                  {shot.timeline_source_label ? (
+                    <span className="storyboard-source-chip">{shot.timeline_source_label}</span>
                   ) : null}
-                  <span className="muted storyboard-table-duration">({durationMs / 1000}s)</span>
+                  <span
+                    className={
+                      shot.duration_drift
+                        ? "storyboard-table-duration storyboard-table-duration--drift"
+                        : "muted storyboard-table-duration"
+                    }
+                  >
+                    {formatShotDurationDisplay(shot, t)}
+                  </span>
+                  {shot.need_regen ? (
+                    <span className="storyboard-regen-badge">{t("storyboard.badgeNeedRegen")}</span>
+                  ) : null}
+                  {shot.pending_detail ? (
+                    <span className="storyboard-status-badge storyboard-status-badge--pending">
+                      {t("storyboard.badgePendingDetail")}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="storyboard-table-dialogue">
-                  {charNames.length > 0 && (
+                  {shot.character_names.length > 0 && (
                     <p className="storyboard-table-characters">
-                      角色：{charNames.join("、")}
+                      {t("storyboard.characters")}: {shot.character_names.join("、")}
                     </p>
                   )}
-                  {narration ? (
-                    <p className="storyboard-table-narration">{narration}</p>
+                  {shot.narration_text ? (
+                    <p className="storyboard-table-narration storyboard-table-narration--clamp">
+                      {shot.narration_text}
+                    </p>
                   ) : (
                     <span className="muted">—</span>
                   )}
-                  {subtitleLines.length > 0 && (
-                    <ul className="storyboard-subtitle-lines muted">
-                      {subtitleLines.map((line, lineIdx) => {
-                        const absStart = Number(line.absolute_start_ms ?? line.start_ms ?? 0);
-                        const absEnd = Number(line.absolute_end_ms ?? line.end_ms ?? absStart);
-                        const text = String(line.text ?? "").trim();
-                        if (!text) return null;
-                        return (
-                          <li key={`${String(shot.id)}-sub-${lineIdx}`}>
-                            {formatMs(absStart)}–{formatMs(absEnd)} {text}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
+                  {shot.subtitle_lines.length > 0 ? (
+                    <span className="muted storyboard-shot-summary">
+                      {t("storyboard.subtitleSummary", { count: shot.subtitle_lines.length })}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="storyboard-table-frame">
-                  {frameUrl ? (
-                    <MediaPreview
-                      kind="image"
-                      url={frameUrl}
-                      label={frameName || "画面"}
-                      projectId={projectId}
-                      scriptId={scriptId}
-                      className="storyboard-frame-preview"
-                    />
-                  ) : frameName ? (
-                    <span className="muted">{frameName}</span>
+                  {shot.frame_preview_url ? (
+                    <div className="storyboard-frame-preview storyboard-frame-preview--compact">
+                      <AssetImagePreview
+                        url={shot.frame_preview_url}
+                        name={shot.frame_asset_name || t("storyboard.frameFallback")}
+                        size="card"
+                        projectId={projectId}
+                        scriptId={scriptId}
+                      />
+                    </div>
+                  ) : shot.preview_fallback_url ? (
+                    <div className="storyboard-frame-preview storyboard-frame-preview--compact storyboard-frame-preview--fallback">
+                      <AssetImagePreview
+                        url={shot.preview_fallback_url}
+                        alt={t("storyboard.previewFallbackVideo")}
+                        size="card"
+                        projectId={projectId}
+                        scriptId={scriptId}
+                      />
+                      <span className="storyboard-preview-source-chip">
+                        {t("storyboard.previewFallbackVideo")}
+                      </span>
+                    </div>
+                  ) : shot.frame_asset_name ? (
+                    <span className="muted">{shot.frame_asset_name}</span>
                   ) : (
                     <span className="muted">—</span>
                   )}
                 </td>
-                <td className="storyboard-table-motion">{camera}</td>
-                <td className="storyboard-table-tts">
-                  {ttsUrl ? (
+                <td className="storyboard-table-motion">
+                  <span title={shot.camera_motion_canonical}>{shot.camera_motion_label}</span>
+                </td>
+                <td className="storyboard-table-tts" onClick={(e) => e.stopPropagation()}>
+                  {shot.tts_audio_url ? (
                     <MediaPreview
                       kind="audio"
-                      url={ttsUrl}
-                      label="试听"
+                      url={shot.tts_audio_url}
+                      label={t("storyboard.previewTts")}
                       projectId={projectId}
                       scriptId={scriptId}
                       className="shot-tts-preview"

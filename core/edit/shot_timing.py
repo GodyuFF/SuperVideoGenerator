@@ -1,21 +1,22 @@
-"""分镜镜级时间轴解析与句级字幕时间。"""
+"""分镜镜级时间轴解析与句级字幕时间（新模型：直接来自镜内多轨结构）。
+
+镜内结构为权威源：镜时长由 shot_flatten.effective_shot_duration_ms 计算，全局偏移由
+shot_flatten.shot_offsets 累加；句级字幕直接来自 Shot.subtitles。无 TTS 对齐推断/降级。
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from core.edit.subtitle_align import build_cues_for_audio_media, cues_from_media_metadata
-from core.edit.timeline import (
-    _shot_tts_duration_ms,
-    build_tts_by_shot,
-    ensure_video_layers,
-    flat_video_clips,
-)
-from core.models.entities import EditClip, EditTimeline, VideoPlan, VideoPlanShot
+from core.edit.shot_flatten import effective_shot_duration_ms, shot_offsets
+from core.models.entities import EditClip, EditTimeline, Shot, VideoPlan
 from core.store.memory import MemoryStore
 
 TimelineSource = Literal["edit_timeline", "plan_estimate"]
+
+# EditTimeline 与镜内累加时长对齐容差（毫秒）
+PLAN_ALIGN_TOLERANCE_MS = 200
 
 
 @dataclass
@@ -27,6 +28,8 @@ class SubtitleLineView:
     end_ms: int
     absolute_start_ms: int
     absolute_end_ms: int
+    character: str = ""
+    color: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为 JSON 友好字典。"""
@@ -36,12 +39,14 @@ class SubtitleLineView:
             "end_ms": self.end_ms,
             "absolute_start_ms": self.absolute_start_ms,
             "absolute_end_ms": self.absolute_end_ms,
+            "character": self.character,
+            "color": self.color,
         }
 
 
 @dataclass
 class ShotTimingView:
-    """单镜在时间轴上的计划与实际区间。"""
+    """单镜在时间轴上的区间与句级字幕。"""
 
     shot_id: str
     order: int
@@ -90,25 +95,24 @@ def _clip_shot_order(clip: EditClip) -> int | None:
 
 def _main_video_clips(timeline: EditTimeline) -> list[EditClip]:
     """优先主视频层（z_index=0），否则取全部 video clip。"""
-    timeline = ensure_video_layers(timeline)
     main_layer = next(
         (layer for layer in timeline.video_layers if layer.z_index == 0),
         None,
     )
     if main_layer and main_layer.clips:
         return list(main_layer.clips)
-    return flat_video_clips(timeline)
+    out: list[EditClip] = []
+    for layer in sorted(timeline.video_layers, key=lambda item: item.z_index):
+        out.extend(layer.clips)
+    return out
 
 
-def _find_video_clip_for_shot(
-    timeline: EditTimeline,
-    shot: VideoPlanShot,
-) -> EditClip | None:
-    """按 shot_id / order 匹配视频 clip。"""
+def _find_video_clip_for_shot(timeline: EditTimeline, shot: Shot) -> EditClip | None:
+    """按 shot_id / order 匹配视频 clip（取该镜最早的主层片段）。"""
     candidates = _main_video_clips(timeline)
     by_shot: dict[str, EditClip] = {}
     by_order: dict[int, EditClip] = {}
-    for clip in candidates:
+    for clip in sorted(candidates, key=lambda c: c.start_ms):
         sid = _clip_shot_id(clip)
         if sid:
             by_shot.setdefault(sid, clip)
@@ -124,13 +128,13 @@ def _find_video_clip_for_shot(
 
 def _find_audio_clip_for_shot(
     timeline: EditTimeline,
-    shot: VideoPlanShot,
-    tts_by_shot: dict[str, str],
+    shot: Shot,
+    tts_by_shot: dict[str, str] | None = None,
 ) -> EditClip | None:
-    """按 metadata.shot_id 或 asset_ref 匹配 audio clip。"""
-    audio_clips = timeline.tracks.get("audio", [])
+    """按 shot_id 或 asset_ref 匹配 audio clip（取该镜最早片段）。"""
+    tts_by_shot = tts_by_shot or {}
     tts_id = tts_by_shot.get(shot.id)
-    for clip in audio_clips:
+    for clip in sorted(timeline.tracks.get("audio", []), key=lambda c: c.start_ms):
         if _clip_shot_id(clip) == shot.id:
             return clip
         if tts_id and clip.asset_ref == tts_id:
@@ -138,63 +142,39 @@ def _find_audio_clip_for_shot(
     return None
 
 
-def _estimate_shot_duration_ms(
-    store: MemoryStore,
-    shot: VideoPlanShot,
-    tts_by_shot: dict[str, str],
-) -> int:
-    """无时间轴时按 plan + TTS 估算镜时长。"""
-    duration = max(int(shot.duration_ms or 0), 1000)
-    tts_duration = _shot_tts_duration_ms(store, tts_by_shot.get(shot.id))
-    if tts_duration > duration:
-        duration = tts_duration
-    return duration
+def _shot_voice_duration_ms(shot: Shot) -> int:
+    """镜内配音（voice 轨）最大片段跨度，供展示 TTS 时长。"""
+    best = 0
+    for track in shot.audio_tracks:
+        if track.kind != "voice":
+            continue
+        for clip in track.clips:
+            best = max(best, int(clip.end_ms or 0) - int(clip.start_ms or 0))
+    return max(best, 0)
 
 
 def _build_subtitle_lines(
-    store: MemoryStore,
-    shot: VideoPlanShot,
+    shot: Shot,
     *,
-    audio_clip: EditClip | None,
-    video_clip: EditClip | None,
-    tts_by_shot: dict[str, str],
+    offset_ms: int,
 ) -> list[SubtitleLineView]:
-    """解析镜内句级字幕（绝对时间 = audio 起点 + cue 偏移）。"""
-    base_ms = 0
-    if audio_clip is not None:
-        base_ms = audio_clip.start_ms
-    elif video_clip is not None:
-        base_ms = video_clip.start_ms
-
-    media = None
-    audio_ref = (audio_clip.asset_ref if audio_clip else None) or tts_by_shot.get(shot.id)
-    if audio_ref:
-        media = store.media_assets.get(audio_ref)
-
-    cues: list[dict[str, Any]] = []
-    if media:
-        cues = cues_from_media_metadata(media)
-        if not cues:
-            cues = build_cues_for_audio_media(
-                store,
-                media,
-                narration_text=shot.narration_text or "",
-            )
-
+    """把 Shot.subtitles 转为含绝对时间的句级字幕视图。"""
     lines: list[SubtitleLineView] = []
-    for cue in cues:
-        text = str(cue.get("text") or "").strip()
+    for sub in sorted(shot.subtitles, key=lambda s: s.start_ms):
+        text = (sub.text or "").strip()
         if not text:
             continue
-        rel_start = int(cue.get("start_ms") or 0)
-        rel_end = int(cue.get("end_ms") or rel_start + 500)
+        rel_start = int(sub.start_ms or 0)
+        rel_end = int(sub.end_ms or rel_start + 500)
         lines.append(
             SubtitleLineView(
                 text=text,
                 start_ms=rel_start,
                 end_ms=rel_end,
-                absolute_start_ms=base_ms + rel_start,
-                absolute_end_ms=base_ms + rel_end,
+                absolute_start_ms=offset_ms + rel_start,
+                absolute_end_ms=offset_ms + rel_end,
+                character=(sub.character or "").strip(),
+                color=(sub.color or "").strip(),
             )
         )
     return lines
@@ -207,54 +187,28 @@ def resolve_shot_timings(
     plan: VideoPlan | None = None,
     timeline: EditTimeline | None = None,
 ) -> list[ShotTimingView]:
-    """解析每镜时间轴区间与句级字幕；有 EditTimeline 时以 clip 为准。"""
+    """解析每镜时间轴区间与句级字幕（镜内结构为权威源，确定性累加）。"""
+    del timeline  # 权威源为镜内结构，不再从 EditTimeline 反推
     if plan is None:
         plan = store.get_video_plan_for_script(script_id)
     if not plan or not plan.shots:
         return []
-    if timeline is None:
-        timeline = store.get_edit_timeline_for_script(script_id)
-
-    tts_by_shot = build_tts_by_shot(store, script_id)
     shots = sorted(plan.shots, key=lambda s: s.order)
+    offsets = shot_offsets(shots)
     views: list[ShotTimingView] = []
-    cursor = 0
-
     for shot in shots:
-        video_clip = _find_video_clip_for_shot(timeline, shot) if timeline else None
-        audio_clip = _find_audio_clip_for_shot(timeline, shot, tts_by_shot) if timeline else None
-        tts_duration = _shot_tts_duration_ms(store, tts_by_shot.get(shot.id))
-
-        if video_clip is not None:
-            start_ms = video_clip.start_ms
-            end_ms = video_clip.end_ms
-            source: TimelineSource = "edit_timeline"
-        else:
-            duration = _estimate_shot_duration_ms(store, shot, tts_by_shot)
-            start_ms = cursor
-            end_ms = cursor + duration
-            source = "plan_estimate"
-            cursor = end_ms
-
-        subtitle_lines = _build_subtitle_lines(
-            store,
-            shot,
-            audio_clip=audio_clip,
-            video_clip=video_clip,
-            tts_by_shot=tts_by_shot,
-        )
-
+        start_ms = offsets[shot.id]
+        duration = effective_shot_duration_ms(shot)
         views.append(
             ShotTimingView(
                 shot_id=shot.id,
                 order=shot.order,
-                duration_ms=int(shot.duration_ms or 0),
+                duration_ms=duration,
                 timeline_start_ms=start_ms,
-                timeline_end_ms=end_ms,
-                timeline_source=source,
-                tts_duration_ms=tts_duration,
-                subtitle_lines=subtitle_lines,
+                timeline_end_ms=start_ms + duration,
+                timeline_source="plan_estimate",
+                tts_duration_ms=_shot_voice_duration_ms(shot),
+                subtitle_lines=_build_subtitle_lines(shot, offset_ms=start_ms),
             )
         )
-
     return views

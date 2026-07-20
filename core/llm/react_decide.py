@@ -1,17 +1,19 @@
 """统一 tool_calls ReAct 决策：主编排与子 Agent 共用。"""
 
+import json
 from collections.abc import Callable
 from typing import Any
 
-from core.llm.agent.react_core import AgentRunContext, ReActDecision
+from core.llm.agent.react_core import AgentRunContext, ReActDecision, ToolCallDecision
 from core.conversation import ConversationStore
+from core.store.memory import MemoryStore
 from core.llm.client import LLMClient
-from core.llm.protocol import parse_react_tool_calls
-from core.llm.settings import LLMConfigManager
+from core.llm.protocol import parse_react_tool_calls_batch
+from core.llm.client.settings import LLMConfigManager
 from core.llm.streaming import OnDelta
 from core.execution.cancel import make_abort_checker
 from core.llm.tools.shared.agent_tools import ASK_USER_QUESTION_ACTION
-from core.llm.tools_schema import build_master_react_tools, build_sub_agent_react_tools
+from core.llm.prompt.tools.registry import build_master_react_tools, build_sub_agent_react_tools
 from core.llm.prompt.tools.registry import unique_actions
 from core.logging.setup import get_logger, log_stage
 from core.llm.model.chat_message import ChatMessage, chat_message
@@ -33,12 +35,10 @@ from core.llm.prompt.chat_messages import (
     master_channel_has_user,
     messages_to_chat_history,
 )
-from core.llm.prompt.history_compress import (
-    finalize_react_chat_history,
-    maybe_compress_chat_history,
-)
+from core.llm.prompt.history_compress import prepare_react_chat_history
 from core.llm.model.plan_context import trim_plan_status_history
-from core.llm.master.actions import pipeline_for_style
+from core.llm.master.actions import STEP_META
+from core.llm.master.delegate_deps import delegates_for_style
 from core.llm.prompt.context_manager import AgentContextManager
 from core.llm.prompt.context_window import prepare_master_context
 from core.llm.prompt.project_context import format_project_context_header
@@ -50,7 +50,7 @@ from core.llm.tool_call_guard import (
     is_placeholder_parse_error,
     is_placeholder_tool_call,
 )
-from core.store.memory import MemoryStore
+from core.llm.tool_call_batch import ReactChannel, validate_tool_call_batch
 
 logger = get_logger("core.llm.react_decide")
 
@@ -72,11 +72,30 @@ def sanitize_action(action: str, allowed: list[str]) -> str:
     raise ValueError(f"非法 action「{action}」，允许: {allowed}")
 
 
-def _finalize_react_decision(decision: ReActDecision, allowed_actions: list[str]) -> ReActDecision:
-    try:
-        decision.action = sanitize_action(decision.action, allowed_actions)
-    except ValueError as e:
-        raise RuntimeError(str(e)) from e
+def _finalize_react_decision(
+    decision: ReActDecision,
+    allowed_actions: list[str],
+    *,
+    channel: ReactChannel = "sub_agent",
+) -> ReActDecision:
+    """校验并规范化 decision 内全部 tool_calls。"""
+    sanitized: list[ToolCallDecision] = []
+    for call in decision.calls:
+        action = sanitize_action(call.action, allowed_actions)
+        sanitized.append(
+            ToolCallDecision(
+                tool_call_id=call.tool_call_id,
+                action=action,
+                action_input=dict(call.action_input or {}),
+            )
+        )
+    decision.calls = sanitized
+    decision.batch_mode = validate_tool_call_batch(
+        [c.action for c in decision.calls],
+        channel=channel,
+    )
+    decision.action = decision.calls[0].action
+    decision.action_input = dict(decision.calls[0].action_input or {})
     return decision
 
 
@@ -113,8 +132,8 @@ _EDITING_NEXT_HINTS: list[tuple[frozenset[str], frozenset[str], str]] = [
     ),
     (
         frozenset({"gather_media"}),
-        frozenset({"compose_final"}),
-        "建议下一步：compose_final。",
+        frozenset({"finish"}),
+        "建议下一步：finish，并提示用户在剪辑助手内浏览器导出成片。",
     ),
 ]
 
@@ -172,15 +191,19 @@ async def _complete_react_decision(
             should_abort=should_abort,
         )
 
-    def _parse(result) -> ReActDecision:
+    def _parse(result, *, channel: ReactChannel) -> ReActDecision:
         assert_not_placeholder_tool_call(result)
-        decision = parse_react_tool_calls(result)
-        return _finalize_react_decision(decision, allowed_actions)
+        decision = parse_react_tool_calls_batch(result, channel=channel)
+        return _finalize_react_decision(decision, allowed_actions, channel=channel)
+
+    channel: ReactChannel = (
+        "master" if str(log_context.get("role", "")) == "master" else "sub_agent"
+    )
 
     result = await _call(request)
     parse_error: BaseException | None = None
     try:
-        return _parse(result)
+        return _parse(result, channel=channel)
     except (PlaceholderToolCallError, ValueError) as e:
         parse_error = e
 
@@ -198,7 +221,7 @@ async def _complete_react_decision(
     )
     retry_result = await _call(_request_with_placeholder_correction(request))
     try:
-        return _parse(retry_result)
+        return _parse(retry_result, channel=channel)
     except Exception as e:
         detail = format_placeholder_failure(
             retry_result,
@@ -223,23 +246,24 @@ def build_master_react_state_json(session: Any, *, use_chat_history: bool = Fals
         observations = prepared.observations
         include_observations = True
     extra["next_actions"] = session.next_actions()
-    from core.llm.master.actions import ACTION_TO_STEP, STEP_META
-    from core.llm.master.session import build_master_sub_agents
+    from core.llm.master.delegate_tool import (
+        build_sub_agents_orchestration_state,
+        eligible_agent_ids_from_readiness,
+    )
 
-    extra["sub_agents"] = [
-        {
-            "delegate": spec.delegate_action,
-            "step_type": spec.step_type,
-            "title": spec.display_name,
-            "depends_on": STEP_META.get(spec.step_type, {}).get("depends_on", ""),
-            "produces": STEP_META.get(spec.step_type, {}).get("produces", ""),
-            "completed": ACTION_TO_STEP.get(spec.delegate_action) in getattr(
-                session, "completed_step_types", set()
-            ),
-        }
-        for spec in build_master_sub_agents()
-        if spec.delegate_action in pipeline_for_style(session.style_mode)
-    ]
+    profile_id = str((session.extra or {}).get("prompt_profile_id") or "default")
+    readiness = list((session.extra or {}).get("delegate_readiness") or [])
+    completed_steps = set(getattr(session, "completed_step_types", set()) or set())
+    sub_agents, available_sub_agents = build_sub_agents_orchestration_state(
+        profile_id=profile_id,
+        style_mode=session.style_mode,
+        completed_step_types=completed_steps,
+        delegate_readiness=readiness,
+    )
+    extra["sub_agents"] = sub_agents
+    extra["available_sub_agents"] = available_sub_agents
+    if readiness:
+        extra["delegate_readiness"] = readiness
     if getattr(session, "execution_plan", None):
         extra["execution_plan"] = session.execution_plan
     history = trim_plan_status_history(getattr(session, "plan_status_history", []) or [])
@@ -270,26 +294,21 @@ def build_react_system(role_prompt: str = "", *, goal_mode: bool = False) -> str
 def build_master_react_turn_user(session: Any, *, use_chat_history: bool = False) -> str:
     """主编排 ReAct 动态编排状态（拼入 messages 末条 user）。"""
     state = build_master_react_state_json(session, use_chat_history=use_chat_history)
+    state_obj = json.loads(state)
     completed = session.completed_labels() or ["无"]
     next_acts = session.next_actions() or ["finish"]
+    available = state_obj.get("available_sub_agents") or []
     hint = (
         f"已完成：{', '.join(completed)}；"
-        f"建议下一步：{', '.join(next_acts)}。"
-        f"必须通过 tool_calls 调用 available_actions 中的函数。"
+        f"当前可委派 agent_id：{', '.join(available) if available else '无'}；"
+        f"next_actions：{', '.join(next_acts)}。"
+        f"必须通过 tool_calls 调用 available_actions 中的函数；委派时 agent_id 须从 available_sub_agents 选择。"
     )
     return build_react_state_turn_content(
         state,
         hint=hint,
         instructions=MASTER_STATE_INSTRUCTIONS,
     )
-
-
-def build_master_react_system(session: Any, *, use_chat_history: bool = False) -> str:
-    """兼容包装：静态 system + 状态块拼接（测试/日志用）。"""
-    goal_mode = str(session.extra.get("execution_mode", "")) == ExecutionMode.GOAL.value
-    static = build_react_static_system(session.agent.description, goal_mode=goal_mode)
-    turn = build_master_react_turn_user(session, use_chat_history=use_chat_history)
-    return f"{static.rstrip()}\n\n{turn}"
 
 
 async def decide_react(
@@ -362,9 +381,20 @@ async def decide_master_session(
     )
     allowed = session.available_actions()
     prompt_actions = filter_available_actions(allowed, session.completed_labels())
+    readiness = list((session.extra or {}).get("delegate_readiness") or [])
+    from core.llm.master.delegate_tool import eligible_agent_ids_from_readiness
+
+    eligible_ids = eligible_agent_ids_from_readiness(
+        readiness,
+        getattr(session, "completed_step_types", set()) or set(),
+    )
     tools = build_master_react_tools(
         prompt_actions,
+        profile_id=session._profile_id(),
+        style_mode=session.style_mode,
         include_ask_user=ASK_USER_QUESTION_ACTION in prompt_actions,
+        delegate_readiness=readiness,
+        eligible_delegate_agent_ids=eligible_ids,
     )
     goal_mode = str(session.extra.get("execution_mode", "")) == ExecutionMode.GOAL.value
     static_system = build_react_static_system(
@@ -382,7 +412,7 @@ async def decide_master_session(
         "role": "master",
         "iteration": session.iteration,
     }
-    compressed = await maybe_compress_chat_history(
+    chat_history = await prepare_react_chat_history(
         client,
         config,
         messages=raw_chat,
@@ -395,9 +425,6 @@ async def decide_master_session(
         project_id=session.project_id,
         script_id=session.script_id,
         channel="master",
-    )
-    chat_history = await finalize_react_chat_history(
-        compressed, pin_first_user=True
     )
     request = build_llm_request(
         system_prompt=static_system,
@@ -480,9 +507,17 @@ async def decide_sub_agent(
     )
     completed_list = react_inputs["completed"] or ["无"]
     hint = _sub_agent_react_hint(ctx.agent_name, completed_list)
+    from core.llm.agent.prompt_resolver import resolve_prompt_profile
+
+    profile = resolve_prompt_profile(
+        ctx.agent_name,
+        style_mode=ctx.work_context.get("style_mode"),
+    )
     static_system = build_react_static_system(
         role_prompt,
         goal_mode=execution_mode == ExecutionMode.GOAL.value,
+        agent_name=ctx.agent_name,
+        profile=profile,
     )
     turn_user = build_react_state_turn_content(
         state_json,
@@ -513,7 +548,7 @@ async def decide_sub_agent(
         include_ask_user=ASK_USER_QUESTION_ACTION in prompt_actions,
     )
     estimate_prompt = f"{static_system.rstrip()}\n\n{turn_user}"
-    compressed = await maybe_compress_chat_history(
+    chat_history = await prepare_react_chat_history(
         client,
         config,
         messages=raw_chat,
@@ -527,7 +562,6 @@ async def decide_sub_agent(
         channel="agent",
         agent_name=ctx.agent_name,
     )
-    chat_history = await finalize_react_chat_history(compressed)
     return await decide_react(
         client,
         config,

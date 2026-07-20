@@ -1,144 +1,202 @@
 /**
- * 关系图看板：基于 nodes/edges 的简易 SVG 布局
+ * 关系图看板：React Flow + dagre LR 布局，支持缩放平移与节点预览侧栏。
  */
 
-import type { BoardEdge, BoardNode } from "../../types/board";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+  type Edge,
+  type Node,
+  type NodeMouseHandler,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
-const KIND_COLOR: Record<string, string> = {
-  project: "#1d4ed8",
-  script: "#1d9bf0",
-  character: "#22c55e",
-  scene: "#84cc16",
-  prop: "#a3e635",
-  plot: "#14b8a6",
-  video_plan: "#06b6d4",
-  image: "#f97316",
-  video: "#ef4444",
-  audio: "#a855f7",
-  final: "#dc2626",
-};
+import { useAppTranslation } from "../../i18n/useAppTranslation";
+import type { BoardEdge, BoardNode } from "../../types/board";
+import { GraphAssetNode, type GraphAssetNodeData } from "./graph/GraphAssetNode";
+import { GraphNodeInspector } from "./graph/GraphNodeInspector";
+import { LEGEND_KINDS } from "./graph/kindColors";
+import { useGraphThemeColors } from "./graph/useGraphThemeColors";
+import { layoutProjectGraph } from "./graph/layoutProjectGraph";
+import "./graph/graph-board.css";
+
+const nodeTypes = { asset: GraphAssetNode };
 
 interface GraphBoardProps {
   nodes: BoardNode[];
   edges: BoardEdge[];
+  /** 从预览侧栏打开完整资产详情。 */
+  onOpenDetail?: (node: BoardNode) => void;
 }
 
-export function GraphBoard({ nodes, edges }: GraphBoardProps) {
-  if (nodes.length === 0) {
-    return <p className="muted board-empty">暂无关联数据，生成剧本后将自动构图。</p>;
-  }
+/** 将 API 节点转为 React Flow 节点。 */
+function toFlowNodes(boardNodes: BoardNode[]): Node<GraphAssetNodeData>[] {
+  return boardNodes.map((n) => ({
+    id: n.id,
+    type: "asset",
+    position: { x: 0, y: 0 },
+    data: {
+      label: n.label,
+      subtitle: n.subtitle,
+      kind: n.kind,
+    },
+  }));
+}
 
-  const byGroup: Record<string, BoardNode[]> = {};
-  for (const n of nodes) {
-    const g = n.group ?? "default";
-    byGroup[g] = byGroup[g] ?? [];
-    byGroup[g].push(n);
-  }
+/** 将 API 边转为 React Flow 边（smoothstep）。 */
+function toFlowEdges(boardEdges: BoardEdge[]): Edge[] {
+  return boardEdges.map((e) => ({
+    id: e.id,
+    source: e.source,
+    target: e.target,
+    type: "smoothstep",
+    label: e.label,
+    pathOptions: { borderRadius: 16 },
+    animated: e.relation === "rag_reuse",
+  }));
+}
 
-  const groupOrder = ["project", "scripts", "shared_pool"];
-  const orderedGroups = [
-    ...groupOrder.filter((g) => byGroup[g]),
-    ...Object.keys(byGroup).filter((g) => !groupOrder.includes(g) && !g.startsWith("script_")),
-    ...Object.keys(byGroup).filter((g) => g.startsWith("script_")),
-  ];
+/** 画布挂载后自动 fitView。 */
+function GraphFitView({ nodeCount }: { nodeCount: number }) {
+  const { fitView } = useReactFlow();
 
-  const positions = new Map<string, { x: number; y: number }>();
-  let row = 0;
-  const colWidth = 160;
-  const rowHeight = 72;
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fitView({ padding: 0.18, duration: 280 });
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, [fitView, nodeCount]);
 
-  for (const group of orderedGroups) {
-    const items = byGroup[group] ?? [];
-    items.forEach((node, col) => {
-      positions.set(node.id, { x: 40 + col * colWidth, y: 40 + row * rowHeight });
-    });
-    row += 1;
-  }
+  return null;
+}
 
-  const maxX = Math.max(...[...positions.values()].map((p) => p.x), 200) + 120;
-  const maxY = Math.max(...[...positions.values()].map((p) => p.y), 100) + 60;
+/** 关系图主画布（需在 ReactFlowProvider 内）。 */
+function GraphBoardCanvas({
+  boardNodes,
+  boardEdges,
+  onOpenDetail,
+}: {
+  boardNodes: BoardNode[];
+  boardEdges: BoardEdge[];
+  onOpenDetail?: (node: BoardNode) => void;
+}) {
+  const { t } = useAppTranslation(["board"]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const graphTheme = useGraphThemeColors();
+
+  const { nodes: flowNodes, edges: flowEdges } = useMemo(() => {
+    const rawNodes = toFlowNodes(boardNodes);
+    const rawEdges = toFlowEdges(boardEdges);
+    return layoutProjectGraph(rawNodes, rawEdges);
+  }, [boardNodes, boardEdges]);
+
+  const displayNodes = useMemo(
+    () => flowNodes.map((n) => ({ ...n, selected: n.id === selectedId })),
+    [flowNodes, selectedId],
+  );
+
+  const selectedNode = useMemo(
+    () => (selectedId ? boardNodes.find((n) => n.id === selectedId) ?? null : null),
+    [boardNodes, selectedId],
+  );
+
+  const handleNodeClick: NodeMouseHandler = useCallback((_event, node) => {
+    setSelectedId(node.id);
+  }, []);
+
+  const handlePaneClick = useCallback(() => {
+    setSelectedId(null);
+  }, []);
+
+  const handleSelectNode = useCallback((nodeId: string) => {
+    setSelectedId(nodeId);
+  }, []);
+
+  const miniMapNodeColor = useCallback(
+    (node: Node<GraphAssetNodeData>) => graphTheme.getKindColor(node.data?.kind ?? ""),
+    [graphTheme],
+  );
 
   return (
-    <div className="graph-board-wrap">
-      <svg
-        className="graph-board-svg"
-        viewBox={`0 0 ${maxX} ${maxY}`}
-        role="img"
-        aria-label="资产关联图"
-      >
-        {edges.map((e) => {
-          const from = positions.get(e.source);
-          const to = positions.get(e.target);
-          if (!from || !to) return null;
-          const mx = (from.x + to.x) / 2;
-          const my = (from.y + to.y) / 2;
-          return (
-            <g key={e.id}>
-              <line
-                x1={from.x + 60}
-                y1={from.y + 24}
-                x2={to.x + 60}
-                y2={to.y + 24}
-                className="graph-edge"
-                strokeWidth={1.5}
-                markerEnd="url(#arrow)"
-              />
-              {e.label && (
-                <text
-                  x={mx + 60}
-                  y={my + 18}
-                  className="graph-edge-label"
-                  fontSize={10}
-                  textAnchor="middle"
-                >
-                  {e.label}
-                </text>
-              )}
-            </g>
-          );
-        })}
-        <defs>
-          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-            <path d="M0,0 L6,3 L0,6 Z" className="graph-edge" />
-          </marker>
-        </defs>
-        {nodes.map((n) => {
-          const p = positions.get(n.id);
-          if (!p) return null;
-          const fill = KIND_COLOR[n.kind];
-          const useFallback = !fill;
-          return (
-            <g key={n.id} transform={`translate(${p.x}, ${p.y})`} className="graph-node">
-              <rect
-                width={120}
-                height={48}
-                rx={6}
-                fill={fill ?? "var(--svf-frame)"}
-                fillOpacity={0.2}
-                stroke={fill ?? "var(--svf-frame)"}
-                className={useFallback ? "graph-node-fallback" : undefined}
-                strokeWidth={1.5}
-              />
-              <text x={8} y={18} className="graph-node-label" fontSize={11} fontWeight={600}>
-                {n.label.length > 14 ? `${n.label.slice(0, 14)}…` : n.label}
-              </text>
-              {n.subtitle && (
-                <text x={8} y={34} className="graph-node-subtitle" fontSize={9}>
-                  {n.subtitle.length > 16 ? `${n.subtitle.slice(0, 16)}…` : n.subtitle}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
-      <div className="graph-legend">
-        {Object.entries(KIND_COLOR).slice(0, 6).map(([k, c]) => (
-          <span key={k} className="legend-item">
-            <span className="legend-dot" style={{ background: c }} />
-            {k}
+    <div className="graph-board-root">
+      <div className="graph-board-canvas">
+        <ReactFlow
+          nodes={displayNodes}
+          edges={flowEdges}
+          nodeTypes={nodeTypes}
+          onNodeClick={handleNodeClick}
+          onPaneClick={handlePaneClick}
+          fitView
+          minZoom={0.15}
+          maxZoom={2}
+          proOptions={{ hideAttribution: true }}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable
+          panOnScroll
+          zoomOnScroll
+          zoomOnPinch
+          aria-label={t("board:graph.canvasLabel")}
+        >
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={20}
+            size={1}
+            color={graphTheme.dotColor}
+          />
+          <Controls
+            showInteractive={false}
+            position="bottom-left"
+            aria-label={t("board:graph.controlsLabel")}
+          />
+          <MiniMap
+            nodeColor={miniMapNodeColor}
+            maskColor={graphTheme.minimapMaskColor}
+            position="bottom-right"
+            aria-label={t("board:graph.minimapLabel")}
+          />
+          <GraphFitView nodeCount={flowNodes.length} />
+        </ReactFlow>
+      </div>
+
+      <GraphNodeInspector
+        node={selectedNode}
+        nodes={boardNodes}
+        edges={boardEdges}
+        onClose={() => setSelectedId(null)}
+        onOpenDetail={(node) => onOpenDetail?.(node)}
+        onSelectNode={handleSelectNode}
+      />
+
+      <div className="graph-board-legend" aria-label={t("board:graph.legendLabel")}>
+        {LEGEND_KINDS.filter((k) => boardNodes.some((n) => n.kind === k)).map((kind) => (
+          <span key={kind} className="legend-item">
+            <span className="legend-dot" data-kind={kind} />
+            {t(`board:graph.kinds.${kind}`, { defaultValue: kind })}
           </span>
         ))}
       </div>
     </div>
+  );
+}
+
+/** 项目资产关系图看板入口。 */
+export function GraphBoard({ nodes, edges, onOpenDetail }: GraphBoardProps) {
+  const { t } = useAppTranslation(["board"]);
+
+  if (nodes.length === 0) {
+    return <p className="muted board-empty">{t("board:graph.empty")}</p>;
+  }
+
+  return (
+    <ReactFlowProvider>
+      <GraphBoardCanvas boardNodes={nodes} boardEdges={edges} onOpenDetail={onOpenDetail} />
+    </ReactFlowProvider>
   );
 }

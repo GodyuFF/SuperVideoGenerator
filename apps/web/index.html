@@ -3,10 +3,298 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <meta name="theme-color" content="#080a0f" />
     <title>SuperVideoGenerator</title>
+    <style>
+      #svf-inline-boot {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #080a0f;
+        color: #e6eaf2;
+        overflow: hidden;
+      }
+      #svf-inline-boot .app-splash__ambient {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(224, 99, 74, 0.08), transparent 60%),
+          radial-gradient(ellipse 60% 40% at 100% 100%, rgba(201, 162, 39, 0.05), transparent 50%);
+      }
+      #svf-inline-boot .app-splash__sprocket {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 6px;
+        background: repeating-linear-gradient(
+          90deg,
+          transparent 0,
+          transparent 7px,
+          #5c667a 7px,
+          #5c667a 9px,
+          transparent 9px,
+          transparent 20px
+        );
+        opacity: 0.65;
+        animation: svf-sprocket-drift 2.4s linear infinite;
+      }
+      @keyframes svf-sprocket-drift {
+        from { background-position-x: 0; }
+        to { background-position-x: 40px; }
+      }
+      #svf-inline-boot .app-splash__body {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.85rem;
+        width: min(92vw, 40rem);
+        padding: 3rem 1.5rem 2.5rem;
+        text-align: center;
+      }
+      #svf-inline-boot .app-splash__eyebrow {
+        margin: 0 0 0.5rem;
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.72rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #e0634a;
+      }
+      #svf-inline-boot .app-splash__viewfinder {
+        position: relative;
+        width: min(78vw, 36rem);
+        height: min(45vw, 20.88rem);
+        margin-bottom: 0.5rem;
+      }
+      #svf-inline-boot .app-splash__corner {
+        position: absolute;
+        width: 1.75rem;
+        height: 1.75rem;
+        border-color: #e0634a;
+        border-style: solid;
+        opacity: 0.9;
+      }
+      #svf-inline-boot .app-splash__corner--tl { top: 0; left: 0; border-width: 3px 0 0 3px; }
+      #svf-inline-boot .app-splash__corner--tr { top: 0; right: 0; border-width: 3px 3px 0 0; }
+      #svf-inline-boot .app-splash__corner--bl { bottom: 0; left: 0; border-width: 0 0 3px 3px; }
+      #svf-inline-boot .app-splash__corner--br { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
+      #svf-inline-boot .app-splash__film-window {
+        position: absolute;
+        inset: 0.85rem 1.1rem;
+        border: 1px solid #2a3347;
+        border-radius: 3px;
+        background: #0d0f10;
+        overflow: hidden;
+        box-shadow: inset 0 0 32px rgba(0, 0, 0, 0.45);
+      }
+      #svf-inline-boot .app-splash__film-track {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        padding: 6px 10px;
+        animation: svf-film-roll 2.1s linear infinite;
+      }
+      @keyframes svf-film-roll {
+        from { transform: translateY(0); }
+        to { transform: translateY(-50%); }
+      }
+      #svf-inline-boot .app-splash__frame {
+        flex-shrink: 0;
+        height: 2.4rem;
+        border-radius: 2px;
+        border: 1px solid #222a3c;
+        position: relative;
+      }
+      #svf-inline-boot .app-splash__frame::after {
+        content: "";
+        position: absolute;
+        inset: 3px 5px;
+        border-radius: 1px;
+        opacity: 0.55;
+      }
+      #svf-inline-boot .app-splash__frame--tone-0::after {
+        background: linear-gradient(90deg, rgba(224, 99, 74, 0.35), rgba(224, 99, 74, 0.08));
+      }
+      #svf-inline-boot .app-splash__frame--tone-1::after {
+        background: linear-gradient(90deg, rgba(201, 162, 39, 0.28), rgba(201, 162, 39, 0.06));
+      }
+      #svf-inline-boot .app-splash__frame--tone-2::after {
+        background: linear-gradient(90deg, rgba(107, 159, 212, 0.22), rgba(107, 159, 212, 0.05));
+      }
+      #svf-inline-boot .app-splash__scanline {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, transparent, #e0634a 20%, rgba(255,255,255,0.85) 50%, #e0634a 80%, transparent);
+        box-shadow: 0 0 16px rgba(224, 99, 74, 0.22);
+        animation: svf-scan 2.4s ease-in-out infinite;
+      }
+      @keyframes svf-scan {
+        0%, 100% { top: 8%; opacity: 0.2; }
+        45% { opacity: 0.95; }
+        50% { top: 88%; opacity: 0.95; }
+      }
+      #svf-inline-boot .app-splash__grain {
+        position: absolute;
+        inset: 0;
+        opacity: 0.07;
+        pointer-events: none;
+      }
+      #svf-inline-boot .app-splash__title {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        margin: 0.25rem 0 0;
+        font-family: "Newsreader", Georgia, serif;
+        font-size: 2rem;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+      }
+      #svf-inline-boot .app-splash__brand-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #e0634a;
+        box-shadow: 0 0 12px rgba(224, 99, 74, 0.22);
+        animation: svf-dot-pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes svf-dot-pulse {
+        0%, 100% { transform: scale(0.88); opacity: 0.65; }
+        50% { transform: scale(1); opacity: 1; }
+      }
+      #svf-inline-boot .app-splash__tagline {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        font-size: 0.95rem;
+        color: #8e9aaf;
+      }
+      #svf-inline-boot .app-splash__status {
+        margin: 0.2rem 0 0.65rem;
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.85rem;
+        letter-spacing: 0.06em;
+        color: #b8c0d0;
+      }
+      #svf-inline-boot .app-splash__leader {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        width: 100%;
+        margin-top: 0.35rem;
+      }
+      #svf-inline-boot .app-splash__leader-track {
+        flex: 1;
+        height: 4px;
+        border-radius: 999px;
+        background: #222a3c;
+        overflow: hidden;
+      }
+      #svf-inline-boot .app-splash__leader-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #e0634a, #c9a227);
+        animation: svf-progress 2.4s ease-out forwards;
+      }
+      @keyframes svf-progress {
+        from { width: 0; }
+        to { width: 94%; }
+      }
+      #svf-inline-boot .app-splash__leader-mark {
+        min-width: 2rem;
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.72rem;
+        color: #5c667a;
+        text-align: right;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #svf-inline-boot .app-splash__sprocket,
+        #svf-inline-boot .app-splash__film-track,
+        #svf-inline-boot .app-splash__scanline,
+        #svf-inline-boot .app-splash__brand-dot,
+        #svf-inline-boot .app-splash__leader-fill {
+          animation: none;
+        }
+        #svf-inline-boot .app-splash__leader-fill { width: 94%; }
+      }
+    </style>
   </head>
   <body>
+    <div id="svf-inline-boot" aria-hidden="true">
+      <div class="app-splash__ambient"></div>
+      <div class="app-splash__sprocket"></div>
+      <div class="app-splash__body">
+        <p class="app-splash__eyebrow">暗房 · 胶片</p>
+        <div class="app-splash__viewfinder">
+          <span class="app-splash__corner app-splash__corner--tl"></span>
+          <span class="app-splash__corner app-splash__corner--tr"></span>
+          <span class="app-splash__corner app-splash__corner--bl"></span>
+          <span class="app-splash__corner app-splash__corner--br"></span>
+          <div class="app-splash__film-window">
+            <div class="app-splash__film-track">
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+              <div class="app-splash__frame app-splash__frame--tone-2"></div>
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+              <div class="app-splash__frame app-splash__frame--tone-2"></div>
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+              <div class="app-splash__frame app-splash__frame--tone-2"></div>
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+              <div class="app-splash__frame app-splash__frame--tone-2"></div>
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+            </div>
+            <div class="app-splash__scanline"></div>
+            <div class="app-splash__grain"></div>
+          </div>
+        </div>
+        <h1 class="app-splash__title">
+          <span class="app-splash__brand-dot"></span>
+          SuperVideoGenerator
+        </h1>
+        <p class="app-splash__tagline">从创意到成片</p>
+        <p class="app-splash__status" id="svf-inline-status">正在显影…</p>
+        <div class="app-splash__leader">
+          <div class="app-splash__leader-track">
+            <div class="app-splash__leader-fill"></div>
+          </div>
+          <span class="app-splash__leader-mark" id="svf-inline-progress">0</span>
+        </div>
+      </div>
+    </div>
     <div id="root"></div>
+    <script>
+      (function () {
+        var statuses = ["正在显影…", "载入工作区…", "校准取景器…"];
+        var idx = 0;
+        var statusEl = document.getElementById("svf-inline-status");
+        var progressEl = document.getElementById("svf-inline-progress");
+        setInterval(function () {
+          idx = (idx + 1) % statuses.length;
+          if (statusEl) statusEl.textContent = statuses[idx];
+        }, 720);
+        var start = performance.now();
+        function tick() {
+          var elapsed = performance.now() - start;
+          var p = Math.min(94, (elapsed / 2400) * 94);
+          if (progressEl) progressEl.textContent = String(Math.round(p));
+          if (p < 94) requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

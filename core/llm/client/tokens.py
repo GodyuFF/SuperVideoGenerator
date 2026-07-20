@@ -38,6 +38,7 @@ class TokenBreakdown:
     tools_tokens: int
     messages_tokens: int
     completion_budget_tokens: int
+    prompt_estimated_tokens: int
     total_estimated_tokens: int
     items: dict[str, TokenBreakdownItem] = field(default_factory=dict)
 
@@ -47,6 +48,7 @@ class TokenBreakdown:
             "tools_tokens": self.tools_tokens,
             "messages_tokens": self.messages_tokens,
             "completion_budget_tokens": self.completion_budget_tokens,
+            "prompt_estimated_tokens": self.prompt_estimated_tokens,
             "total_estimated_tokens": self.total_estimated_tokens,
             "breakdown": {k: v.to_dict() for k, v in self.items.items()},
         }
@@ -124,6 +126,7 @@ def estimate_request_breakdown(
         tools_tokens=tools_tokens,
         messages_tokens=messages_tokens,
         completion_budget_tokens=completion_budget,
+        prompt_estimated_tokens=prompt_total,
         total_estimated_tokens=total,
         items=items,
     )

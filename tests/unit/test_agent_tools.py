@@ -26,10 +26,11 @@ from core.models.entities import (
     TextAsset,
     TextAssetType,
     VideoPlan,
-    VideoPlanShot,
+    Shot,
     VideoStyleMode,
 )
 from core.store.memory import MemoryStore
+from tests.support.shot_fixtures import make_shot
 from tests.support.image_text_fixtures import character_content
 
 
@@ -58,7 +59,7 @@ def test_script_agent_has_crud_ad_hoc_actions():
 
 def test_should_hide_when_completed_one_time_vs_repeatable():
     assert should_hide_when_completed("parse_brief")
-    assert should_hide_when_completed("delegate_script_design")
+    assert not should_hide_when_completed("delegate_agent")
     assert not should_hide_when_completed("create_plot")
     assert not should_hide_when_completed("update_plot")
     assert not should_hide_when_completed("list_text_assets")
@@ -133,15 +134,8 @@ def test_read_only_executor_get_plan():
     store.set_video_plan(
         VideoPlan(
             script_id=script.id,
-            mode=VideoStyleMode.DYNAMIC_IMAGE,
-            shots=[
-                VideoPlanShot(
-                    order=0,
-                    duration_ms=3000,
-                    camera_motion="pan",
-                    narration_text="开场旁白",
-                )
-            ],
+            mode=VideoStyleMode.STORYBOOK,
+            shots=[make_shot(order=0, text="开场旁白")],
         )
     )
     executor = AgentToolExecutor(store)

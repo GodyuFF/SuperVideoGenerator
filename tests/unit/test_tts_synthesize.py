@@ -6,13 +6,15 @@ import pytest
 
 from core.llm.agent.react_core import AgentRunContext
 from core.llm.tools.tts.synthesize import (
+    _resolve_synthesized_duration_ms,
     collect_narration_items,
     persist_single_synthesized_audio,
     run_concurrent_tts_synthesis,
 )
-from core.models.entities import MediaAssetType, VideoPlan, VideoPlanShot, new_id
+from core.models.entities import MediaAssetType, VideoPlan, new_id
 from core.store.memory import MemoryStore
 from tests.support.fake_tts import fake_submaker_for_text, write_minimal_mp3
+from tests.support.shot_fixtures import make_shot
 
 
 @pytest.fixture
@@ -27,11 +29,8 @@ def tts_plan(store):
         id=new_id("plan"),
         script_id=script_id,
         shots=[
-            VideoPlanShot(
-                id="shot_1",
-                order=0,
-                duration_ms=3000,
-                narration_text="测试旁白一",
+            make_shot(order=0, duration_ms=3000, text="测试旁白一").model_copy(
+                update={"id": "shot_1"}
             ),
         ],
     )
@@ -90,15 +89,21 @@ def test_persist_single_synthesized_audio(tts_plan, store, tmp_path):
         ctx,
         {
             "shot_id": "shot_1",
-            "asset_id": "media_tts_1",
-            "label": "shot_0_narration",
+            "order": 0,
+            "text": "测试旁白一",
             "url": str(out),
             "duration_ms": 2500,
-            "voice_name": "zh-CN-XiaoxiaoNeural-Female",
-            "provider": "edge",
-            "text": "测试旁白一",
+            "subtitle_cues": [{"text": "测试旁白一", "start_ms": 0, "end_ms": 2500}],
         },
     )
     assert media is not None
     assert media.type == MediaAssetType.AUDIO
     assert media.metadata.get("shot_id") == "shot_1"
+
+
+def test_resolve_synthesized_duration_ms_prefers_file(tmp_path):
+    out = tmp_path / "a.mp3"
+    write_minimal_mp3(out)
+    sub = fake_submaker_for_text("hello", 1.0)
+    duration_ms, drift_ms = _resolve_synthesized_duration_ms(out, sub)
+    assert duration_ms > 0

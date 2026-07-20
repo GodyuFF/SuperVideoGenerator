@@ -16,5 +16,9 @@
   "qualityMedium": "Medium - Balanced",
   "qualityHigh": "High - Recommended",
   "qualityVeryHigh": "Very high - Largest file size",
+  "qualityLowShort": "Low",
+  "qualityMediumShort": "Med",
+  "qualityHighShort": "High",
+  "qualityVeryHighShort": "Max",
   "includeAudio": "Include audio in export"
 }

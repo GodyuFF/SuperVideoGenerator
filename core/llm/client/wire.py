@@ -6,6 +6,7 @@ from typing import Any
 
 from core.llm.model.chat_message import canonical_to_anthropic_messages
 from core.llm.model.llm_request import LlmRequest, ToolDefinition
+from core.llm.prompt.chat_messages import repair_tool_message_pairs
 
 
 def tools_to_anthropic(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
@@ -22,7 +23,7 @@ def tools_to_anthropic(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
 
 def llm_request_to_wire_messages(request: LlmRequest) -> list[dict[str, Any]]:
     """canonical messages → Anthropic wire messages（system 由顶层字段承载）。"""
-    return canonical_to_anthropic_messages(request.messages)
+    return canonical_to_anthropic_messages(repair_tool_message_pairs(request.messages))
 
 
 def llm_request_to_anthropic_payload(
@@ -51,8 +52,6 @@ def llm_request_to_anthropic_payload(
     return payload
 
 
-# 兼容旧调用名
-llm_request_to_wire_payload = llm_request_to_anthropic_payload
 tools_to_openai = tools_to_anthropic
 
 

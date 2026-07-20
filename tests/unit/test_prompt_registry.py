@@ -59,3 +59,13 @@ def test_extract_role_summary():
 
     summary = extract_role_summary("# Identity\n你是剧本 Agent，负责设计剧本。")
     assert "剧本 Agent" in summary
+
+
+
+def test_storyboard_storybook_role_requires_voice():
+    """storybook role 应写明 audio_tracks voice clip text 必填。"""
+    from core.llm.prompt.registry import get_agent_role_prompt
+
+    role = get_agent_role_prompt("storyboard_agent", PromptProfile.STORYBOOK)
+    assert "audio_tracks" in role
+    assert "voice" in role

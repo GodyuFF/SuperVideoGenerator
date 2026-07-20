@@ -90,7 +90,11 @@ export function A2UIModal({ request, onConfirm, onCancel }: Props) {
     );
   }
 
-  if (request.kind === "generic") {
+  if (
+    request.kind === "generic" ||
+    request.kind === "script_requirements" ||
+    request.kind === "plan_approval"
+  ) {
     return (
       <GenericQuestionModal
         request={request}
@@ -248,15 +252,34 @@ function GenericQuestionField({
   }
 
   if (component.component === "text") {
+    const isDuration =
+      component.id === "duration_sec" || /时长|秒/.test(component.label);
+    if (isDuration) {
+      return (
+        <label className="a2ui-field">
+          <strong>
+            {component.label}
+            {component.required && <span className="a2ui-required">*</span>}
+          </strong>
+          <input
+            className="a2ui-input"
+            type="number"
+            min={1}
+            value={String(value ?? "")}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </label>
+      );
+    }
     return (
       <label className="a2ui-field">
         <strong>
           {component.label}
           {component.required && <span className="a2ui-required">*</span>}
         </strong>
-        <input
-          className="a2ui-input"
-          type="text"
+        <textarea
+          className="a2ui-input a2ui-feedback"
+          rows={3}
           value={String(value ?? "")}
           onChange={(e) => onChange(e.target.value)}
         />

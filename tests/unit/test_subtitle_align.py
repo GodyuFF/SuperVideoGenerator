@@ -1,25 +1,25 @@
 """subtitle_align 与 TTS cue 持久化测试。"""
 
 from core.edit.subtitle_align import enrich_subtitles_from_audio
-from core.edit.timeline import compile_timeline_from_shots, normalize_tracks
+from core.edit.timeline import compile_timeline_from_shots, finalize_merged_timeline, normalize_tracks
 from core.models.entities import (
     AssetScope,
-    EditClip,
     EditTimeline,
     MediaAsset,
     MediaAssetType,
     Project,
     Script,
+    ShotSubtitle,
     TextAsset,
     TextAssetType,
     VideoPlan,
-    VideoPlanShot,
     VideoStyleMode,
 )
 from core.store.memory import MemoryStore
 from core.tts.subtitle import populate_legacy_submaker_with_full_text, subtitle_cues_from_submaker
 from edge_tts import SubMaker
 from tests.support.frame_fixtures import ensure_shot_frame_image
+from tests.support.shot_fixtures import make_shot
 
 
 def _store_with_audio_cues() -> MemoryStore:
@@ -49,13 +49,14 @@ def _store_with_audio_cues() -> MemoryStore:
     char.primary_media_id = media.id
     store.update_text_asset(char)
 
-    shot = VideoPlanShot(
+    narration = "第一句。第二句！"
+    shot = make_shot(
         order=0,
         duration_ms=6000,
-        narration_text="第一句。第二句！",
+        text=narration,
         camera_motion="ken_burns_in",
-        asset_refs={"character": [char.id]},
     )
+    shot.sub_shots[0].element_refs = {"character": [char.id]}
     ensure_shot_frame_image(
         store,
         project_id=project.id,
@@ -63,10 +64,10 @@ def _store_with_audio_cues() -> MemoryStore:
         shot=shot,
         image_url="https://images.test/t.png",
     )
-    plan = VideoPlan(script_id=script.id, mode=VideoStyleMode.DYNAMIC_IMAGE, shots=[shot])
+    plan = VideoPlan(script_id=script.id, mode=VideoStyleMode.STORYBOOK, shots=[shot])
     store.set_video_plan(plan)
 
-    sub_maker = populate_legacy_submaker_with_full_text(SubMaker(), shot.narration_text, 6.0)
+    sub_maker = populate_legacy_submaker_with_full_text(SubMaker(), narration, 6.0)
     cues = subtitle_cues_from_submaker(sub_maker)
     audio = MediaAsset(
         project_id=project.id,
@@ -77,7 +78,7 @@ def _store_with_audio_cues() -> MemoryStore:
         metadata={
             "shot_id": shot.id,
             "duration_ms": 6000,
-            "narration_text": shot.narration_text,
+            "narration_text": narration,
             "subtitle_cues": cues,
         },
     )
@@ -99,12 +100,24 @@ def test_subtitle_cues_from_punctuation_split():
 
 
 def test_enrich_subtitles_from_audio_splits_by_cues():
+    """镜内投影已含字幕时 enrich 为 no-op，timeline 保持原样。"""
     store = _store_with_audio_cues()
     script_id = store._test_script_id  # type: ignore[attr-defined]
     media_id = store._test_media_id  # type: ignore[attr-defined]
     audio_id = store._test_audio_id  # type: ignore[attr-defined]
     plan = store.get_video_plan_for_script(script_id)
     assert plan
+    shot = plan.shots[0]
+    shot = shot.model_copy(
+        update={
+            "subtitles": [
+                ShotSubtitle(start_ms=0, end_ms=3000, text="第一句。"),
+                ShotSubtitle(start_ms=3000, end_ms=6000, text="第二句！"),
+            ]
+        }
+    )
+    plan = plan.model_copy(update={"shots": [shot]})
+    store.set_video_plan(plan)
 
     timeline = EditTimeline(
         script_id=script_id,
@@ -125,7 +138,7 @@ def test_enrich_subtitles_from_audio_splits_by_cues():
                         "start_ms": 0,
                         "end_ms": 6000,
                         "asset_ref": audio_id,
-                        "metadata": {"shot_id": plan.shots[0].id},
+                        "metadata": {"shot_id": shot.id},
                     }
                 ],
                 "subtitle": [],
@@ -133,9 +146,7 @@ def test_enrich_subtitles_from_audio_splits_by_cues():
         ),
     )
     enriched = enrich_subtitles_from_audio(store, timeline, plan)
-    subs = enriched.tracks.get("subtitle", [])
-    assert len(subs) >= 2
-    assert all(isinstance(s.label, str) and s.label for s in subs)
+    assert enriched is timeline
 
 
 def test_compile_timeline_finalize_includes_split_subtitles():
@@ -144,8 +155,11 @@ def test_compile_timeline_finalize_includes_split_subtitles():
     audio_id = store._test_audio_id  # type: ignore[attr-defined]
     plan = store.get_video_plan_for_script(script_id)
     assert plan
-    from core.edit.timeline import finalize_merged_timeline
+    from core.edit.shot_detail_sync import sync_plan_from_tts
 
+    sync_plan_from_tts(store, script_id)
+    plan = store.get_video_plan_for_script(script_id)
+    assert plan
     timeline = compile_timeline_from_shots(
         store,
         script_id=script_id,

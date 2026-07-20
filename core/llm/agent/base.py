@@ -13,7 +13,7 @@ from core.events.emitter import EventEmitter
 from core.interaction_log.recorder import InteractionRecorder
 from core.llm.client import LLMClient
 from core.llm.react_decide import decide_sub_agent
-from core.llm.settings import LLMConfigManager
+from core.llm.client.settings import LLMConfigManager
 from core.models.entities import ExecutionMode, StepOutput
 from core.store.memory import MemoryStore
 
@@ -36,7 +36,7 @@ class ReActAgent:
         agent_config: Any | None = None,
         confirmation_manager: ConfirmationManager | None = None,
     ) -> None:
-        from core.llm.agent.config_manager import AgentConfigManager
+        from core.llm.agent.config_manager import get_agent_config_manager
 
         self._store = store
         self._emitter = emitter
@@ -44,10 +44,14 @@ class ReActAgent:
         self._llm_config = llm_config
         self._llm_client = llm_client
         self._recorder = recorder
-        self._agent_config = agent_config or AgentConfigManager()
+        self._agent_config = agent_config or get_agent_config_manager()
         self._confirmation = confirmation_manager
         self._runner = ReActRunner(emitter, conversations)
-        self._tool_registry = get_tool_registry()
+
+    @property
+    def _tool_registry(self):
+        """每次读取当前 ToolRegistry，避免热重载后子 Agent 仍持有旧 output_schema。"""
+        return get_tool_registry()
 
     def resolve_role_prompt(self, ctx: AgentRunContext) -> str:
         """按项目配置、全局模式与视频风格解析当前 role_prompt。"""
@@ -59,6 +63,7 @@ class ReActAgent:
             style_mode=style_mode,
             global_profiles=self._agent_config.get_profiles(),
             project=project,
+            config=self._agent_config,
         )
         role = bundle.role_prompt
         overlay = ctx.work_context.get("skill_overlay") or {}
@@ -80,6 +85,7 @@ class ReActAgent:
             style_mode=style_mode,
             global_profiles=self._agent_config.get_profiles(),
             project=project,
+            config=self._agent_config,
         )
         return build_action_system_prompt(self.name, profile)
 
@@ -109,6 +115,12 @@ class ReActAgent:
 
     async def execute_action(self, action: str, ctx: AgentRunContext) -> str:
         """执行单个 Action 并返回 Observation 文本。"""
+        if self.name == "storyboard_refine_agent":
+            from core.llm.tools.storyboard_refine.legacy_aliases import (
+                resolve_refine_action_alias,
+            )
+
+            action = resolve_refine_action_alias(action)
         ctx.last_action_ok = True
         if is_ask_user_question_action(action):
             if str(ctx.work_context.get("execution_mode", "")) == ExecutionMode.GOAL.value:
@@ -165,8 +177,38 @@ class ReActAgent:
         actions = ad_hoc_actions(self.name)
         return actions
 
+    def resolve_action_pipeline(
+        self,
+        ctx: AgentRunContext,
+        pipeline: list[str],
+    ) -> list[str]:
+        """子类可按 style_mode 等上下文过滤流水线 action 顺序。"""
+        return pipeline
+
     async def decide(self, ctx: AgentRunContext) -> ReActDecision:
+        from core.extensions.tool_filter import apply_skill_tool_filter
+        from core.llm.tools.agent_tool_config import (
+            resolve_effective_configurable_tools,
+            resolve_tool_override,
+            split_effective_tools_for_react,
+        )
+        from core.llm.agent.agent_registry import resolve_implementation_agent
+
         role_prompt = self.resolve_role_prompt(ctx)
+        overlay = ctx.work_context.get("skill_overlay")
+        style_mode = ctx.work_context.get("style_mode")
+        override = resolve_tool_override(
+            self.name,
+            style_mode=str(style_mode) if style_mode is not None else None,
+            global_profiles=self._agent_config.get_profiles(),
+            config=self._agent_config,
+        )
+        impl = resolve_implementation_agent(self.name, config=self._agent_config)
+        effective = resolve_effective_configurable_tools(self.name, impl, override)
+        if overlay:
+            effective = apply_skill_tool_filter(self.name, effective, overlay)
+        pipeline, reads, adhoc = split_effective_tools_for_react(impl, effective)
+        pipeline = self.resolve_action_pipeline(ctx, pipeline)
         return await decide_sub_agent(
             self._llm_client,
             self._llm_config,
@@ -174,9 +216,9 @@ class ReActAgent:
             conversations=self._conversations,
             display_name=self.display_name,
             role_prompt=role_prompt,
-            action_pipeline=self.get_action_pipeline(),
-            read_actions=self.get_read_actions(),
-            ad_hoc_actions=self.get_ad_hoc_actions(),
+            action_pipeline=pipeline,
+            read_actions=reads,
+            ad_hoc_actions=adhoc,
             store=self._store,
         )
 

@@ -15,5 +15,4 @@ if [ -f .env ]; then
   echo "已加载 .env 配置"
 fi
 
-.venv/scripts/python.exe -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload \
-  --reload-exclude 'data/*'
+.venv/scripts/python.exe -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8000

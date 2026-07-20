@@ -229,25 +229,46 @@ function RequestParams({ payload }: { payload: Record<string, unknown> }) {
   );
 }
 
+function firstLine(text: string, maxLen: number = 200): string {
+  const line = text.split("\n")[0].trim();
+  if (!line) return "（空）";
+  if (line.length <= maxLen) return line;
+  return `${line.slice(0, maxLen)}…`;
+}
+
+function LogMessageItem({ role, text }: { role: string; text: string }) {
+  const preview = firstLine(text, 100);
+  return (
+    <details className={`log-message log-message-collapsible role-${role}`}>
+      <summary className="log-message-summary">
+        <span className="log-message-role">{role}</span>
+        <span className="log-message-preview">{preview}</span>
+      </summary>
+      <pre className="log-preformatted log-message-text">{text || "（空）"}</pre>
+    </details>
+  );
+}
+
 function ChatMessagesView({ messages }: { messages: unknown[] }) {
   return (
     <div className="log-messages">
       {messages.map((raw, idx) => {
         if (!isRecord(raw)) {
           return (
-            <pre key={idx} className="log-preformatted">
-              {JSON.stringify(raw, null, 2)}
-            </pre>
+            <details key={idx} className="log-message log-message-collapsible">
+              <summary className="log-message-summary">
+                <span className="log-message-role">raw</span>
+                <span className="log-message-preview">#{idx + 1}</span>
+              </summary>
+              <pre className="log-preformatted log-message-text">
+                {JSON.stringify(raw, null, 2)}
+              </pre>
+            </details>
           );
         }
         const role = String(raw.role ?? "unknown");
         const text = formatMessageContent(raw.content);
-        return (
-          <div key={idx} className={`log-message role-${role}`}>
-            <div className="log-message-role">{role}</div>
-            <pre className="log-preformatted log-message-text">{text || "（空）"}</pre>
-          </div>
-        );
+        return <LogMessageItem key={idx} role={role} text={text} />;
       })}
     </div>
   );
@@ -287,15 +308,24 @@ function CollapsibleLogSection({
   );
 }
 
+/** 渲染 tools 列表；每一项可单独折叠（默认收起）。 */
 function ToolsView({ tools }: { tools: unknown[] }) {
   return (
     <div className="log-tools">
       {tools.map((raw, idx) => {
         if (!isRecord(raw)) {
           return (
-            <pre key={idx} className="log-preformatted">
-              {JSON.stringify(raw, null, 2)}
-            </pre>
+            <details key={idx} className="log-tool-item log-tool-item-collapsible">
+              <summary className="log-tool-header">
+                <span className="log-tool-name">#{idx + 1}</span>
+                <span className="log-meta-chip">raw</span>
+              </summary>
+              <div className="log-tool-body">
+                <pre className="log-preformatted">
+                  {JSON.stringify(raw, null, 2)}
+                </pre>
+              </div>
+            </details>
           );
         }
         const fn = isRecord(raw.function) ? raw.function : undefined;
@@ -303,24 +333,30 @@ function ToolsView({ tools }: { tools: unknown[] }) {
         const kind = raw.kind ? String(raw.kind) : "function";
         const agentName = raw.agent_name ? String(raw.agent_name) : "";
         const schema = raw.input_schema ?? fn?.parameters;
+        const hasBody =
+          typeof raw.description === "string" || schema != null;
         return (
-          <div key={idx} className="log-tool-item">
-            <div className="log-tool-header">
+          <details key={idx} className="log-tool-item log-tool-item-collapsible">
+            <summary className="log-tool-header">
               <span className="log-tool-name">{name}</span>
               <span className="log-meta-chip">{kind}</span>
-              {agentName && (
+              {agentName ? (
                 <span className="log-meta-chip">agent: {agentName}</span>
-              )}
-            </div>
-            {typeof raw.description === "string" && (
-              <p className="log-tool-desc">{raw.description}</p>
-            )}
-            {schema != null && (
-              <pre className="log-preformatted log-message-text">
-                {formatJsonBody(schema)}
-              </pre>
-            )}
-          </div>
+              ) : null}
+            </summary>
+            {hasBody ? (
+              <div className="log-tool-body">
+                {typeof raw.description === "string" ? (
+                  <p className="log-tool-desc">{raw.description}</p>
+                ) : null}
+                {schema != null ? (
+                  <pre className="log-preformatted log-message-text">
+                    {formatJsonBody(schema)}
+                  </pre>
+                ) : null}
+              </div>
+            ) : null}
+          </details>
         );
       })}
     </div>
@@ -373,8 +409,8 @@ function PayloadSection({
   if (!rawText) return null;
 
   const structured = isStructuredLlmRequest(body);
-  const legacyChat = !structured && isChatPayload(body);
-  const formatted = structured || legacyChat;
+  const chatRequest = !structured && isChatPayload(body);
+  const formatted = structured || chatRequest;
 
   return (
     <section className="log-payload-section">

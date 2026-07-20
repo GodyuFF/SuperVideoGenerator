@@ -19,15 +19,12 @@ interface EditorProviderProps {
 	children: React.ReactNode;
 	/** SVF 弹窗嵌入模式：不跳转 /projects，紧凑 loading。 */
 	embedded?: boolean;
-	/** 跳过 OPFS 存储迁移（SVF 项目由 bridge 托管）。 */
-	skipStorageMigration?: boolean;
 }
 
 export function EditorProvider({
 	projectId,
 	children,
 	embedded = false,
-	skipStorageMigration = false,
 }: EditorProviderProps) {
 	const { tDialogs } = useOpencutT();
 	const activeProject = useEditor((e) => e.project.getActiveOrNull());
@@ -65,7 +62,7 @@ export function EditorProvider({
 					(err.message.includes("not found") ||
 						err.message.includes("does not exist"));
 
-				if (isNotFound && embedded && skipStorageMigration && allowRetry) {
+				if (isNotFound && embedded && allowRetry) {
 					await new Promise((resolve) => setTimeout(resolve, 300));
 					if (alive) {
 						await loadProject(false);
@@ -73,7 +70,7 @@ export function EditorProvider({
 					return;
 				}
 
-				if (isNotFound && !embedded && !skipStorageMigration) {
+				if (isNotFound && !embedded) {
 					try {
 						const newProjectId = await editor.project.createNewProject({
 							name: "Untitled Project",
@@ -110,8 +107,7 @@ export function EditorProvider({
 		return () => {
 			alive = false;
 		};
-		// router 为稳定单例，勿加入依赖以免 loadProject notify 触发重复加载
-	}, [projectId, embedded, skipStorageMigration]);
+	}, [projectId, embedded]);
 
 	const loadingShellClass = embedded
 		? "bg-background flex h-full w-full items-center justify-center"
@@ -122,7 +118,7 @@ export function EditorProvider({
 			<div className={loadingShellClass}>
 				<div className="flex flex-col items-center gap-4">
 					<p className="text-destructive text-sm">{error}</p>
-					{embedded && skipStorageMigration && (
+					{embedded && (
 						<p className="muted text-sm">{tDialogs("embeddedRetryHint")}</p>
 					)}
 				</div>

@@ -1,9 +1,17 @@
 """交互日志持久化测试。"""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from core.events.emitter import EventEmitter
+from core.interaction_log.async_writer import (
+    InteractionLogWriter,
+    configure_interaction_log_writer,
+    reset_interaction_log_writer,
+)
 from core.interaction_log.file_store import InteractionFileStore
+from core.interaction_log.maintenance import run_startup_retention
 from core.interaction_log.models import InteractionRecord
 from core.interaction_log.recorder import InteractionRecorder
 from core.interaction_log.store import InteractionLogStore
@@ -19,6 +27,20 @@ def log_store(tmp_path):
 @pytest.fixture
 def file_store(tmp_path):
     return InteractionFileStore(tmp_path / "interactions")
+
+
+@pytest.fixture
+def async_writer(log_store, file_store):
+    """配置全局 InteractionLogWriter，测试结束重置。"""
+    configure_interaction_log_writer(log_store, file_store)
+    yield
+    reset_interaction_log_writer()
+
+
+@pytest.fixture
+def recorder_with_writer(log_store, file_store, async_writer):
+    """带异步 writer 的 InteractionRecorder。"""
+    return InteractionRecorder(log_store, file_store=file_store)
 
 
 @pytest.mark.asyncio
@@ -38,9 +60,8 @@ async def test_append_and_list(log_store):
 
 
 @pytest.mark.asyncio
-async def test_recorder_agent_action(log_store):
-    emitter = EventEmitter()
-    recorder = InteractionRecorder(log_store, emitter)
+async def test_recorder_agent_action(recorder_with_writer, log_store):
+    recorder = recorder_with_writer
     await recorder.record_agent_action(
         script_id="s1",
         agent_name="script_agent",
@@ -48,6 +69,7 @@ async def test_recorder_agent_action(log_store):
         action="parse_brief",
         observation="已解析",
     )
+    await recorder.flush()
     rows = log_store.list_records(script_id="s1", kind="agent_action")
     assert len(rows) == 1
     assert rows[0].source == "agent"
@@ -79,8 +101,8 @@ def test_file_store_append_and_read_tail(file_store):
 
 
 @pytest.mark.asyncio
-async def test_recorder_dual_write_sqlite_and_jsonl(log_store, file_store):
-    recorder = InteractionRecorder(log_store, file_store=file_store)
+async def test_recorder_dual_write_sqlite_and_jsonl(recorder_with_writer, log_store, file_store):
+    recorder = recorder_with_writer
     await recorder.record(
         InteractionRecord(
             kind="llm_response",
@@ -92,6 +114,7 @@ async def test_recorder_dual_write_sqlite_and_jsonl(log_store, file_store):
             created_at="2026-06-17T12:00:00Z",
         )
     )
+    await recorder.flush()
     sqlite_rows = log_store.list_records(script_id="dual_s1")
     assert len(sqlite_rows) == 1
     jsonl_rows = file_store.read_tail(
@@ -164,6 +187,10 @@ async def test_api_delete_interaction_logs(monkeypatch, tmp_path):
     log_dir = tmp_path / "interactions"
     api_state.state.interaction_log_store = InteractionLogStore(db_path)
     api_state.state.interaction_file_store = InteractionFileStore(log_dir)
+    configure_interaction_log_writer(
+        api_state.state.interaction_log_store,
+        api_state.state.interaction_file_store,
+    )
 
     api_state.state.interaction_log_store.append(
         InteractionRecord(
@@ -215,6 +242,95 @@ async def test_api_delete_interaction_logs(monkeypatch, tmp_path):
             )
             == []
         )
+    reset_interaction_log_writer()
+
+
+def test_append_many(log_store):
+    """批量插入多条记录。"""
+    records = [
+        InteractionRecord(
+            kind="api_request",
+            source="http",
+            script_id="s_batch",
+            summary=f"req-{i}",
+        )
+        for i in range(5)
+    ]
+    log_store.append_many(records)
+    rows = log_store.list_records(script_id="s_batch", limit=10)
+    assert len(rows) == 5
+
+
+def test_delete_older_than(log_store):
+    """按天数删除指定 kind。"""
+    old = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    recent = datetime.now(timezone.utc).isoformat()
+    log_store.append(
+        InteractionRecord(
+            kind="api_request",
+            source="http",
+            summary="old",
+            created_at=old,
+        )
+    )
+    log_store.append(
+        InteractionRecord(
+            kind="agent_action",
+            source="agent",
+            script_id="s1",
+            summary="old agent",
+            created_at=old,
+        )
+    )
+    log_store.append(
+        InteractionRecord(
+            kind="api_request",
+            source="http",
+            summary="new",
+            created_at=recent,
+        )
+    )
+    deleted = log_store.delete_older_than(30, kinds=("api_request",))
+    assert deleted == 1
+    rows = log_store.list_records(limit=10)
+    assert len(rows) == 2
+    kinds = {r.kind for r in rows}
+    assert "agent_action" in kinds
+
+
+def test_run_startup_retention(log_store):
+    """启动 retention 仅清理 api_request。"""
+    old = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    log_store.append(
+        InteractionRecord(
+            kind="api_request",
+            source="http",
+            summary="stale",
+            created_at=old,
+        )
+    )
+    deleted = run_startup_retention(log_store, days=30)
+    assert deleted == 1
+    assert log_store.list_records() == []
+
+
+def test_async_writer_batch_flush(log_store, file_store):
+    """InteractionLogWriter 批量落盘。"""
+    writer = InteractionLogWriter(log_store, file_store)
+    for i in range(3):
+        writer.enqueue(
+            InteractionRecord(
+                kind="llm_response",
+                source="llm",
+                script_id="async_s1",
+                summary=f"n{i}",
+                created_at="2026-06-17T12:00:00Z",
+            )
+        )
+    writer.flush()
+    assert len(log_store.list_records(script_id="async_s1")) == 3
+    assert file_store.list_log_files(project_id="")
+    writer.shutdown()
 
 
 def test_redact_api_key():

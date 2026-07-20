@@ -7,9 +7,15 @@ from typing import Any
 from core.conversation import ConversationStore
 from core.llm.client import LLMClient
 from core.llm.client.settings import LLMConfigManager
-from core.llm.model.chat_message import ChatMessage, chat_message, message_content_text
+from core.llm.model.chat_message import ChatMessage, chat_message
 from core.llm.model.llm_request import LlmRequest, ToolDefinition
-from core.llm.prompt.chat_messages import _with_summary_prefix, fit_chat_history
+from core.llm.prompt.chat_messages import (
+    _message_summary_text,
+    _with_summary_prefix,
+    apply_snippet_chat_history,
+    repair_tool_message_pairs,
+    split_messages_for_compression,
+)
 from core.llm.prompt.loader import load_text
 from core.llm.prompt.config import HISTORY_KEEP_MESSAGES
 from core.llm.client.tokens import estimate_request_breakdown
@@ -23,8 +29,9 @@ _SUMMARY_SYSTEM = load_text("rules/history_summary.md") or (
 
 
 def _message_line(msg: ChatMessage) -> str:
+    """将单条消息格式化为 LLM 摘要输入行（含行动与观察）。"""
     role = str(msg.get("role", "user"))
-    text = message_content_text(msg.get("content", "")).strip()
+    text = _message_summary_text(msg).strip()
     if not text:
         return ""
     return f"[{role}] {text}"
@@ -41,19 +48,10 @@ def _split_for_compression(
     keep: int,
     pin_first_user: bool,
 ) -> tuple[list[ChatMessage], list[ChatMessage]]:
-    if not messages or keep <= 0:
-        return list(messages), []
-    pinned: ChatMessage | None = None
-    pool = list(messages)
-    if pin_first_user and pool and pool[0].get("role") == "user":
-        pinned = pool.pop(0)
-    if len(pool) <= keep:
-        kept = ([pinned] if pinned else []) + pool
-        return kept, []
-    older = pool[: len(pool) - keep]
-    recent = pool[-keep:]
-    kept = ([pinned] if pinned else []) + recent
-    return kept, older
+    """按 ReAct 轮次切分，保留最近 keep 轮。"""
+    return split_messages_for_compression(
+        messages, keep=keep, pin_first_user=pin_first_user
+    )
 
 
 def estimate_request_over_window(
@@ -63,6 +61,7 @@ def estimate_request_over_window(
     messages: list[ChatMessage],
     config: LLMConfigManager,
 ) -> tuple[bool, Any]:
+    """判断预估输入 token 是否超过配置的 context_window_tokens。"""
     settings = config.get_settings()
     req = LlmRequest(
         system=system_prompt,
@@ -70,7 +69,7 @@ def estimate_request_over_window(
         messages=list(messages),
     )
     breakdown = estimate_request_breakdown(req, settings.max_tokens)
-    over = breakdown.total_estimated_tokens > settings.context_window_tokens
+    over = breakdown.prompt_estimated_tokens > settings.context_window_tokens
     return over, breakdown
 
 
@@ -109,10 +108,7 @@ async def maybe_compress_chat_history(
         messages, keep=keep_n, pin_first_user=pin_first_user
     )
     if not older:
-        fitted, snippet_summary = fit_chat_history(
-            messages, pin_first_user=pin_first_user
-        )
-        return _with_summary_prefix(fitted, snippet_summary)
+        return apply_snippet_chat_history(messages, pin_first_user=pin_first_user)
 
     block = _format_messages_block(older)
     log_ctx = dict(log_context or {})
@@ -120,7 +116,8 @@ async def maybe_compress_chat_history(
         logger,
         "llm.history_compress",
         "对话超窗，LLM 摘要较早历史",
-        estimated_tokens=breakdown.total_estimated_tokens,
+        prompt_estimated_tokens=breakdown.prompt_estimated_tokens,
+        total_estimated_tokens=breakdown.total_estimated_tokens,
         window=settings.context_window_tokens,
         dropped=len(older),
     )
@@ -153,13 +150,10 @@ async def maybe_compress_chat_history(
             "LLM 摘要失败，回退 snippet 滑窗",
             error=str(e),
         )
-        fitted, snippet_summary = fit_chat_history(
-            messages, pin_first_user=pin_first_user
-        )
-        return _with_summary_prefix(fitted, snippet_summary)
+        return apply_snippet_chat_history(messages, pin_first_user=pin_first_user)
 
     prefix = f"（较早对话 LLM 摘要）\n{summary_text}"
-    result = _with_summary_prefix(kept, prefix)
+    result = repair_tool_message_pairs(_with_summary_prefix(kept, prefix))
 
     if conversations and conversation_id and summary_text:
         try:
@@ -177,11 +171,49 @@ async def maybe_compress_chat_history(
     return result
 
 
-async def finalize_react_chat_history(
-    messages: list[ChatMessage],
+async def prepare_react_chat_history(
+    client: LLMClient,
+    config: LLMConfigManager,
     *,
+    messages: list[ChatMessage],
+    system_prompt: str,
+    tools: list[ToolDefinition] | None = None,
     pin_first_user: bool = False,
+    log_context: dict[str, Any] | None = None,
+    conversations: ConversationStore | None = None,
+    conversation_id: str = "",
+    project_id: str = "",
+    script_id: str = "",
+    channel: str = "master",
+    agent_name: str = "",
 ) -> list[ChatMessage]:
-    """LLM 压缩后的轻量 snippet 兜底。"""
-    fitted, summary = fit_chat_history(messages, pin_first_user=pin_first_user)
-    return _with_summary_prefix(fitted, summary)
+    """统一 ReAct 历史压缩入口：仅当输入 token 超窗时 LLM 摘要，否则保留完整历史。"""
+    if not messages:
+        return []
+
+    over, _ = estimate_request_over_window(
+        system_prompt=system_prompt,
+        tools=tools,
+        messages=messages,
+        config=config,
+    )
+    if over:
+        compressed = await maybe_compress_chat_history(
+            client,
+            config,
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            pin_first_user=pin_first_user,
+            log_context=log_context,
+            conversations=conversations,
+            conversation_id=conversation_id,
+            project_id=project_id,
+            script_id=script_id,
+            channel=channel,
+            agent_name=agent_name,
+        )
+        return repair_tool_message_pairs(compressed)
+
+    return repair_tool_message_pairs(list(messages))
+

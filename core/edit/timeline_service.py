@@ -7,12 +7,14 @@ from typing import Any
 
 from core.edit.asset_resolver import validate_edit_timeline
 from core.edit.timeline import (
+    AUDIO_SUBTITLE_KEYS,
     MAX_VIDEO_LAYERS,
     TRACK_KEYS,
-    ensure_video_layers,
+    extract_agent_video_clips,
     normalize_tracks,
     normalize_video_layers,
-    sync_legacy_video_track,
+    resolve_agent_video_layers,
+    sync_timeline_duration_ms,
     timeline_board_items,
     timeline_duration_ms,
     validate_timeline_clips,
@@ -55,6 +57,23 @@ def timeline_view(store: MemoryStore, timeline: EditTimeline) -> dict[str, Any]:
     return board
 
 
+def empty_timeline_view(*, editable: bool) -> dict[str, Any]:
+    """尚未生成剪辑时间轴时的空视图（供 GET API 返回 200）。"""
+    return {
+        "timeline_id": "",
+        "plan_id": "",
+        "duration_ms": 0,
+        "revision": 0,
+        "user_edited": False,
+        "last_edited_by": "",
+        "updated_at": "",
+        "metadata": {},
+        "tracks": {key: [] for key in TRACK_KEYS},
+        "video_layers": [],
+        "editable": editable,
+    }
+
+
 def get_timeline_for_script(store: MemoryStore, script_id: str) -> dict[str, Any] | None:
     timeline = store.get_edit_timeline_for_script(script_id)
     if timeline is None:
@@ -77,6 +96,19 @@ def _mark_user_layer_metadata(layers: list[EditVideoLayer]) -> list[EditVideoLay
         clips = _mark_user_clip_metadata(layer.clips)
         out.append(layer.model_copy(update={"clips": clips}))
     return out
+
+
+def _sync_video_plan_from_timeline(
+    store: MemoryStore, script_id: str, timeline: EditTimeline
+) -> None:
+    """OpenCut 用户 PATCH 后将时间轴手改回写镜内 Shot 结构。"""
+    plan = store.get_video_plan_for_script(script_id)
+    if not plan or not plan.shots:
+        return
+    from core.edit.shot_flatten import apply_timeline_edits_to_shots
+
+    updated = apply_timeline_edits_to_shots(list(plan.shots), timeline)
+    store.set_video_plan(plan.model_copy(update={"shots": updated}))
 
 
 def patch_timeline(
@@ -105,17 +137,17 @@ def patch_timeline(
     if "video_layers" in body and isinstance(body["video_layers"], list):
         layers = normalize_video_layers(body["video_layers"])
         timeline.video_layers = _mark_user_layer_metadata(layers[:MAX_VIDEO_LAYERS])
-        sync_legacy_video_track(timeline)
 
     if "tracks" in body and isinstance(body["tracks"], dict):
         normalized = normalize_tracks(body["tracks"])
-        for key in ("audio", "subtitle"):
+        for key in AUDIO_SUBTITLE_KEYS:
             timeline.tracks[key] = _mark_user_clip_metadata(normalized.get(key, []))
-        if "video_layers" not in body and normalized.get("video"):
-            timeline.video_layers = normalize_video_layers(
-                None, legacy_video_clips=_mark_user_clip_metadata(normalized.get("video", []))
-            )
-            sync_legacy_video_track(timeline)
+        if "video_layers" not in body:
+            agent_video = extract_agent_video_clips(body["tracks"])
+            if agent_video:
+                timeline.video_layers = _mark_user_layer_metadata(
+                    resolve_agent_video_layers(None, _mark_user_clip_metadata(agent_video))
+                )
 
     if "duration_ms" in body and body["duration_ms"] is not None:
         try:
@@ -130,9 +162,8 @@ def patch_timeline(
 
     if timeline.duration_ms <= 0:
         timeline.duration_ms = timeline_duration_ms(timeline)
-
-    timeline = ensure_video_layers(timeline)
-    sync_legacy_video_track(timeline)
+    else:
+        timeline = sync_timeline_duration_ms(timeline)
 
     timeline.revision += 1
     timeline.user_edited = True
@@ -141,6 +172,7 @@ def patch_timeline(
 
     warnings = validate_timeline_clips(timeline)
     store.set_edit_timeline(timeline)
+    _sync_video_plan_from_timeline(store, script_id, timeline)
 
     view = timeline_view(store, timeline)
     view["warnings"] = warnings

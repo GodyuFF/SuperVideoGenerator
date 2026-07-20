@@ -12,6 +12,7 @@ from core.llm.tools.image.settings import ImageGenConfigManager, ImageGenSetting
 from core.llm.tools.tts.settings import TtsConfigManager, TtsSettings
 from core.llm.tools.video.settings import VideoGenConfigManager, VideoGenSettings
 from core.models.entities import ImageSourceMode
+from core.rag.settings import EmbeddingConfigManager, EmbeddingSettings
 
 DEFAULT_PATH = Path("data/ai_config.json")
 
@@ -57,6 +58,7 @@ def apply_persisted_config(
     tts: TtsConfigManager,
     export: ExportConfigManager,
     raw: dict[str, Any],
+    embedding: EmbeddingConfigManager | None = None,
 ) -> None:
     """用 JSON 中非空字段覆盖内存配置（JSON 优先于 .env）。"""
     llm_section = raw.get("llm")
@@ -97,18 +99,10 @@ def apply_persisted_config(
     export_section = raw.get("export")
     if isinstance(export_section, dict):
         _apply_fields(export.get_settings(), export_section)
-    # 兼容旧 remotion 节中的 fps/width/height
-    remotion_section = raw.get("remotion")
-    if isinstance(remotion_section, dict) and not export_section:
-        _apply_fields(
-            export.get_settings(),
-            {
-                "enabled": remotion_section.get("enabled"),
-                "fps": remotion_section.get("fps"),
-                "width": remotion_section.get("width"),
-                "height": remotion_section.get("height"),
-            },
-        )
+
+    embedding_section = raw.get("embedding")
+    if embedding is not None and isinstance(embedding_section, dict):
+        _apply_fields(embedding.get_settings(), embedding_section)
 
 
 def _settings_dict(settings: Any, fields: list[str]) -> dict[str, Any]:
@@ -128,12 +122,13 @@ def collect_persisted_config(
     video: VideoGenConfigManager,
     tts: TtsConfigManager,
     export: ExportConfigManager,
+    embedding: EmbeddingConfigManager | None = None,
 ) -> dict[str, Any]:
     """从各 ConfigManager 收集可持久化字段。"""
     ls: LLMSettings = llm.get_settings()
     pipeline = llm.get_image_text_defaults()
     es: ExportSettings = export.get_settings()
-    return {
+    data: dict[str, Any] = {
         "llm": {
             **_settings_dict(
                 ls,
@@ -237,3 +232,10 @@ def collect_persisted_config(
             ],
         ),
     }
+    if embedding is not None:
+        es_emb: EmbeddingSettings = embedding.get_settings()
+        data["embedding"] = _settings_dict(
+            es_emb,
+            ["enabled", "api_key", "base_url", "model"],
+        )
+    return data

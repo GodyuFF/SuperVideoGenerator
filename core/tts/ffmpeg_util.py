@@ -96,6 +96,10 @@ def ffmpeg_missing_message(ffmpeg: str | None = None) -> str:
 
 
 def configure_pydub_ffmpeg(audio_segment_cls) -> None:
+    """为 pydub 配置 FFmpeg / ffprobe 可执行路径（Windows 需完整路径）。"""
     configured = resolve_ffmpeg_binary()
-    if configured:
-        audio_segment_cls.converter = configured
+    if not configured:
+        return
+    audio_segment_cls.converter = configured
+    # imageio-ffmpeg 仅分发 ffmpeg.exe；用同一路径避免 WinError 2（找不到 ffprobe）
+    audio_segment_cls.ffprobe = configured

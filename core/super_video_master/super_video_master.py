@@ -1,21 +1,37 @@
 """超级视频大师主 Agent：ReAct 编排，与用户及子 Agent 对话隔离。"""
 
+from __future__ import annotations
+
+import time
+from typing import TYPE_CHECKING
+
 from core.llm.a2ui.manager import ConfirmationManager, ConfirmationRejectedError
 from core.conversation import ConversationIndex, ConversationStore
 from core.super_video_master import MASTER_AGENT_NAME
 from core.llm.master import MasterReActEngine
 from core.events.emitter import EventEmitter
 from core.interaction_log.recorder import InteractionRecorder
+from core.logging.perf import log_perf
 from core.logging.setup import get_logger, log_stage
-from core.guards.script_style import bind_script_style
+from core.guards.script_style import (
+    bind_script_style,
+    bind_script_style_hints,
+)
+from core.super_video_master.clarification import (
+    has_script_duration_context,
+    should_request_script_requirements,
+)
 from core.llm.execution_mode import is_goal_mode
 from core.llm.prompt.skills import load_skill, parse_skill_command
 from core.llm.client import LLMClient
 from core.llm.client.settings import LLMConfigManager
 from core.models.entities import ExecutionMode, GenerationMode, ScriptStatus, VideoStyleMode
-from core.llm.agent.config_manager import AgentConfigManager
+from core.llm.agent.config_manager import get_agent_config_manager
 from core.llm.agent.registry import AgentRegistry
 from core.store.memory import MemoryStore
+
+if TYPE_CHECKING:
+    from core.llm.agent.config_manager import AgentConfigManager
 
 logger = get_logger("core.super_video_master")
 
@@ -42,7 +58,7 @@ class SuperVideoMaster:
         self._llm_config = llm_config or LLMConfigManager()
         self._recorder = interaction_recorder
         self._llm_client = LLMClient(self._llm_config, self._recorder)
-        self._agent_config = agent_config or AgentConfigManager()
+        self._agent_config = agent_config or get_agent_config_manager()
         self._registry = AgentRegistry(
             store,
             emitter,
@@ -62,6 +78,18 @@ class SuperVideoMaster:
             self._llm_config,
             self._llm_client,
         )
+
+    def rebind_conversation_stores(
+        self,
+        conversations: ConversationStore,
+        conversation_index: ConversationIndex,
+    ) -> None:
+        """重绑对话仓储引用，使编排链路与 AppState 使用同一 ConversationStore。"""
+        self._conversations = conversations
+        self._conversation_index = conversation_index
+        self._react._conversations = conversations
+        for agent in self._registry._agents.values():
+            agent._conversations = conversations
 
     def _active_llm_client(self) -> LLMClient:
         """主编排与子 Agent 共用的 LLM 客户端（token 轮次绑定此实例）。"""
@@ -138,6 +166,7 @@ class SuperVideoMaster:
             script_id: str,
             message: str,
             requested_style: VideoStyleMode | None = None,
+            requested_hints: dict[str, str] | None = None,
             conversation_id: str | None = None,
             execution_mode: ExecutionMode | None = None,
             skill_id: str | None = None,
@@ -153,6 +182,7 @@ class SuperVideoMaster:
         if script.status == ScriptStatus.EXECUTING:
             raise ValueError("剧本正在执行中，请稍候")
 
+        run_start = time.perf_counter()
         user_text = message.strip()
         parsed_skill_id, parsed_rest = parse_skill_command(user_text)
         active_skill_id = skill_id or parsed_skill_id
@@ -191,26 +221,37 @@ class SuperVideoMaster:
             user_text = f"{prefix}\n\n用户诉求：{rest}" if rest else prefix
 
         goal = is_goal_mode(project, override=execution_mode)
+        # 对话线程标题优先用已确认的剧本标题，禁止用每轮用户消息摘要覆盖剧本名
         preview = user_text.replace("\n", " ")
         if len(preview) > 48:
             preview = preview[:48] + "…"
+        conversation_title = (script.title or "").strip() or preview
         conversation_id = self._ensure_conversation(
             project_id,
             script_id,
             conversation_id,
-            title=preview,
+            title=conversation_title,
         )
 
-        # 1. A2UI 需求补全（项目/剧本已有风格与时长时可跳过）
+        # 1. A2UI 需求补全（已有剧本正文，或风格+时长已知时可跳过）
         style_known = (
                 requested_style is not None
                 or script.style_locked
                 or project.config.style.mode is not None
         )
-        has_duration_context = bool(script.duration_sec) or any(
-            kw in user_text.lower() for kw in ["秒", "时长", "分钟"]
+        duration_known = has_script_duration_context(
+            user_text=user_text,
+            script_duration_sec=script.duration_sec,
+            script_style_hints=script.style_hints,
+            requested_hints=requested_hints,
         )
-        needs_clarification = not goal and not (style_known and has_duration_context)
+        has_existing_script_body = bool((script.content_md or "").strip())
+        needs_clarification = should_request_script_requirements(
+            goal=goal,
+            style_known=style_known,
+            has_duration_context=duration_known,
+            has_existing_script_body=has_existing_script_body,
+        )
 
         if needs_clarification:
             try:
@@ -218,6 +259,16 @@ class SuperVideoMaster:
                     script_id=script_id,
                     initial_message=user_text,
                     conversation_id=conversation_id,
+                    default_duration_sec=script.duration_sec or 60,
+                    default_style_mode=(
+                        requested_style.value
+                        if requested_style is not None
+                        else (
+                            project.config.style.mode.value
+                            if project.config.style.mode is not None
+                            else "storybook"
+                        )
+                    ),
                 )
                 # 用户已通过 A2UI 补充信息，将表单值合并到 user_text
                 values = req_response.values or {}
@@ -254,13 +305,15 @@ class SuperVideoMaster:
                 )
                 return conversation_id, "已取消。"
 
-        # 2. 绑定视频风格到剧本
+        # 2. 绑定视频风格与可选提示词到剧本（提示词随风格一并锁定）
+        style_hints = bind_script_style_hints(script, requested_hints)
         style_mode = bind_script_style(script, project, requested_style)
         await self._emitter.emit(
             {
                 "type": "script_style_locked",
                 "script_id": script_id,
-                "style_mode": style_mode.value,
+                "style_mode": style_mode,
+                "style_hints": style_hints,
             }
         )
         log_stage(
@@ -268,7 +321,7 @@ class SuperVideoMaster:
             "super_video_master",
             "剧本视频风格已绑定",
             script_id=script_id,
-            style_mode=style_mode.value,
+            style_mode=style_mode,
         )
 
         # 3. 主会话记录用户消息（ConversationStore master 通道）
@@ -279,10 +332,8 @@ class SuperVideoMaster:
             user_text,
         )
         self._conversation_index.touch_after_message(
-            conversation_id, title=preview
+            conversation_id, title=conversation_title
         )
-
-        script.title = preview or script.title
 
         log_stage(
             logger,
@@ -315,6 +366,17 @@ class SuperVideoMaster:
                         "id": skill_bundle.meta.id,
                         "title": skill_bundle.meta.title,
                         "agent_overlays": dict(skill_bundle.agent_overlays),
+                        "tool_manifest": (
+                            skill_bundle.tool_manifest.to_dict()
+                            if skill_bundle.tool_manifest
+                            else None
+                        ),
+                        "mcp_servers": (
+                            list(skill_bundle.tool_manifest.mcp_servers)
+                            if skill_bundle.tool_manifest
+                            and skill_bundle.tool_manifest.mcp_servers
+                            else []
+                        ),
                     }
                     if skill_bundle
                     else None
@@ -406,7 +468,9 @@ class SuperVideoMaster:
             }
         )
 
-        async def on_summary_delta(delta: str) -> None:
+        from core.llm.client.stream_delta_batcher import make_batched_delta_handler
+
+        async def emit_summary_delta(delta: str) -> None:
             await self._emitter.emit(
                 {
                     "type": "llm_stream_delta",
@@ -420,6 +484,8 @@ class SuperVideoMaster:
                     "agent_name": MASTER_AGENT_NAME,
                 }
             )
+
+        on_summary_delta, drain_summary = make_batched_delta_handler(emit_summary_delta)
 
         plan = self._store.get_plan(script_id)
         summary = await generate_user_summary(
@@ -435,6 +501,7 @@ class SuperVideoMaster:
             on_delta=on_summary_delta,
         )
 
+        await drain_summary()
         await self._emitter.emit(
             {
                 "type": "llm_stream_end",
@@ -459,5 +526,13 @@ class SuperVideoMaster:
             script_id=script_id,
             status=script.status.value,
             conversation_id=conversation_id,
+        )
+        log_perf(
+            "chat",
+            "run_from_message 完成",
+            duration_ms=(time.perf_counter() - run_start) * 1000,
+            script_id=script_id,
+            conversation_id=conversation_id,
+            status=script.status.value,
         )
         return conversation_id, summary

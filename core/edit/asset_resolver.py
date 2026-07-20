@@ -6,15 +6,15 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from core.edit.edit_capabilities import edit_capability_issues
-from core.edit.timeline import ensure_video_layers, resolve_shot_image_ref
+from core.edit.timeline import flat_video_clips, resolve_shot_image_ref
 from core.llm.tools.shared.media_list import is_placeholder_media_url, resolve_media_access
 from core.models.entities import (
     EditClip,
     EditTimeline,
     MediaAsset,
     MediaAssetType,
+    Shot,
     VideoPlan,
-    VideoPlanShot,
 )
 from core.store.memory import MemoryStore
 
@@ -135,14 +135,14 @@ def _resolve_from_variant_ids(
     return None
 
 
-def shot_by_id_for_script(store: MemoryStore, script_id: str) -> dict[str, VideoPlanShot]:
+def shot_by_id_for_script(store: MemoryStore, script_id: str) -> dict[str, Shot]:
     plan = store.get_video_plan_for_script(script_id)
     if not plan:
         return {}
     return {s.id: s for s in plan.shots}
 
 
-def _shots_by_order(plan: VideoPlan | None) -> dict[int, VideoPlanShot]:
+def _shots_by_order(plan: VideoPlan | None) -> dict[int, Shot]:
     if not plan:
         return {}
     return {s.order: s for s in plan.shots}
@@ -150,10 +150,10 @@ def _shots_by_order(plan: VideoPlan | None) -> dict[int, VideoPlanShot]:
 
 def _resolve_shot_for_clip(
     clip: EditClip,
-    shot_by_id: dict[str, VideoPlanShot],
+    shot_by_id: dict[str, Shot],
     *,
-    shots_by_order: dict[int, VideoPlanShot] | None = None,
-) -> VideoPlanShot | None:
+    shots_by_order: dict[int, Shot] | None = None,
+) -> Shot | None:
     """按 shot_id 或 video_plan_shot_order 解析镜头（兼容 Agent 占位 shot_id）。"""
     shot_id = ""
     if clip.source_refs and clip.source_refs.shot_id:
@@ -175,8 +175,6 @@ def _resolve_shot_for_clip(
     by_order = shots_by_order if shots_by_order is not None else {s.order: s for s in shot_by_id.values()}
     if order_raw in by_order:
         return by_order[order_raw]
-    if order_raw >= 1 and (order_raw - 1) in by_order:
-        return by_order[order_raw - 1]
     return None
 
 
@@ -185,7 +183,7 @@ def resolve_clip_media(
     clip: EditClip,
     *,
     script_id: str,
-    shot_by_id: dict[str, VideoPlanShot] | None = None,
+    shot_by_id: dict[str, Shot] | None = None,
 ) -> ResolvedClipMedia | None:
     """按优先级解析 clip 对应媒体；无法解析返回 None。"""
     expected_types = {
@@ -253,7 +251,7 @@ def resolve_clip_media(
 
 
 def _upstream_for_video_missing(
-    clip: EditClip, shot_by_id: dict[str, VideoPlanShot]
+    clip: EditClip, shot_by_id: dict[str, Shot]
 ) -> SuggestedUpstream:
     shot_id = (clip.source_refs.shot_id if clip.source_refs else "") or str(
         clip.metadata.get("shot_id") or ""
@@ -261,9 +259,6 @@ def _upstream_for_video_missing(
     if not shot_id and not clip.asset_ref:
         return "storyboard"
     if clip.source_refs and clip.source_refs.text_asset_ids:
-        return "image_gen"
-    shot = shot_by_id.get(shot_id) if shot_id else None
-    if shot and shot.asset_refs:
         return "image_gen"
     return "image_gen"
 
@@ -273,10 +268,9 @@ def validate_edit_timeline(
     timeline: EditTimeline,
 ) -> EditTimelineValidationReport:
     """校验时间轴素材是否齐备、可访问。"""
-    timeline = ensure_video_layers(timeline)
     script_id = timeline.script_id
     plan = store.get_video_plan_for_script(script_id)
-    shot_by_id: dict[str, VideoPlanShot] = {}
+    shot_by_id: dict[str, Shot] = {}
     if plan:
         shot_by_id = {s.id: s for s in plan.shots}
 

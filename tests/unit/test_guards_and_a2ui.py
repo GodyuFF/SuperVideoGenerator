@@ -35,7 +35,7 @@ def test_project_config_defaults():
 
   cfg = ProjectConfig()
   assert cfg.generation.mode == GenerationMode.AUTO
-  assert cfg.style.mode == VideoStyleMode.DYNAMIC_IMAGE
+  assert cfg.style.mode == VideoStyleMode.STORYBOOK
 
 
 def test_script_editable_only_when_not_executing():
@@ -247,6 +247,72 @@ async def test_confirmation_waits_indefinitely_until_user_responds():
     await task
     assert response.approved
     assert not mgr.has_pending()
+
+
+@pytest.mark.asyncio
+async def test_confirmation_timeout_emits_expired_and_resolve_reason():
+  """显式超时应推送 a2ui_confirmation_expired，迟到 resolve 返回 expired。"""
+  import asyncio
+
+  emitter = EventEmitter()
+  events: list[dict] = []
+
+  async def capture(e: dict) -> None:
+    events.append(e)
+
+  emitter.subscribe(capture)
+  mgr = ConfirmationManager(emitter, default_timeout=None)
+
+  with pytest.raises(ConfirmationTimeoutError) as exc_info:
+    await mgr.request(kind="generic", title="超时测试", timeout=0.05)
+
+  assert "用户确认超时" in str(exc_info.value)
+  types = [e.get("type") for e in events]
+  assert "a2ui_confirmation_expired" in types
+  assert "execution_resumed" in types
+  conf_id = exc_info.value.confirmation_id
+  result = mgr.resolve(
+    A2UIConfirmationResponse(confirmation_id=conf_id, approved=True)
+  )
+  assert result.resolved is False
+  assert result.reason == "expired"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_timeout_persists_expired_to_sqlite(tmp_path):
+  """超时后 SQLite 记录应为 expired（intent=expired）。"""
+  from core.conversation.sqlite_store import ConversationSqliteStore
+  from core.conversation.timeline import _a2ui_timeline_item
+
+  sqlite = ConversationSqliteStore(db_path=tmp_path / "a2ui_expire.db")
+  emitter = EventEmitter()
+  mgr = ConfirmationManager(emitter, default_timeout=None, sqlite_store=sqlite)
+
+  with pytest.raises(ConfirmationTimeoutError):
+    await mgr.request(
+      kind="generic",
+      title="超时落库",
+      timeout=0.05,
+      conversation_id="conv_expire",
+    )
+
+  records = sqlite.list_a2ui("conv_expire")
+  assert len(records) == 1
+  assert records[0].resolved_at is not None
+  assert records[0].approved is False
+  item = _a2ui_timeline_item(records[0])
+  assert item["status"] == "expired"
+
+
+def test_parse_a2ui_default_timeout():
+  """环境变量解析：空/0/none → None；正数 → float。"""
+  from apps.api.state import parse_a2ui_default_timeout
+
+  assert parse_a2ui_default_timeout("") is None
+  assert parse_a2ui_default_timeout("none") is None
+  assert parse_a2ui_default_timeout("0") is None
+  assert parse_a2ui_default_timeout("300") == 300.0
+  assert parse_a2ui_default_timeout("1.5") == 1.5
 
 
 @pytest.mark.asyncio

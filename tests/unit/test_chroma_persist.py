@@ -111,6 +111,55 @@ def test_persist_character_invokes_chroma(chroma_store, tmp_path):
     save_mock.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_persist_single_generated_image_async_offloads_io(chroma_store):
+    """异步落盘经 to_thread 执行同步下载/抠图，不占用事件循环线程。"""
+    from core.llm.agent.llm_action import persist_single_generated_image_async
+
+    project_id = chroma_store._pid  # type: ignore[attr-defined]
+    script_id = chroma_store._sid  # type: ignore[attr-defined]
+    char_id = chroma_store._cid  # type: ignore[attr-defined]
+
+    media_dir = script_media_dir(project_id, script_id)
+    media_dir.mkdir(parents=True, exist_ok=True)
+
+    def _fake_disk(**kwargs):
+        dest = media_dir / f"{kwargs['media_id']}.png"
+        dest.write_bytes(b"fake")
+        return f"projects/{project_id}/scripts/{script_id}/assets/media/{dest.name}"
+
+    ctx = AgentRunContext(
+        task_brief="",
+        work_context={"script_id": script_id, "project_id": project_id},
+        script_id=script_id,
+        step_id="t",
+        agent_name="image_agent",
+        project_id=project_id,
+    )
+
+    with patch(
+        "core.store.media_storage.persist_media_url_to_disk",
+        side_effect=_fake_disk,
+    ), patch(
+        "core.assets.chroma_key.apply_chroma_key_to_media",
+        return_value=True,
+    ), patch(
+        "core.llm.agent.llm_action.schedule_save",
+    ):
+        media = await persist_single_generated_image_async(
+            chroma_store,
+            ctx,
+            {
+                "url": "https://images.test/generated/base.png",
+                "source_text_asset_id": char_id,
+                "name": "主角",
+            },
+        )
+
+    assert media is not None
+    assert media.id.startswith("media_")
+
+
 @pytest.mark.skipif(not is_ffmpeg_available(), reason="FFmpeg 不可用")
 def test_reapply_chroma_for_script_integration(chroma_store, tmp_path):
     from tests.unit.test_chroma_key import _write_green_with_red_square

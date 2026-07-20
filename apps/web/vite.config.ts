@@ -71,17 +71,16 @@ export default defineConfig({
   },
 
   server: {
-
+    // 0.0.0.0：同时可被 127.0.0.1 与 localhost（含 Chromium 解析）访问，避免桌面壳白屏
+    host: true,
     port: 5173,
-
+    strictPort: true,
+    // 桌面壳由 Electron 承载 UI；禁止 Vite 自动打开系统浏览器
+    open: false,
     proxy: {
-
       "/api": "http://localhost:8000",
-
       "/ws": { target: "http://localhost:8000", ws: true },
-
     },
-
   },
 
   optimizeDeps: {

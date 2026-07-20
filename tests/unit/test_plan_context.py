@@ -1,6 +1,6 @@
 """Plan 模式上下文与 LLM 回写解析测试。"""
 
-from core.llm.plan_context import (
+from core.llm.model.plan_context import (
     PlanSlice,
     PlanUpdate,
     apply_plan_update_to_document,
@@ -44,11 +44,11 @@ def test_build_plan_slice_for_step():
             step,
         ],
     )
-    sl = build_plan_slice_for_step(plan, step, ["delegate_storyboard"])
+    sl = build_plan_slice_for_step(plan, step, ["storyboard_agent"])
     assert sl.goal == "G"
     assert sl.current_step["type"] == "image_gen"
     assert len(sl.completed_steps) == 1
-    assert sl.last_remaining_plan == ["delegate_storyboard"]
+    assert sl.last_remaining_plan == ["storyboard_agent"]
 
 
 def test_extract_plan_update():

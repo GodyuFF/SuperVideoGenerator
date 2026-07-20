@@ -4,35 +4,53 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChatMessageList } from "../components/ChatMessageList";
-import { ImageGenProgressModal, type ImageGenProgressItem } from "../components/ImageGenProgressModal";
+import { ChatPanel } from "../components/ChatPanel";
 import { SkillPicker } from "../components/SkillPicker";
 import { PlanPanel } from "../components/PlanPanel";
 import { BoardPanel } from "../components/board/BoardPanel";
 import { ProjectSwitcher } from "../components/ProjectSwitcher";
-import { MASTER_AGENT_NAME, styleModeLabel, type StyleMode, imageTextPresetLabel, comicPresetLabel } from "../constants";
+import {
+  IMAGE_STYLE_HINT_OPTIONS,
+  MASTER_AGENT_NAME,
+  TARGET_DURATION_HINT_OPTIONS,
+  buildStyleHintsPayload,
+  coerceStyleMode,
+  styleModeLabel,
+  type StyleHints,
+  type StyleMode,
+} from "../constants";
+import { useStyleModes } from "../hooks/useAgentConfig";
 import { useBoardData } from "../hooks/useBoardData";
 import { formatApiError, useProject, useWebSocket } from "../hooks/useApi";
 import {
   getLastConversationId,
   setLastConversationId,
 } from "../lib/localProjects";
+import { logPerf, logPerfBetween, logPerfMark, perfMeasure } from "../lib/perfLog";
 import type { BoardTabId } from "../types/board";
-import type {
-  ActionKind,
-  ChatMessage,
-  SubAgentTurnMessage,
-} from "../types/chat";
-import { normalizeActionInput } from "../types/chat";
-import type { AiConfig, ImageGenProgressEvent, PlanDocument, PlanViewState, StepOutput, A2UIConfirmationRequest } from "../types";
+import type { ChatMessage } from "../types/chat";
+import type { AiConfig, PlanDocument, WsEvent } from "../types";
+import { createDebouncedAsyncTask } from "../lib/asyncRefresh";
+import { apiFetch } from "../lib/apiFetch";
 import {
-  emptyPlanView,
-  mergePlanDocument,
-  patchPlanStep,
-  planFromApi,
-} from "../utils/planLabels";
+  AssetGenerationProvider,
+  useAssetGenerationController,
+} from "../context/AssetGenerationContext";
+import {
+  GenerationQueueProvider,
+  useGenerationQueueController,
+} from "../context/GenerationQueueContext";
+import { useChatStore } from "../stores/chatStore";
+import { usePlanStore } from "../stores/planStore";
+import { useWorkbenchWs } from "../hooks/useWorkbenchWs";
 import type { ConversationSummary } from "../types/conversation";
-import { isTimelineResponse, timelineToChatMessages } from "../utils/conversationTimeline";
+import {
+  isTimelineResponse,
+  timelineToChatMessages,
+  dedupeChatMessages,
+  earliestCreatedAtFromTimeline,
+  reassignChatRounds,
+} from "../utils/conversationTimeline";
 import {
   applySkillSelection,
   filterSkills,
@@ -45,6 +63,17 @@ import { AppNavTrail } from "../components/layout/AppNavTrail";
 
 const API = "/api";
 
+/** 生图完成后需刷新的看板 Tab（按 kind 增量刷新，避免无关 Tab 重绘）。 */
+const IMAGE_BOARD_TABS: BoardTabId[] = [
+  "character",
+  "scene",
+  "prop",
+  "frame",
+  "video_clip",
+  "storyboard",
+  "media",
+];
+
 type ExecutionMode = "interactive" | "goal";
 
 interface SkillMeta extends SkillOption {}
@@ -52,6 +81,7 @@ interface SkillMeta extends SkillOption {}
 interface ScriptMeta {
   style_mode?: string;
   style_locked?: boolean;
+  style_hints?: StyleHints;
   status?: string;
   title?: string;
   content_md?: string;
@@ -70,7 +100,17 @@ interface WorkbenchProps {
   onNavigateToProject: (projectId: string, scriptId?: string | null) => void;
 }
 
-export function Workbench({
+export function Workbench(props: WorkbenchProps) {
+  return (
+    <AssetGenerationProvider>
+      <GenerationQueueProvider>
+        <WorkbenchPage {...props} />
+      </GenerationQueueProvider>
+    </AssetGenerationProvider>
+  );
+}
+
+function WorkbenchPage({
   routeProjectId,
   routeScriptId = null,
   aiConfig,
@@ -83,6 +123,8 @@ export function Workbench({
   onNavigateToProject,
 }: WorkbenchProps) {
   const { t } = useTranslation();
+  const assetGenerationController = useAssetGenerationController();
+  const generationQueueController = useGenerationQueueController();
   const {
     projectId,
     scriptId,
@@ -100,6 +142,10 @@ export function Workbench({
     routeScriptId,
     onInvalidRoute: onBackHome,
   });
+
+  useEffect(() => {
+    logPerfMark("workbench", "Workbench 挂载", "workbench-mount");
+  }, []);
   const isScriptMode = workspaceMode === "script" && !!scriptId;
   const showReactDetails = aiConfig?.llm.show_react_details ?? true;
   const [boardTab, setBoardTab] = useState<BoardTabId>("overview");
@@ -107,48 +153,60 @@ export function Workbench({
   const [activeScriptTitle, setActiveScriptTitle] = useState("");
   const { board, scriptMeta, loading: boardLoading, error: boardError, refresh: refreshBoard } =
     useBoardData(projectId, scriptId, boardTab, workspaceMode);
-  const { events, sendConfirmation } = useWebSocket(
+  const wsEventHandlerRef = useRef<((event: WsEvent) => void) | null>(null);
+  const { sendConfirmation } = useWebSocket(
     projectId,
     scriptId,
-    isScriptMode
+    isScriptMode,
+    wsEventHandlerRef
   );
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const messages = useChatStore((s) => s.messages);
+  const setMessages = useChatStore((s) => s.setMessages);
+  const appendMessage = useChatStore((s) => s.appendMessage);
+  const resetChatMessages = useChatStore((s) => s.resetMessages);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [conversationList, setConversationList] = useState<ConversationSummary[]>([]);
   const [input, setInput] = useState("");
   const [skillPickerIndex, setSkillPickerIndex] = useState(0);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
-  const [planView, setPlanView] = useState<PlanViewState>(emptyPlanView);
+  const planView = usePlanStore((s) => s.planView);
+  const resetPlanView = usePlanStore((s) => s.resetPlanView);
+  const loadPlanFromStore = usePlanStore((s) => s.loadPlanFromApi);
   const [scriptStatus, setScriptStatus] = useState("draft");
-  const [styleMode, setStyleMode] = useState<StyleMode>("dynamic_image");
+  const [styleMode, setStyleMode] = useState<StyleMode>("storybook");
   const [styleLocked, setStyleLocked] = useState(false);
+  const [styleHints, setStyleHints] = useState<StyleHints>({});
+  const { modes: styleModeOptions } = useStyleModes();
+  const styleLabelMap = useMemo(
+    () => Object.fromEntries(styleModeOptions.map((m) => [m.id, m.label])),
+    [styleModeOptions],
+  );
+
+  useEffect(() => {
+    if (styleLocked) return;
+    setStyleMode((current) => coerceStyleMode(current, styleModeOptions));
+  }, [styleModeOptions, styleLocked]);
   const [executionMode, setExecutionMode] = useState<ExecutionMode>("interactive");
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [isAborting, setIsAborting] = useState(false);
+  const [loadingEarlierMessages, setLoadingEarlierMessages] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const earliestMessageAtRef = useRef<string | null>(null);
   const abortSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastEventIndex = useRef(0);
-  const eventsRef = useRef(events);
-  eventsRef.current = events;
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const activeConversationIdRef = useRef(activeConversationId);
   activeConversationIdRef.current = activeConversationId;
   const streamMessageIds = useRef<Map<string, string>>(new Map());
-  const streamDeltaBuffer = useRef(
-    new Map<string, { messageId: string; streamKind: string; delta: string }>(),
-  );
-  const streamFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatRoundRef = useRef(0);
   const stepMasterIteration = useRef<Map<string, number>>(new Map());
   const stepMasterRound = useRef<Map<string, number>>(new Map());
-  const [imageGenProgress, setImageGenProgress] = useState<{
-    open: boolean;
-    stepId: string;
-    total: number;
-    items: ImageGenProgressItem[];
-  }>({ open: false, stepId: "", total: 0, items: [] });
+  const conversationHydratedRef = useRef(false);
+  const pendingWsEventsRef = useRef<WsEvent[]>([]);
+  const wsChatReplayRef = useRef(false);
+  const handleWsEventRef = useRef<(e: WsEvent) => void>(() => {});
 
   const awaitingConfirmation = useMemo(
     () =>
@@ -187,10 +245,6 @@ export function Workbench({
     requestAnimationFrame(() => chatInputRef.current?.focus());
   }, []);
 
-  const appendMessage = useCallback((message: ChatMessage) => {
-    setMessages((m) => [...m, message]);
-  }, []);
-
   const appendSystemMessage = useCallback(
     (text: string) => {
       appendMessage({
@@ -223,195 +277,10 @@ export function Workbench({
     }, 30_000);
   }, [appendSystemMessage]);
 
-  const updateMessage = useCallback(
-    (id: string, updater: (msg: ChatMessage) => ChatMessage) => {
-      setMessages((m) => m.map((msg) => (msg.id === id ? updater(msg) : msg)));
-    },
-    []
-  );
-
-  /** 批量刷新 LLM 流式 delta，降低 Agent 执行期 setState 频率。 */
-  const flushStreamDeltas = useCallback(() => {
-    streamFlushTimer.current = null;
-    streamDeltaBuffer.current.forEach(({ messageId, streamKind, delta }) => {
-      if (streamKind === "react_thought" && showReactDetails) {
-        updateMessage(messageId, (msg) => {
-          if (msg.kind !== "react_turn") return msg;
-          return { ...msg, thought: msg.thought + delta };
-        });
-      } else if (streamKind === "llm_summary") {
-        updateMessage(messageId, (msg) => {
-          if (msg.kind !== "assistant") return msg;
-          return { ...msg, text: msg.text + delta };
-        });
-      }
-    });
-    streamDeltaBuffer.current.clear();
-  }, [showReactDetails, updateMessage]);
-
-  const upsertReactAction = useCallback(
-    (
-      round: number,
-      iteration: number,
-      action: string,
-      actionLabel: string | undefined,
-      actionKind: ActionKind | undefined,
-      actionInput: Record<string, string> | undefined
-    ) => {
-      setMessages((m) => {
-        const idx = m.findIndex(
-          (msg) =>
-            msg.kind === "react_turn" &&
-            msg.round === round &&
-            msg.iteration === iteration
-        );
-        if (idx === -1) {
-          return [
-            ...m,
-            {
-              kind: "react_turn" as const,
-              id: `turn-${round}-${iteration}-${Date.now()}`,
-              round,
-              iteration,
-              thought: "",
-              action,
-              actionLabel,
-              actionKind,
-              actionInput,
-            },
-          ];
-        }
-        return m.map((msg, i) =>
-          i === idx && msg.kind === "react_turn"
-            ? {
-                ...msg,
-                action,
-                actionLabel,
-                actionKind,
-                actionInput,
-              }
-            : msg
-        );
-      });
-    },
-    []
-  );
-
-  const handleA2uiSubmitted = useCallback(
-    (messageId: string, values: Record<string, unknown>, approved: boolean) => {
-      updateMessage(messageId, (msg) => {
-        if (msg.kind !== "a2ui_confirmation") return msg;
-        return {
-          ...msg,
-          status: approved ? "submitted" : "cancelled",
-          submittedValues: values,
-        };
-      });
-    },
-    [updateMessage]
-  );
-
-  const upsertSubAgentEvent = useCallback((e: Record<string, unknown>) => {
-    const stepId = e.step_id ? String(e.step_id) : "";
-    if (!stepId) return;
-    const eventType = String(e.type ?? "");
-    const iteration = Number(e.iteration ?? 0);
-    const round = chatRoundRef.current;
-
-    setMessages((m) => {
-      let idx = m.findIndex(
-        (msg) =>
-          msg.kind === "sub_agent" &&
-          msg.stepId === stepId &&
-          msg.round === round
-      );
-
-      if (idx === -1) {
-        const masterIter = stepMasterIteration.current.get(stepId);
-        const masterRound = stepMasterRound.current.get(stepId);
-        const insertAt =
-          masterIter !== undefined && masterRound !== undefined
-            ? m.findIndex(
-                (msg) =>
-                  msg.kind === "react_turn" &&
-                  msg.round === masterRound &&
-                  msg.iteration === masterIter
-              ) + 1
-            : m.length;
-        const newBlock: SubAgentTurnMessage = {
-          kind: "sub_agent",
-          id: `sub-${round}-${stepId}`,
-          stepId,
-          round,
-          agentName: String(e.agent_name ?? ""),
-          displayName: String(e.agent_display_name ?? e.agent_name ?? ""),
-          iterations: [],
-        };
-        const next = [...m];
-        next.splice(insertAt < 0 ? m.length : insertAt, 0, newBlock);
-        idx = insertAt < 0 ? next.length - 1 : insertAt;
-        m = next;
-      }
-
-      const block = m[idx];
-      if (block.kind !== "sub_agent") return m;
-
-      const updated: SubAgentTurnMessage = { ...block };
-
-      if (eventType === "agent_react_finished") {
-        updated.finished = {
-          iterations: Number(e.iterations ?? iteration),
-          outputCount: Number(e.output_count ?? 0),
-        };
-        return m.map((msg, i) => (i === idx ? updated : msg));
-      }
-
-      const iterIdx = updated.iterations.findIndex(
-        (it) => it.iteration === iteration
-      );
-      const iter =
-        iterIdx >= 0
-          ? { ...updated.iterations[iterIdx] }
-          : { iteration };
-
-      if (eventType === "agent_react_thought" && e.thought) {
-        iter.thought = String(e.thought);
-      }
-      if (eventType === "agent_react_action") {
-        iter.action = String(e.action ?? "");
-        const rawInput = e.action_input;
-        if (rawInput) {
-          iter.actionInput = normalizeActionInput(rawInput);
-        }
-      }
-      if (eventType === "agent_react_observation" && e.observation) {
-        iter.observation = String(e.observation);
-        if (String(e.action ?? "") === "generate_images") {
-          setImageGenProgress((prev) => ({ ...prev, open: false }));
-        }
-      }
-
-      if (iterIdx >= 0) {
-        updated.iterations = updated.iterations.map((it, i) =>
-          i === iterIdx ? iter : it
-        );
-      } else {
-        updated.iterations = [...updated.iterations, iter];
-      }
-
-      if (e.agent_name) updated.agentName = String(e.agent_name);
-      if (e.agent_display_name) {
-        updated.displayName = String(e.agent_display_name);
-      }
-
-      return m.map((msg, i) => (i === idx ? updated : msg));
-    });
-  }, []);
-
   const loadConversations = useCallback(async (): Promise<ConversationSummary[]> => {
     if (!projectId) return [];
     const q = scriptId ? `?script_id=${encodeURIComponent(scriptId)}` : "";
-    const r = await fetch(`${API}/projects/${projectId}/conversations${q}`);
+    const r = await apiFetch(`${API}/projects/${projectId}/conversations${q}`);
     if (!r.ok) return [];
     const items = (await r.json()) as ConversationSummary[];
     setConversationList(items);
@@ -419,43 +288,121 @@ export function Workbench({
   }, [projectId, scriptId]);
 
   const loadConversationMessages = useCallback(
-    async (conversationId: string) => {
+    async (conversationId: string, loadSeq?: number) => {
       if (!projectId) return;
+      conversationHydratedRef.current = false;
+      pendingWsEventsRef.current = [];
+      const seq = loadSeq ?? ++conversationLoadSeqRef.current;
+      const isStale = () => seq !== conversationLoadSeqRef.current;
+      const msgStart = performance.now();
       const r = await fetch(
-        `${API}/projects/${projectId}/conversations/${conversationId}/messages?view=full`
+        `${API}/projects/${projectId}/conversations/${conversationId}/messages?view=full&limit=80`
       );
-      if (!r.ok) return;
+      logPerf("workbench", "loadConversationMessages", {
+        duration_ms: Math.round(performance.now() - msgStart),
+        project_id: projectId,
+        script_id: scriptId,
+        conversation_id: conversationId,
+        view: "full",
+        status: r.status,
+      });
+      if (isStale()) return;
+      if (!r.ok) {
+        if (!isStale()) {
+          conversationHydratedRef.current = true;
+        }
+        return;
+      }
       const data = await r.json();
       if (isTimelineResponse(data)) {
-        setMessages(timelineToChatMessages(data.timeline));
-        chatRoundRef.current = data.timeline.filter(
-          (item) => item.type === "user"
-        ).length;
+        const timeline = data.timeline;
+        const mapped = reassignChatRounds(timelineToChatMessages(timeline));
+        setMessages(mapped);
+        setHasMoreMessages(Boolean(data.has_more));
+        earliestMessageAtRef.current =
+          (data.oldest_created_at ? String(data.oldest_created_at) : null) ??
+          earliestCreatedAtFromTimeline(timeline);
+        chatRoundRef.current = mapped.filter((item) => item.kind === "user").length;
       } else {
         const records = data as { role: string; content: string }[];
         setMessages(
-          records.map((m, i) =>
-            m.role === "user"
-              ? { kind: "user" as const, id: `hist-user-${i}`, text: String(m.content) }
-              : {
-                  kind: "assistant" as const,
-                  id: `hist-master-${i}`,
-                  text: String(m.content),
-                }
+          dedupeChatMessages(
+            records.map((m, i) =>
+              m.role === "user"
+                ? { kind: "user" as const, id: `hist-user-${i}`, text: String(m.content) }
+                : {
+                    kind: "assistant" as const,
+                    id: `hist-master-${i}`,
+                    text: String(m.content),
+                  }
+            )
           )
         );
       }
+      if (isStale()) return;
       setActiveConversationId(conversationId);
       if (scriptId) {
         setLastConversationId(projectId, scriptId, conversationId);
       }
-      lastEventIndex.current = eventsRef.current.length;
       streamMessageIds.current.clear();
       stepMasterIteration.current.clear();
       stepMasterRound.current.clear();
+      conversationHydratedRef.current = true;
+      const pending = pendingWsEventsRef.current.splice(0);
+      wsChatReplayRef.current = true;
+      for (const ev of pending) {
+        handleWsEventRef.current(ev);
+      }
+      wsChatReplayRef.current = false;
+      logPerfMark("workbench", "对话加载完成", "workbench-ready");
+      logPerfBetween(
+        "workbench",
+        "工作台首屏就绪",
+        "workbench-mount",
+        "workbench-ready",
+        {
+          project_id: projectId,
+          script_id: scriptId,
+          conversation_id: conversationId,
+        },
+      );
     },
-    [projectId, scriptId]
+    [projectId, scriptId, setMessages]
   );
+
+  const loadEarlierMessages = useCallback(async () => {
+    if (!projectId || !activeConversationId || loadingEarlierMessages) return;
+    const beforeRaw = earliestMessageAtRef.current;
+    if (!beforeRaw) return;
+    setLoadingEarlierMessages(true);
+    try {
+      const before = encodeURIComponent(beforeRaw);
+      const r = await fetch(
+        `${API}/projects/${projectId}/conversations/${activeConversationId}/messages?view=full&limit=80&before=${before}`,
+      );
+      if (!r.ok) return;
+      const data = await r.json();
+      if (!isTimelineResponse(data)) return;
+      const older = timelineToChatMessages(data.timeline);
+      setHasMoreMessages(Boolean(data.has_more));
+      const nextCursor =
+        (data.oldest_created_at ? String(data.oldest_created_at) : null) ??
+        earliestCreatedAtFromTimeline(data.timeline);
+      // 游标必须前进：否则同一 before 反复请求，表现为「点击无效」
+      if (nextCursor && nextCursor < beforeRaw) {
+        earliestMessageAtRef.current = nextCursor;
+      } else {
+        setHasMoreMessages(false);
+      }
+      setMessages((prev) => {
+        const merged = reassignChatRounds(dedupeChatMessages([...older, ...prev]));
+        chatRoundRef.current = merged.filter((m) => m.kind === "user").length;
+        return merged;
+      });
+    } finally {
+      setLoadingEarlierMessages(false);
+    }
+  }, [projectId, activeConversationId, loadingEarlierMessages, setMessages]);
 
   const startNewConversation = useCallback(async () => {
     if (!projectId || !scriptId) return;
@@ -470,8 +417,10 @@ export function Workbench({
     if (!r.ok) return;
     const data = (await r.json()) as { conversation_id: string };
     setActiveConversationId(data.conversation_id);
-    setMessages([]);
+    resetChatMessages();
     chatRoundRef.current = 0;
+    conversationHydratedRef.current = true;
+    pendingWsEventsRef.current = [];
     stepMasterIteration.current.clear();
     stepMasterRound.current.clear();
     await loadConversations();
@@ -512,49 +461,208 @@ export function Workbench({
 
   const loadScriptMeta = useCallback(async () => {
     if (!projectId || !scriptId) return;
-    const r = await fetch(`${API}/projects/${projectId}/scripts/${scriptId}`);
+    const r = await apiFetch(`${API}/projects/${projectId}/scripts/${scriptId}`);
     if (!r.ok) return;
     const script = (await r.json()) as ScriptMeta;
     if (script.title) setActiveScriptTitle(script.title);
     if (script.status) setScriptStatus(script.status);
-    if (
-      script.style_mode === "dynamic_image" ||
-      script.style_mode === "dynamic_comic" ||
-      script.style_mode === "ai_video"
-    ) {
-      setStyleMode(script.style_mode);
+    if (script.style_mode) {
+      setStyleMode(coerceStyleMode(script.style_mode, styleModeOptions));
     }
+    setStyleHints(script.style_hints ?? {});
     setStyleLocked(Boolean(script.style_locked));
-  }, [projectId, scriptId]);
+  }, [projectId, scriptId, styleModeOptions]);
+
+  /** 看板 scriptMeta 刷新时同步顶栏标题，始终以 Script.title 为准。 */
+  useEffect(() => {
+    if (scriptMeta?.title) {
+      setActiveScriptTitle(scriptMeta.title);
+    }
+  }, [scriptMeta?.title]);
 
   const loadPlan = useCallback(async () => {
     if (!projectId || !scriptId) return;
-    const r = await fetch(`${API}/projects/${projectId}/scripts/${scriptId}/plan`);
-    if (r.ok) {
-      const plan = (await r.json()) as PlanDocument;
-      setPlanView((prev) => ({
-        ...planFromApi(plan),
-        plan_status_history: prev.plan_status_history,
-        last_remaining_plan: prev.last_remaining_plan,
-      }));
-    }
-  }, [projectId, scriptId]);
+    const r = await apiFetch(`${API}/projects/${projectId}/scripts/${scriptId}/plan`);
+    if (!r.ok) return;
+    const plan = (await r.json()) as PlanDocument;
+    loadPlanFromStore(plan);
+  }, [projectId, scriptId, loadPlanFromStore]);
 
-  const refreshWorkspace = useCallback(async () => {
-    if (workspaceMode === "script" && scriptId) {
-      await loadScriptMeta();
-      await loadPlan();
+  /** 刷新剧本元数据与 Plan；看板由 useBoardData 独立加载，默认不重复拉 board。 */
+  const refreshWorkspace = useCallback(
+    async (options?: { includeBoard?: boolean }) => {
+      const includeBoard = options?.includeBoard ?? false;
+      if (workspaceMode === "script" && scriptId) {
+        await Promise.all([loadScriptMeta(), loadPlan()]);
+      }
+      if (includeBoard) {
+        await refreshBoard();
+      }
+    },
+    [workspaceMode, scriptId, loadScriptMeta, loadPlan, refreshBoard],
+  );
+
+  /** 稳定引用，避免 BoardPanel memo 因内联回调失效。 */
+  const handleBoardRefresh = useCallback(() => {
+    void refreshWorkspace({ includeBoard: true });
+  }, [refreshWorkspace]);
+
+  const refreshBoardRef = useRef(refreshBoard);
+  refreshBoardRef.current = refreshBoard;
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  const scriptIdRef = useRef(scriptId);
+  scriptIdRef.current = scriptId;
+  const boardTabRef = useRef(boardTab);
+  boardTabRef.current = boardTab;
+
+  useEffect(() => {
+    assetGenerationController.setScriptId(scriptId ?? null);
+  }, [scriptId, assetGenerationController.setScriptId]);
+
+  useEffect(() => {
+    generationQueueController.setScope(projectId ?? null, scriptId ?? null);
+  }, [projectId, scriptId, generationQueueController.setScope]);
+
+  useEffect(() => {
+    if (!board || !scriptId) return;
+    assetGenerationController.pruneFromBoard(board);
+  }, [board, scriptId, assetGenerationController.pruneFromBoard]);
+
+  const handleRefreshError = useCallback(
+    (err: unknown) => {
+      const message =
+        err instanceof Error ? err.message : "工作区刷新失败，请稍后重试。";
+      appendSystemMessage(message);
+    },
+    [appendSystemMessage]
+  );
+
+  const debouncedRefreshWorkspace = useRef(
+    createDebouncedAsyncTask(
+      async () => {
+        await refreshWorkspaceRef.current({ includeBoard: false });
+      },
+      400,
+      { onError: handleRefreshError }
+    )
+  ).current;
+  const debouncedRefreshWorkspaceFull = useRef(
+    createDebouncedAsyncTask(
+      async () => {
+        await refreshWorkspaceRef.current({ includeBoard: true });
+      },
+      400,
+      { onError: handleRefreshError }
+    )
+  ).current;
+  const debouncedRefreshBoard = useRef(
+    createDebouncedAsyncTask(
+      async () => {
+        await refreshBoardRef.current();
+      },
+      400,
+      { onError: handleRefreshError }
+    )
+  ).current;
+
+  /** 当前看板 Tab 与资产/分镜相关时调度看板刷新。 */
+  const scheduleBoardRefreshIfRelevant = useCallback(() => {
+    const tab = boardTabRef.current;
+    if (IMAGE_BOARD_TABS.includes(tab) || tab === "storyboard") {
+      debouncedRefreshBoard.schedule();
     }
-    await refreshBoard();
-  }, [workspaceMode, scriptId, loadScriptMeta, loadPlan, refreshBoard]);
+  }, [debouncedRefreshBoard]);
+
+  const debouncedAssetsChanged = useRef(
+    createDebouncedAsyncTask(
+      async () => {
+        const tab = boardTabRef.current;
+        if (IMAGE_BOARD_TABS.includes(tab) || tab === "storyboard") {
+          await refreshBoardRef.current();
+        }
+        const pid = projectIdRef.current;
+        const sid = scriptIdRef.current;
+        if (pid && sid && boardTabRef.current === "edit") {
+          const { reloadFromApi } = await import("../editor/agentBridge");
+          await reloadFromApi(pid, sid);
+        }
+      },
+      400,
+      { onError: handleRefreshError }
+    )
+  ).current;
 
   const prevScriptIdRef = useRef<string | null>(null);
+  const conversationLoadSeqRef = useRef(0);
   const loadConversationsRef = useRef(loadConversations);
   loadConversationsRef.current = loadConversations;
   const loadConversationMessagesRef = useRef(loadConversationMessages);
   loadConversationMessagesRef.current = loadConversationMessages;
   const refreshWorkspaceRef = useRef(refreshWorkspace);
   refreshWorkspaceRef.current = refreshWorkspace;
+
+  const { handleWsEvent, flushPlanThrottle, disposePlanThrottle } = useWorkbenchWs({
+    showReactDetails,
+    activeConversationId,
+    assetGeneration: assetGenerationController,
+    generationQueue: generationQueueController,
+    boardTabRef,
+    chatRoundRef,
+    stepMasterIteration,
+    stepMasterRound,
+    streamMessageIds,
+    conversationHydratedRef,
+    pendingWsEventsRef,
+    wsChatReplayRef,
+    debouncedRefreshWorkspace,
+    debouncedRefreshWorkspaceFull,
+    debouncedRefreshBoard,
+    debouncedAssetsChanged,
+    scheduleBoardRefreshIfRelevant,
+    appendSystemMessage,
+    beginAborting,
+    clearAborting,
+    setScriptStatus,
+    setIsRunning,
+    setStyleMode,
+    setStyleHints,
+    setStyleLocked,
+    chatAbortRef,
+  });
+
+  useEffect(() => () => disposePlanThrottle(), [disposePlanThrottle]);
+
+  wsEventHandlerRef.current = handleWsEvent;
+  handleWsEventRef.current = handleWsEvent;
+
+  useEffect(() => {
+    if (!projectId || !scriptId || workspaceMode !== "script") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await apiFetch(
+          `${API}/projects/${projectId}/scripts/${scriptId}/executions/active`
+        );
+        if (!r.ok || cancelled) return;
+        const data = (await r.json()) as {
+          active?: boolean;
+          conversation_id?: string | null;
+        };
+        if (data.active) {
+          setIsRunning(true);
+          if (data.conversation_id) {
+            setActiveConversationId(String(data.conversation_id));
+          }
+        }
+      } catch {
+        /* 恢复执行态失败不阻断页面 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, scriptId, workspaceMode]);
 
   useEffect(() => {
     void loadSkills();
@@ -585,8 +693,12 @@ export function Workbench({
     prevScriptIdRef.current = scriptId;
 
     if (scriptChanged) {
-      setPlanView(emptyPlanView());
-      setMessages([]);
+      flushPlanThrottle();
+      conversationLoadSeqRef.current += 1;
+      conversationHydratedRef.current = false;
+      pendingWsEventsRef.current = [];
+      resetPlanView();
+      resetChatMessages();
       setActiveConversationId(null);
       chatRoundRef.current = 0;
       stepMasterIteration.current.clear();
@@ -594,19 +706,40 @@ export function Workbench({
     }
 
     let cancelled = false;
+    const loadSeq = ++conversationLoadSeqRef.current;
 
     void (async () => {
-      await refreshWorkspaceRef.current();
-      if (cancelled) return;
-
-      const items = await loadConversationsRef.current();
-      if (cancelled) return;
+      const [, items] = await Promise.all([
+        perfMeasure(
+          "workbench",
+          "refreshWorkspace",
+          () => refreshWorkspaceRef.current({ includeBoard: false }),
+          { project_id: projectId, script_id: scriptId },
+        ),
+        perfMeasure(
+          "workbench",
+          "loadConversations",
+          () => loadConversationsRef.current(),
+          { project_id: projectId, script_id: scriptId },
+        ),
+      ]);
+      if (cancelled || loadSeq !== conversationLoadSeqRef.current) return;
 
       if (items.length === 0) {
         if (scriptChanged) {
-          setMessages([]);
+          resetChatMessages();
           setActiveConversationId(null);
         }
+        conversationHydratedRef.current = true;
+        pendingWsEventsRef.current = [];
+        logPerfMark("workbench", "工作台就绪（无对话）", "workbench-ready");
+        logPerfBetween(
+          "workbench",
+          "工作台首屏就绪（无对话）",
+          "workbench-mount",
+          "workbench-ready",
+          { project_id: projectId, script_id: scriptId },
+        );
         return;
       }
 
@@ -623,7 +756,7 @@ export function Workbench({
         activeConversationIdRef.current === targetId;
       if (skipReload) return;
 
-      await loadConversationMessagesRef.current(targetId);
+      await loadConversationMessagesRef.current(targetId, loadSeq);
     })();
 
     return () => {
@@ -647,12 +780,14 @@ export function Workbench({
     exitToProject(projectId);
     onNavigateToProject(projectId, null);
     setBoardTab("overview");
-    setMessages([]);
+    resetChatMessages();
     setActiveConversationId(null);
     chatRoundRef.current = 0;
+    conversationHydratedRef.current = false;
+    pendingWsEventsRef.current = [];
     stepMasterIteration.current.clear();
     stepMasterRound.current.clear();
-    setPlanView(emptyPlanView());
+    resetPlanView();
     setIsRunning(false);
     setActiveScriptTitle("");
   }, [projectId, exitToProject, onNavigateToProject]);
@@ -682,356 +817,6 @@ export function Workbench({
     },
     [projectId, scriptId, deleteScript, handleBackToOverview, refreshBoard]
   );
-
-  useEffect(() => {
-    const newEvents = events.slice(lastEventIndex.current);
-    lastEventIndex.current = events.length;
-
-    newEvents.forEach((e) => {
-      window.dispatchEvent(new CustomEvent("svg:ws-event", { detail: e }));
-
-      const eventConvId = e.conversation_id ? String(e.conversation_id) : null;
-      if (
-        eventConvId &&
-        activeConversationId &&
-        eventConvId !== activeConversationId
-      ) {
-        return;
-      }
-      const streamKind = e.kind ? String(e.kind) : "";
-
-      if (e.type === "llm_stream_start" && e.stream_id) {
-        const streamId = String(e.stream_id);
-        const messageId = `stream-${streamId}`;
-
-        if (streamKind === "react_thought" && showReactDetails) {
-          streamMessageIds.current.set(streamId, messageId);
-          const iteration = Number(e.iteration ?? 0);
-          const round = chatRoundRef.current;
-          appendMessage({
-            kind: "react_turn",
-            id: messageId,
-            round,
-            iteration,
-            thought: "",
-            thoughtStreaming: true,
-          });
-        } else if (streamKind === "llm_summary") {
-          streamMessageIds.current.set(streamId, messageId);
-          appendMessage({
-            kind: "assistant",
-            id: messageId,
-            text: "",
-            streaming: true,
-          });
-        }
-      }
-
-      if (e.type === "llm_stream_delta" && e.stream_id && e.delta) {
-        const streamId = String(e.stream_id);
-        const messageId = streamMessageIds.current.get(streamId);
-        if (!messageId) return;
-        const delta = String(e.delta);
-        const prev = streamDeltaBuffer.current.get(streamId);
-        streamDeltaBuffer.current.set(streamId, {
-          messageId,
-          streamKind,
-          delta: (prev?.delta ?? "") + delta,
-        });
-        if (!streamFlushTimer.current) {
-          streamFlushTimer.current = setTimeout(flushStreamDeltas, 50);
-        }
-      }
-
-      if (e.type === "llm_stream_end" && e.stream_id) {
-        const streamId = String(e.stream_id);
-        if (streamFlushTimer.current) {
-          clearTimeout(streamFlushTimer.current);
-          flushStreamDeltas();
-        }
-        const messageId = streamMessageIds.current.get(streamId);
-        if (messageId) {
-          if (streamKind === "react_thought" && showReactDetails) {
-            updateMessage(messageId, (msg) => {
-              if (msg.kind !== "react_turn") return msg;
-              return { ...msg, thoughtStreaming: false };
-            });
-          } else if (streamKind === "llm_summary") {
-            updateMessage(messageId, (msg) => {
-              if (msg.kind !== "assistant") return msg;
-              return { ...msg, streaming: false };
-            });
-          }
-          streamMessageIds.current.delete(streamId);
-        }
-      }
-
-      if (e.type === "react_action") {
-        const iteration = Number(e.iteration ?? 0);
-        const round = chatRoundRef.current;
-        const action = String(e.action ?? "");
-        const actionLabel = e.action_label
-          ? String(e.action_label)
-          : undefined;
-        const actionKind = e.action_kind
-          ? (String(e.action_kind) as ActionKind)
-          : undefined;
-        const rawInput = e.llm_action_input ?? e.action_input;
-        if (e.step_id) {
-          stepMasterIteration.current.set(String(e.step_id), iteration);
-          stepMasterRound.current.set(String(e.step_id), round);
-        }
-        upsertReactAction(
-          round,
-          iteration,
-          action,
-          actionLabel,
-          actionKind,
-          normalizeActionInput(rawInput)
-        );
-      }
-
-      if (
-        e.type === "agent_react_thought" ||
-        e.type === "agent_react_action" ||
-        e.type === "agent_react_observation" ||
-        e.type === "agent_react_finished"
-      ) {
-        upsertSubAgentEvent(e as Record<string, unknown>);
-      }
-
-      if (e.type === "a2ui_confirmation_required") {
-        const req = e as unknown as A2UIConfirmationRequest;
-        setMessages((m) => {
-          const updated = m.map((msg) =>
-            msg.kind === "a2ui_confirmation" && msg.status === "pending"
-              ? { ...msg, status: "superseded" as const }
-              : msg
-          );
-          return [
-            ...updated,
-            {
-              kind: "a2ui_confirmation" as const,
-              id: `a2ui-${req.confirmation_id}`,
-              confirmationId: req.confirmation_id,
-              request: req,
-              status: "pending" as const,
-            },
-          ];
-        });
-      }
-
-      if (e.type === "react_observation" && e.observation && showReactDetails) {
-        const iteration = Number(e.iteration ?? 0);
-        const round = chatRoundRef.current;
-        const obs = String(e.observation);
-        setMessages((m) =>
-          m.map((msg) =>
-            msg.kind === "react_turn" &&
-            msg.round === round &&
-            msg.iteration === iteration
-              ? { ...msg, observation: obs }
-              : msg
-          )
-        );
-      }
-
-      if (e.type === "master_message" && e.content && e.source === "llm_summary") {
-        const content = String(e.content);
-        setMessages((m) => {
-          if (
-            m.some(
-              (msg) => msg.kind === "assistant" && msg.text.trim() === content.trim()
-            )
-          ) {
-            return m;
-          }
-          return [
-            ...m,
-            {
-              kind: "assistant" as const,
-              id: `summary-${Date.now()}`,
-              text: content,
-            },
-          ];
-        });
-      }
-
-      if (e.type === "image_gen_progress") {
-        const ev = e as unknown as ImageGenProgressEvent;
-        const index = Number(ev.index ?? 0);
-        const total = Number(ev.total ?? 0);
-        const status = String(ev.status ?? "started");
-        setImageGenProgress((prev) => {
-          const items = [...prev.items];
-          const existingIdx = items.findIndex((item) => item.index === index);
-          const entry: ImageGenProgressItem = {
-            index,
-            sourceTextAssetId: String(ev.source_text_asset_id ?? ""),
-            name: String(ev.name ?? ""),
-            status:
-              status === "completed"
-                ? "completed"
-                : status === "failed"
-                  ? "failed"
-                  : "started",
-            url: ev.url ? String(ev.url) : undefined,
-            error: ev.error ? String(ev.error) : undefined,
-          };
-          if (existingIdx >= 0) {
-            items[existingIdx] = { ...items[existingIdx], ...entry };
-          } else {
-            items.push(entry);
-          }
-          items.sort((a, b) => a.index - b.index);
-          return {
-            open: true,
-            stepId: String(ev.step_id ?? prev.stepId),
-            total: total || prev.total,
-            items,
-          };
-        });
-        if (status === "completed") {
-          void refreshBoard();
-        }
-        if (status === "completed" && index === total && total > 0) {
-          setImageGenProgress((prev) => ({ ...prev, open: false }));
-        }
-      }
-
-      if (e.type === "assets_changed") {
-        refreshWorkspace();
-        if (projectId && scriptId) {
-          void import("../editor/agentBridge").then(({ reloadFromApi }) =>
-            reloadFromApi(projectId, scriptId),
-          );
-        }
-      }
-      if (e.type === "script_style_locked" && e.style_mode) {
-        const mode = String(e.style_mode);
-        if (mode === "dynamic_image" || mode === "ai_video") {
-          setStyleMode(mode);
-        }
-        setStyleLocked(true);
-      }
-      if (e.type === "planning_started") {
-        setScriptStatus("planning");
-      }
-      if (e.type === "plan_ready" && e.plan) {
-        const plan = e.plan as PlanDocument;
-        setPlanView((prev) => mergePlanDocument(prev, plan));
-        setScriptStatus((prev) => (prev === "executing" ? prev : "planned"));
-        refreshWorkspace();
-      }
-      if (e.type === "plan_updated") {
-        setPlanView((prev) => {
-          const next = e.plan
-            ? mergePlanDocument(prev, e.plan as PlanDocument)
-            : { ...prev };
-          if (Array.isArray(e.plan_status_history)) {
-            next.plan_status_history = e.plan_status_history as string[];
-          }
-          if (Array.isArray(e.last_remaining_plan)) {
-            next.last_remaining_plan = e.last_remaining_plan as string[];
-          }
-          return next;
-        });
-      }
-      if (e.type === "react_started" || e.type === "execution_started") {
-        setScriptStatus("executing");
-        setIsRunning(true);
-      }
-      if (e.type === "step_started") {
-        setPlanView((prev) =>
-          patchPlanStep(prev, String(e.step_id), { status: "running" })
-        );
-      }
-      if (e.type === "step_awaiting_confirmation") {
-        setPlanView((prev) =>
-          patchPlanStep(prev, String(e.step_id), {
-            status: "awaiting_confirmation",
-          })
-        );
-      }
-      if (e.type === "step_completed" || e.type === "step_resumed") {
-        const outputs = e.outputs as StepOutput[] | undefined;
-        setPlanView((prev) =>
-          patchPlanStep(prev, String(e.step_id), {
-            status: "completed",
-            progress: 100,
-            outputs,
-          })
-        );
-        refreshWorkspace();
-      }
-      if (e.type === "step_failed") {
-        setPlanView((prev) =>
-          patchPlanStep(prev, String(e.step_id), {
-            status: "failed",
-            error: String(e.error),
-          })
-        );
-      }
-      if (e.type === "step_paused") {
-        setPlanView((prev) =>
-          patchPlanStep(prev, String(e.step_id), {
-            status: "paused",
-            error: String(e.error ?? ""),
-          })
-        );
-      }
-      if (e.type === "project_completed") {
-        setScriptStatus("completed");
-        setIsRunning(false);
-        refreshWorkspace();
-      }
-      if (e.type === "execution_abort_requested") {
-        beginAborting();
-      }
-      if (
-        e.type === "execution_aborted" ||
-        e.type === "execution_failed" ||
-        e.type === "react_finished"
-      ) {
-        setIsRunning(false);
-        clearAborting();
-        chatAbortRef.current = null;
-        if (e.type === "execution_aborted") {
-          setScriptStatus("failed");
-          appendSystemMessage("已中止执行。");
-        }
-        if (e.type === "execution_failed") {
-          setScriptStatus("failed");
-          setIsRunning(false);
-        }
-        if (e.type === "react_finished" && e.status) {
-          setScriptStatus(String(e.status));
-        }
-        refreshWorkspace();
-      }
-
-      // image_gen 可能抛出异常终止执行，但不等同于 execution_failed 事件
-      if (e.type === "step_failed" && String(e.step_id || "")) {
-        // 步骤失败不一定导致整个执行终止，但 isRunning 应保持
-        // 仅 step 失败明确表示生图中断时，仍然维持 isRunning 以便用户手动中止
-      }
-    });
-  }, [
-    events,
-    activeConversationId,
-    refreshWorkspace,
-    refreshBoard,
-    appendMessage,
-    updateMessage,
-    upsertReactAction,
-    upsertSubAgentEvent,
-    appendSystemMessage,
-    showReactDetails,
-    beginAborting,
-    flushStreamDeltas,
-    projectId,
-    scriptId,
-  ]);
 
   function promptConfigureAi() {
     appendSystemMessage("请先配置 AI 模型与 API Key 后再开始对话。");
@@ -1099,7 +884,6 @@ export function Workbench({
     });
     setInput("");
     setIsRunning(true);
-    lastEventIndex.current = events.length;
     streamMessageIds.current.clear();
     stepMasterIteration.current.clear();
     stepMasterRound.current.clear();
@@ -1114,7 +898,14 @@ export function Workbench({
         body: JSON.stringify({
           message: text,
           ...(convId ? { conversation_id: convId } : {}),
-          ...(styleLocked ? {} : { style_mode: styleMode }),
+          ...(styleLocked
+            ? {}
+            : {
+                style_mode: styleMode,
+                ...(buildStyleHintsPayload(styleHints)
+                  ? { style_hints: buildStyleHintsPayload(styleHints) }
+                  : {}),
+              }),
           execution_mode: executionMode,
           ...(parsed.skillId ? { skill_id: parsed.skillId } : {}),
         }),
@@ -1142,6 +933,17 @@ export function Workbench({
 
       const r = await postChat(pid, sid, convId);
 
+      if (r.status === 202) {
+        const data = (await r.json()) as { conversation_id?: string };
+        if (data.conversation_id) {
+          const acceptedConvId = String(data.conversation_id);
+          setActiveConversationId(acceptedConvId);
+          setLastConversationId(pid, sid, acceptedConvId);
+        }
+        void loadConversations();
+        return;
+      }
+
       if (r.status === 404) {
         appendSystemMessage(
           "剧本或项目不存在（后端可能已重启）。请点击页面刷新或重新初始化后再发送。"
@@ -1164,26 +966,30 @@ export function Workbench({
       }
       if (data.script?.status) setScriptStatus(data.script.status);
       if (data.script?.style_locked) setStyleLocked(true);
-      if (
-        data.script?.style_mode === "dynamic_image" ||
-        data.script?.style_mode === "dynamic_comic" ||
-        data.script?.style_mode === "ai_video"
-      ) {
-        setStyleMode(data.script.style_mode);
+      if (data.script?.style_mode) {
+        setStyleMode(coerceStyleMode(data.script.style_mode, styleModeOptions));
+      }
+      if (data.script?.style_hints && Object.keys(data.script.style_hints).length > 0) {
+        setStyleHints(data.script.style_hints as StyleHints);
       }
       if (data.plan) {
-        setPlanView((prev) => ({
-          ...planFromApi(data.plan as PlanDocument),
-          plan_status_history: prev.plan_status_history,
-          last_remaining_plan: prev.last_remaining_plan,
-        }));
+        loadPlanFromStore(data.plan as PlanDocument);
       }
       const convIdToReload =
         data.conversation_id != null
           ? String(data.conversation_id)
           : convId;
       if (convIdToReload) {
-        await loadConversationMessages(convIdToReload);
+        const wsBuiltRound =
+          messagesRef.current.length > 0 &&
+          !messagesRef.current.some(
+            (msg) =>
+              (msg.kind === "assistant" && msg.streaming) ||
+              (msg.kind === "react_turn" && msg.thoughtStreaming)
+          );
+        if (!wsBuiltRound) {
+          await loadConversationMessages(convIdToReload);
+        }
       } else if (data.summary) {
         const summaryText = String(data.summary);
         setMessages((m) => {
@@ -1205,8 +1011,7 @@ export function Workbench({
           ];
         });
       }
-      await refreshWorkspace();
-      await loadConversations();
+      void loadConversations();
       setIsRunning(false);
       chatAbortRef.current = null;
     } catch (err) {
@@ -1261,18 +1066,18 @@ export function Workbench({
                 )}
                 {styleLocked && (
                   <span className="status-badge style-locked">
-                    风格：{styleModeLabel(styleMode)}（已锁定）
+                    风格：{styleModeLabel(styleMode, styleLabelMap)}（已锁定）
                   </span>
                 )}
-                {isScriptMode && aiConfig?.image?.pipeline && (
-                  <>
-                    <span className="status-badge muted-badge">
-                      图文：{imageTextPresetLabel(aiConfig.image.pipeline.image_text_preset)}
-                    </span>
-                    <span className="status-badge muted-badge">
-                      漫画：{comicPresetLabel(aiConfig.image.pipeline.comic_preset)}
-                    </span>
-                  </>
+                {styleLocked && styleHints.image_style && (
+                  <span className="status-badge muted-badge">
+                    图片风格：{styleHints.image_style}
+                  </span>
+                )}
+                {styleLocked && styleHints.target_duration && (
+                  <span className="status-badge muted-badge">
+                    预计时长：{styleHints.target_duration}
+                  </span>
                 )}
                 {awaitingConfirmation && (
                   <span className="status-badge awaiting">等待您确认剧本结构…</span>
@@ -1302,12 +1107,13 @@ export function Workbench({
               projectId={projectId}
               scriptId={scriptId}
               onSwitchProject={(pid) => {
+                chatAbortRef.current?.abort();
                 onNavigateToProject(pid, null);
                 exitToProject(pid);
                 setBoardTab("overview");
-                setMessages([]);
+                resetChatMessages();
                 setActiveConversationId(null);
-                setPlanView(emptyPlanView());
+                resetPlanView();
                 setIsRunning(false);
                 setActiveScriptTitle("");
               }}
@@ -1315,6 +1121,7 @@ export function Workbench({
                 if (pid === projectId && sid === scriptId && workspaceMode === "script") {
                   return;
                 }
+                chatAbortRef.current?.abort();
                 enterScript(pid, sid, meta);
                 onNavigateToProject(pid, sid);
                 setBoardTab("script_details");
@@ -1415,26 +1222,89 @@ export function Workbench({
             <label>
               视频风格
               {styleLocked ? (
-                <span className="locked-style">{styleModeLabel(styleMode)}（已锁定）</span>
+                <span className="locked-style">{styleModeLabel(styleMode, styleLabelMap)}（已锁定）</span>
               ) : (
                 <select
                   value={styleMode}
                   disabled={inputBlocked}
-                  onChange={(e) => setStyleMode(e.target.value as StyleMode)}
+                  onChange={(e) => setStyleMode(e.target.value)}
                 >
-                  <option value="dynamic_image">动态图文模式</option>
-                  <option value="dynamic_comic">动态漫画模式</option>
-                  <option value="ai_video">AI 视频模式</option>
+                  {(styleModeOptions.length > 0
+                    ? styleModeOptions
+                    : [
+                        { id: "storybook", label: "故事书模式" },
+                        { id: "ai_video", label: "AI 视频模式" },
+                      ]
+                  ).map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+            <label>
+              图片风格
+              {styleLocked ? (
+                <span className="locked-style">
+                  {styleHints.image_style ? `${styleHints.image_style}（已锁定）` : "未指定"}
+                </span>
+              ) : (
+                <select
+                  value={styleHints.image_style ?? ""}
+                  disabled={inputBlocked}
+                  onChange={(e) =>
+                    setStyleHints((prev) => ({
+                      ...prev,
+                      image_style: e.target.value || undefined,
+                    }))
+                  }
+                >
+                  <option value="">不指定</option>
+                  {IMAGE_STYLE_HINT_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+            <label>
+              预计时长
+              {styleLocked ? (
+                <span className="locked-style">
+                  {styleHints.target_duration
+                    ? `${styleHints.target_duration}（已锁定）`
+                    : "未指定"}
+                </span>
+              ) : (
+                <select
+                  value={styleHints.target_duration ?? ""}
+                  disabled={inputBlocked}
+                  onChange={(e) =>
+                    setStyleHints((prev) => ({
+                      ...prev,
+                      target_duration: e.target.value || undefined,
+                    }))
+                  }
+                >
+                  <option value="">不指定</option>
+                  {TARGET_DURATION_HINT_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
                 </select>
               )}
             </label>
           </div>
           <div className="chat-log">
-            <ChatMessageList
-              messages={messages}
+            <ChatPanel
               showReactDetails={showReactDetails}
               sendConfirmation={sendConfirmation}
-              onA2uiSubmitted={handleA2uiSubmitted}
+              hasMoreMessages={hasMoreMessages}
+              loadingEarlier={loadingEarlierMessages}
+              onLoadEarlier={() => void loadEarlierMessages()}
             />
           </div>
           <div className="chat-input-wrap">
@@ -1519,46 +1389,39 @@ export function Workbench({
         )}
 
         <main className="script-panel">
-          {!isEditTab && (
-            <h2>{isScriptMode ? t("scriptWorkbench", { ns: "editor" }) : t("tabs.overview", { ns: "board" })}</h2>
-          )}
-          {isScriptMode && !isEditTab && (
-            <PlanPanel
-              plan={planView}
-              scriptStatus={scriptStatus}
+          <h2>{isScriptMode ? t("scriptWorkbench", { ns: "editor" }) : t("tabs.overview", { ns: "board" })}</h2>
+          <div className="script-panel-scroll">
+            {isScriptMode && (
+              <PlanPanel
+                plan={planView}
+                scriptStatus={scriptStatus}
+                projectId={projectId}
+                scriptId={scriptId}
+                isRunning={isRunning}
+                isAborting={isAborting}
+                onAbort={() => void abortExecution()}
+              />
+            )}
+            <BoardPanel
+              workspaceMode={workspaceMode}
+              activeTab={boardTab}
+              onTabChange={setBoardTab}
+              board={board}
+              loading={boardLoading}
+              error={boardError}
+              onRefresh={handleBoardRefresh}
+              onEnterScript={handleEnterScript}
+              onCreateScript={handleCreateScript}
+              onDeleteScript={handleDeleteScript}
+              onBackToOverview={handleBackToOverview}
               projectId={projectId}
               scriptId={scriptId}
-              isRunning={isRunning}
-              isAborting={isAborting}
-              onAbort={() => void abortExecution()}
+              scriptMeta={scriptMeta}
+              manualEditEnabled={manualEditEnabled}
             />
-          )}
-          <BoardPanel
-            workspaceMode={workspaceMode}
-            activeTab={boardTab}
-            onTabChange={setBoardTab}
-            board={board}
-            loading={boardLoading}
-            error={boardError}
-            onRefresh={refreshWorkspace}
-            onEnterScript={handleEnterScript}
-            onCreateScript={handleCreateScript}
-            onDeleteScript={handleDeleteScript}
-            onBackToOverview={handleBackToOverview}
-            projectId={projectId}
-            scriptId={scriptId}
-            scriptMeta={scriptMeta}
-            manualEditEnabled={manualEditEnabled}
-          />
+          </div>
         </main>
       </div>
-      <ImageGenProgressModal
-        open={imageGenProgress.open}
-        stepId={imageGenProgress.stepId}
-        total={imageGenProgress.total}
-        items={imageGenProgress.items}
-        onClose={() => setImageGenProgress((prev) => ({ ...prev, open: false }))}
-      />
     </div>
   );
 }

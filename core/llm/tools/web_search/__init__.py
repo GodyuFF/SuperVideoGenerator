@@ -1,4 +1,4 @@
-"""联网搜索能力（独立 tool 实现，暂未注册到 Agent Registry）。"""
+"""联网搜索能力（经 svg.tools entry_point 注册到 Registry）。"""
 
 from core.llm.tools.web_search.models import WebSearchResponse, WebSearchResult
 from core.llm.tools.web_search.service import search_web

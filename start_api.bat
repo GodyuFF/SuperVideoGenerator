@@ -8,5 +8,5 @@ echo 启动地址: http://localhost:8000
 echo API 文档:  http://localhost:8000/docs
 echo.
 
-.venv\Scripts\python.exe -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload --reload-exclude "data/*"
+.venv\Scripts\python.exe -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
 pause

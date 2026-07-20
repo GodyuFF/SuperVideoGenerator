@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,7 @@ from core.models.entities import (
     TextAsset,
     VideoPlan,
 )
-from core.store.memory import MemoryStore
+from core.logging.perf import PerfSpan, log_perf
 from core.store.project_paths import DATA_ROOT
 
 _CONV_MESSAGES_KEY = "conversation_messages"
@@ -30,7 +31,11 @@ _ENABLED = _ENV_FLAG not in ("0", "false", "no", "off")
 
 _lock = threading.Lock()
 _save_timer: threading.Timer | None = None
+_execution_coalesce_timer: threading.Timer | None = None
+_execution_coalesce_pending: dict[str, Any] | None = None
 _persist_hooks: dict[str, Any] = {}
+
+_EXECUTION_COALESCE_SEC = float(os.getenv("SVG_EXECUTION_SAVE_COALESCE_SEC", "3.0"))
 
 
 def is_enabled() -> bool:
@@ -67,6 +72,104 @@ def _resolve_persist_kwargs(
     )
 
 
+_ENV_SKIP_DISK_SCAN = os.getenv("SVG_SKIP_DISK_SCAN", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+_DISK_SCAN_FRESH_SEC = 300.0
+
+
+def _should_skip_disk_scan(file_path: Path, *, loaded_json: bool, store: MemoryStore) -> bool:
+    """判断是否跳过启动时全量磁盘扫描。"""
+    if _ENV_SKIP_DISK_SCAN:
+        return True
+    if not loaded_json or not store.projects:
+        return False
+    if not file_path.is_file():
+        return False
+    age_sec = time.time() - file_path.stat().st_mtime
+    if age_sec >= _DISK_SCAN_FRESH_SEC:
+        return False
+    # 仅当 dev_store 已含资产索引时跳过（sparse 恢复仍走磁盘 merge）
+    return bool(store.text_assets or store.media_assets or store.plans)
+
+
+def _store_has_executing_script(store: MemoryStore) -> bool:
+    """判断仓储中是否存在正在执行的剧本。"""
+    from core.models.entities import ScriptStatus
+
+    return any(s.status == ScriptStatus.EXECUTING for s in store.scripts.values())
+
+
+def _schedule_execution_coalesced_save(
+    store: MemoryStore,
+    path: Path | None,
+    *,
+    conversation_index: Any | None,
+    conversation_store: Any | None,
+) -> None:
+    """AI 执行期间合并 immediate 落盘请求，降低锁竞争。"""
+    global _execution_coalesce_timer, _execution_coalesce_pending
+
+    pending = {
+        "store": store,
+        "path": path,
+        "conversation_index": conversation_index,
+        "conversation_store": conversation_store,
+    }
+
+    def _fire() -> None:
+        global _execution_coalesce_timer, _execution_coalesce_pending
+        snapshot = _execution_coalesce_pending
+        _execution_coalesce_timer = None
+        _execution_coalesce_pending = None
+        if snapshot is None:
+            return
+        save_store(
+            snapshot["store"],
+            snapshot.get("path"),
+            conversation_index=snapshot.get("conversation_index"),
+            conversation_store=snapshot.get("conversation_store"),
+        )
+
+    with _lock:
+        _execution_coalesce_pending = pending
+        if _execution_coalesce_timer is not None:
+            _execution_coalesce_timer.cancel()
+        _execution_coalesce_timer = threading.Timer(_EXECUTION_COALESCE_SEC, _fire)
+        _execution_coalesce_timer.daemon = True
+        _execution_coalesce_timer.start()
+
+
+def flush_coalesced_execution_save(
+    store: MemoryStore,
+    path: Path | None = None,
+    *,
+    conversation_index: Any | None = None,
+    conversation_store: Any | None = None,
+) -> None:
+    """执行结束后强制刷盘，并取消合并计时器。"""
+    global _execution_coalesce_timer, _execution_coalesce_pending
+
+    with _lock:
+        if _execution_coalesce_timer is not None:
+            _execution_coalesce_timer.cancel()
+            _execution_coalesce_timer = None
+        _execution_coalesce_pending = None
+
+    def _run() -> None:
+        save_store(
+            store,
+            path,
+            conversation_index=conversation_index,
+            conversation_store=conversation_store,
+        )
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _merge_preserve_keys(data: dict[str, Any], file_path: Path) -> None:
     """schedule_save 未传 conversations 时保留文件中已有字段，避免误删。"""
     if not file_path.is_file():
@@ -91,6 +194,7 @@ def load_store(
     """从 JSON 恢复 MemoryStore；并扫描 data/projects/ 补齐缺失的项目 meta。"""
     if not _ENABLED:
         return False
+    load_start = time.perf_counter()
     file_path = path or DEFAULT_PATH
     loaded_json = False
     if file_path.exists():
@@ -105,25 +209,10 @@ def load_store(
             store.scripts = {
                 k: Script.model_validate(v) for k, v in raw.get("scripts", {}).items()
             }
-            store.text_assets = {}
-            from core.models.image_text_asset import upgrade_text_asset_content
-
-            for k, v in raw.get("text_assets", {}).items():
-                try:
-                    asset = TextAsset.model_validate(v)
-                    store.text_assets[k] = upgrade_text_asset_content(asset)
-                except Exception:
-                    from core.llm.agent.asset_content import normalize_asset_content
-
-                    if isinstance(v, dict) and "content" in v and not isinstance(
-                        v["content"], dict
-                    ):
-                        v = dict(v)
-                        v["content"] = normalize_asset_content(
-                            v["content"], asset_type=v.get("type")
-                        )
-                    asset = TextAsset.model_validate(v)
-                    store.text_assets[k] = upgrade_text_asset_content(asset)
+            store.text_assets = {
+                k: TextAsset.model_validate(v)
+                for k, v in raw.get("text_assets", {}).items()
+            }
             store.references = {
                 k: AssetReference.model_validate(v)
                 for k, v in raw.get("references", {}).items()
@@ -163,16 +252,38 @@ def load_store(
     from core.store.asset_disk_sync import merge_script_bundles_from_disk
     from core.store.project_paths import discover_projects_from_disk, sync_scripts_from_disk
 
-    bundles_merged = merge_script_bundles_from_disk(store)
-    discovered = discover_projects_from_disk(store)
-    scripts_synced = sync_scripts_from_disk(store)
-    if discovered or scripts_synced or bundles_merged:
-        save_store(
-            store,
-            file_path,
-            conversation_index=conversation_index,
-            conversation_store=conversation_store,
-        )
+    bundles_merged = False
+    discovered = False
+    scripts_synced = False
+    skipped_disk_scan = _should_skip_disk_scan(file_path, loaded_json=loaded_json, store=store)
+    if not skipped_disk_scan:
+        with PerfSpan("store", "disk_scan"):
+            bundles_merged = merge_script_bundles_from_disk(store)
+            discovered = discover_projects_from_disk(store)
+            scripts_synced = sync_scripts_from_disk(store)
+        if discovered or scripts_synced or bundles_merged:
+            save_store(
+                store,
+                file_path,
+                conversation_index=conversation_index,
+                conversation_store=conversation_store,
+            )
+
+    total_ms = (time.perf_counter() - load_start) * 1000
+    log_perf(
+        "store",
+        "load_store 完成",
+        duration_ms=total_ms,
+        loaded_json=loaded_json,
+        disk_scan_skipped=skipped_disk_scan,
+        bundles_merged=bundles_merged,
+        discovered=discovered,
+        scripts_synced=scripts_synced,
+        projects=len(store.projects),
+        scripts=len(store.scripts),
+        text_assets=len(store.text_assets),
+        media_assets=len(store.media_assets),
+    )
 
     return loaded_json or discovered or scripts_synced or bundles_merged or bool(store.projects)
 
@@ -244,17 +355,32 @@ def schedule_save(
     global _save_timer
     if not _ENABLED:
         return
+    if immediate and _store_has_executing_script(store):
+        file_path, conv_index, conv_store = _resolve_persist_kwargs(
+            path, conversation_index, conversation_store
+        )
+        _schedule_execution_coalesced_save(
+            store,
+            file_path,
+            conversation_index=conv_index,
+            conversation_store=conv_store,
+        )
+        return
     if immediate:
         with _lock:
             if _save_timer is not None:
                 _save_timer.cancel()
                 _save_timer = None
-        save_store(
-            store,
-            path,
-            conversation_index=conversation_index,
-            conversation_store=conversation_store,
-        )
+
+        def _run_immediate() -> None:
+            save_store(
+                store,
+                path,
+                conversation_index=conversation_index,
+                conversation_store=conversation_store,
+            )
+
+        threading.Thread(target=_run_immediate, daemon=True).start()
         return
 
     def _run() -> None:

@@ -18,24 +18,29 @@
 |----------|------|
 | 剧本设计 | 剧情、旁白、资产清单 |
 | 分镜 | 镜头列表、运镜、时长 |
-| 生图 | 人物 / 场景 / 道具视觉素材 |
+| 生图 | 人物 / 场景 / 道具视觉素材（Agnes / 百炼 / **火山方舟 SeedDream** / 本地 SD） |
 | TTS | 多引擎配音（Edge / OpenAI / Azure / Gemini 等） |
 | 剪辑 | 时间轴编排、Ken Burns、字幕烧录 |
-| 视频 | AI 视频片段生成（可扩展） |
+| 视频 | AI 视频片段（Agnes Video / **火山方舟 SeedDance**） |
 
 主编排通过 **Tool Registry + delegate** 委派子 Agent，每条链路可独立测试、独立演进。
+
+内置视频风格：**故事书**（静图 Ken Burns）、**AI 视频**（文生/图生/关键帧）、**画面图生视频**（实体+frame 合成后以 frame 为唯一图生源 I2V）。
 
 ### 3. 资产化管理与跨剧本复用
 
 - 一切实体带全局唯一 `asset_id`，文字资产与数字资产分离，媒体可追溯来源。
 - **人物 / 道具 / 场景** 进入项目共享池，跨剧本 RAG 检索复用，降低系列剧重复劳动。
+- **详情页二次生成**：图片、TTS、AI 视频可在资产详情页直接重跑；旧版本标记 `superseded`，谱系可追溯。
+- **统一生成队列**：图片/视频二次生成与 Agent 批任务经进程内串行队列执行，工作台右侧「生成队列」抽屉实时展示排队与执行状态。
 - 未执行态支持全量 CRUD；执行开始后进入只读，关系看板展示引用链与派生关系。
 
 ### 4. Edit Studio 可编辑时间轴
 
-- 由只读看板升级为 **可预览、可拖拽、可写回** 的多轨剪辑工作室。
+- 由只读看板升级为 **可预览、可拖拽、可写回** 的多轨剪辑工作室（OpenCut 剪辑助手）。
+- **镜内多轨 Shot** 为权威源：`visuals` / `video_tracks` / `audio_tracks` / `subtitles` → 投影 `EditTimeline`；OpenCut 手改经 `apply_timeline_edits_to_shots` 回写。
 - 支持 **多层视频轨**（画中画）、画布变换与关键帧、Ken Burns 运镜预览。
-- 默认 **FFmpeg 导出**；Agent 在用户已编辑时间轴上采用 **merge** 策略，不覆盖用户锁定片段。
+- 默认 **OpenCut 浏览器导出**；遗留 FFmpeg 需 `SVG_EXPORT_ENABLED=1`；Agent 在用户已编辑时间轴上采用 **merge** 策略。
 
 ### 5. 工程化 LLM 编排
 
@@ -48,7 +53,7 @@
 
 - **A2UI 协议**：WebSocket 推送确认表单，前后端结构化交互。
 - **交互日志**：按项目 / 剧本 / 日期筛选，Token 用量、LLM 请求/响应、ReAct 轮次全记录。
-- **562+ 单元/API 测试**，核心编排无 HTTP 依赖，可在 `tests/` 独立验证。
+- **970+ 单元/API 测试**，核心编排无 HTTP 依赖，可在 `tests/` 独立验证。
 - **Skill 单轮注入**：消息以 `/skillId` 开头即可加载内置 Skill 提示词（如 `/thriller 做悬疑短片`）。
 
 ### 7. 本地优先，数据不出库
@@ -111,23 +116,42 @@ cp .env.example .env
 
 也可在 Web 端 **AI 设置页** 配置 LLM / 生图 / TTS 等，持久化至 `data/ai_config.json`（仅本机）。
 
+**火山方舟（SeedDream / SeedDance）示例：**
+
+```bash
+ARK_API_KEY=your_volcengine_ark_api_key
+SVG_IMAGE_GEN_PROVIDER=volcengine
+SVG_IMAGE_GEN_MODEL=doubao-seedream-5-0-pro
+SVG_VIDEO_GEN_ENABLED=true
+SVG_VIDEO_GEN_PROVIDER=volcengine
+SVG_VIDEO_GEN_MODEL=doubao-seedance-2-0
+```
+
+控制台：[SeedDream 5.0 Pro](https://console.volcengine.com/ark/region:cn-beijing/model/detail?name=doubao-seedream-5-0-pro) · [SeedDance 2.0](https://console.volcengine.com/ark/region:cn-beijing/model/detail?name=doubao-seedance-2-0)
+
 ### 3. 启动服务
 
 **Windows（推荐）：**
 
 ```bat
-start_api.bat    # 后端 http://localhost:8000
-start_web.bat    # 前端 http://localhost:5173
+create-desktop-shortcut.bat  # 一次：桌面生成猫头鹰图标快捷方式（之后双击即开，像 exe）
+launch-desktop.vbs           # 静默启动桌面端（无黑框；Electron 自动拉 API+Vite）
+launch-desktop.bat           # 同上，但显示控制台日志
+dev-desktop.bat              # 开发别名 → launch-desktop.bat
+dev.bat                      # 浏览器模式：只起 API + Vite，需手动打开 http://localhost:5173
+start_api.bat                # 仅后端
+start_web.bat                # 仅前端 Vite
 ```
 
-**命令行：**
+**命令行（浏览器模式）：**
 
 ```bash
-uvicorn apps.api.main:app --reload --port 8000 --reload-exclude "data/*"
+uvicorn apps.api.main:app --port 8000
 cd apps/web && npm run dev
 ```
 
-打开 [http://localhost:5173](http://localhost:5173) 进入项目列表，新建项目后即可开始对话创作。
+- **桌面（推荐）**：`create-desktop-shortcut.bat` 后双击桌面图标；或直接 `launch-desktop.vbs`。
+- **浏览器**：运行 `dev.bat` 后打开 [http://localhost:5173](http://localhost:5173)。
 
 ### 4. 运行测试
 
@@ -155,6 +179,7 @@ pytest tests/ -v
 |------|------|
 | [产品计划手册](docs/product-plan.md) | 产品定位、页面布局、领域模型、路线图 |
 | [代码设计计划](docs/code-design-plan.md) | 仓库结构、持久化、API 设计 |
+| [前端风格约束](docs/frontend-style-guide.md) | 暗房胶片设计令牌、详情页与二次生成 UI 规范 |
 | [提示词架构](docs/prompt-architecture.md) | `core/llm/prompt` 固定/动态分层 |
 | [Edit Studio 规格](docs/edit-studio-plan.md) | 多轨时间轴、FFmpeg 导出 |
 | [工具参考](docs/tools-reference.md) | Tool Registry 与各域工具说明 |

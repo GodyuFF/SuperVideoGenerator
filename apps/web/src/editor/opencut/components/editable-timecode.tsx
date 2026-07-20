@@ -127,9 +127,9 @@ export function EditableTimecode({
 				onKeyDown={handleKeyDown}
 				onBlur={handleBlur}
 				className={cn(
-					"-mx-1 border border-transparent bg-transparent px-1 font-mono text-xs outline-none",
+					"svf-preview-timecode-current -mx-1 border border-transparent bg-transparent px-1 font-mono text-xs outline-none",
 					"focus:bg-background focus:border-primary focus:rounded",
-					"text-primary tabular-nums",
+					"text-foreground tabular-nums",
 					hasError && "text-destructive focus:border-destructive",
 					className,
 				)}
@@ -146,7 +146,7 @@ export function EditableTimecode({
 			onKeyDown={handleDisplayKeyDown}
 			disabled={disabled}
 			className={cn(
-				"text-primary cursor-pointer font-mono text-xs tabular-nums",
+				"svf-preview-timecode-current text-foreground cursor-pointer font-mono text-xs tabular-nums",
 				"hover:bg-muted/50 -mx-1 px-1 hover:rounded",
 				disabled && "cursor-default hover:bg-transparent",
 				className,

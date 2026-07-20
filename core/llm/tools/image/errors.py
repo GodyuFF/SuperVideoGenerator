@@ -236,17 +236,17 @@ def format_image_gen_failure_observation(
     blocks.append("【主编排需分析并决策】")
     if analysis.needs_upstream_prompt_adjustment():
         blocks.append(
-            "- 存在内容策略/提示词类失败：应委派 delegate_script_design，"
+            "- 存在内容策略/提示词类失败：应 delegate_agent(agent_id=script_agent)，"
             "请 script_agent 修订相关文字资产的 description、prompt_hint（必要时 update_scene/update_character），"
-            "去除暴力、猎食、血腥、真实人物等敏感表述后再 delegate_image_gen。"
+            "去除暴力、猎食、血腥、真实人物等敏感表述后再 delegate_agent(agent_id=image_agent)。"
         )
         blocks.append(
-            "- 已将 script_design 步骤重新开放，可再次委派 delegate_script_design。"
+            "- 已将 script_design 步骤重新开放，可再次委派 script_agent。"
         )
     else:
         blocks.append(
             "- 失败主要为鉴权/网络/服务端问题：检查 AI 配置中的生图 API Key 与网络，"
-            "排除故障后可重试 delegate_image_gen；无需修改剧本提示词。"
+            "排除故障后可重试 delegate_agent(agent_id=image_agent)；无需修改剧本提示词。"
         )
     blocks.append(
         "- 在 thought 中简要说明失败原因归类与你的下一步选择（修 prompt / 重试生图 / 询问用户）。"

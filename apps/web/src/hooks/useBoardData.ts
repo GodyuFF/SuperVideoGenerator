@@ -1,23 +1,25 @@
 /** 看板数据 hook */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BoardKind, BoardTabId, BoardView, ScriptBoardMeta } from "../types/board";
 import type { WorkspaceMode } from "../lib/localProjects";
+import { apiFetch } from "../lib/apiFetch";
 
 const API = "/api";
 
 const PROJECT_TABS: BoardTabId[] = ["overview", "knowledge"];
 const SCRIPT_TABS: BoardTabId[] = [
   "script_details",
-  "script",
   "character",
   "scene",
   "prop",
   "frame",
+  "video_clip",
   "storyboard",
   "edit",
   "media",
   "pipeline",
+  "graph",
 ];
 
 export function resolveBoardTab(
@@ -28,6 +30,9 @@ export function resolveBoardTab(
     return PROJECT_TABS.includes(activeTab) ? activeTab : "overview";
   }
   if (activeTab === "overview" || activeTab === "knowledge") {
+    return "script_details";
+  }
+  if (activeTab === "script") {
     return "script_details";
   }
   return SCRIPT_TABS.includes(activeTab) ? activeTab : "script_details";
@@ -44,11 +49,27 @@ export function useBoardData(
   const [kinds, setKinds] = useState<BoardKind[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestSeqRef = useRef(0);
 
   const effectiveTab = useMemo(
     () => resolveBoardTab(workspaceMode, activeTab),
     [workspaceMode, activeTab]
   );
+
+  /** 项目/剧本/Tab 切换时立即清空看板内容，避免展示上一剧本残留数据。 */
+  useEffect(() => {
+    requestSeqRef.current += 1;
+    setBoard(null);
+    setError(null);
+    if (projectId && (workspaceMode !== "script" || scriptId)) {
+      setLoading(true);
+    }
+  }, [projectId, scriptId, effectiveTab, workspaceMode]);
+
+  /** 仅项目/剧本切换时清空 scriptMeta；Tab 切换须保留 meta 以维持二级 Tab 可见性。 */
+  useEffect(() => {
+    setScriptMeta(null);
+  }, [projectId, scriptId, workspaceMode]);
 
   useEffect(() => {
     fetch(`${API}/board/kinds`)
@@ -60,7 +81,10 @@ export function useBoardData(
   const refresh = useCallback(async () => {
     if (!projectId) return;
     if (workspaceMode === "script" && !scriptId) return;
+    const seq = ++requestSeqRef.current;
+    const isStale = () => seq !== requestSeqRef.current;
     if (effectiveTab === "edit") {
+      if (isStale()) return;
       setLoading(false);
       setError(null);
       setBoard({
@@ -74,7 +98,8 @@ export function useBoardData(
         const params = new URLSearchParams({ script_id: scriptId });
         const metaUrl = `${API}/projects/${projectId}/board/script_details?${params}`;
         try {
-          const metaRes = await fetch(metaUrl);
+          const metaRes = await apiFetch(metaUrl);
+          if (isStale()) return;
           if (metaRes.ok) {
             const metaBoard = (await metaRes.json()) as BoardView;
             setScriptMeta((metaBoard.stats ?? {}) as ScriptBoardMeta);
@@ -91,7 +116,8 @@ export function useBoardData(
       const params = new URLSearchParams();
       if (scriptId) params.set("script_id", scriptId);
       const qs = params.toString();
-      const mainUrl = `${API}/projects/${projectId}/board/${effectiveTab}${qs ? `?${qs}` : ""}`;
+      const boardKind = effectiveTab === "graph" ? "project_graph" : effectiveTab;
+      const mainUrl = `${API}/projects/${projectId}/board/${boardKind}${qs ? `?${qs}` : ""}`;
       const metaUrl =
         workspaceMode === "script" &&
         scriptId &&
@@ -100,15 +126,18 @@ export function useBoardData(
           : null;
 
       const [mainRes, metaRes] = await Promise.all([
-        fetch(mainUrl),
-        metaUrl ? fetch(metaUrl) : Promise.resolve(null),
+        apiFetch(mainUrl),
+        metaUrl ? apiFetch(metaUrl) : Promise.resolve(null),
       ]);
+
+      if (isStale()) return;
 
       if (!mainRes.ok) {
         const body = await mainRes.json().catch(() => ({}));
         throw new Error(body.detail || `加载看板失败 (${mainRes.status})`);
       }
       const mainBoard = (await mainRes.json()) as BoardView;
+      if (isStale()) return;
       setBoard(mainBoard);
 
       if (workspaceMode === "script" && scriptId) {
@@ -117,6 +146,7 @@ export function useBoardData(
         } else if (metaRes) {
           if (metaRes.ok) {
             const metaBoard = (await metaRes.json()) as BoardView;
+            if (isStale()) return;
             setScriptMeta((metaBoard.stats ?? {}) as ScriptBoardMeta);
           }
         }
@@ -124,10 +154,13 @@ export function useBoardData(
         setScriptMeta(null);
       }
     } catch (err) {
+      if (isStale()) return;
       setError((err as Error).message);
       setBoard(null);
     } finally {
-      setLoading(false);
+      if (!isStale()) {
+        setLoading(false);
+      }
     }
   }, [projectId, scriptId, effectiveTab, workspaceMode]);
 

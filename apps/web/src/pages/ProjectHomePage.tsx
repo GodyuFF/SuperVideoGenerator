@@ -18,6 +18,7 @@ interface ProjectHomePageProps {
   onOpenSettings: () => void;
   onOpenAgents: () => void;
   onOpenLogs: () => void;
+  onOpenEditTimelineViz?: () => void;
 }
 
 function formatDate(iso?: string) {
@@ -32,6 +33,7 @@ export function ProjectHomePage({
   onOpenSettings,
   onOpenAgents,
   onOpenLogs,
+  onOpenEditTimelineViz,
 }: ProjectHomePageProps) {
   const { t } = useTranslation();
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
@@ -121,6 +123,7 @@ export function ProjectHomePage({
         <AppNavTrail
           onOpenAgents={onOpenAgents}
           onOpenLogs={onOpenLogs}
+          onOpenEditTimelineViz={onOpenEditTimelineViz}
           onOpenSettings={onOpenSettings}
         />
       }
@@ -199,6 +202,21 @@ export function ProjectHomePage({
                   <p className="muted">
                     {project.script_count ?? project.scripts?.length ?? 0} 个剧本
                   </p>
+                  {(project.scripts?.length ?? 0) > 0 && (
+                    <ul className="project-home-scripts">
+                      {project.scripts!.map((s) => (
+                        <li key={s.id}>
+                          <span className="board-script-index">
+                            {t("scriptIndex", {
+                              ns: "board",
+                              index: s.script_index ?? "—",
+                            })}
+                          </span>
+                          <span className="project-home-script-title">{s.title}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   <p className="muted project-home-meta">
                     创建于 {formatDate(project.created_at)}
                   </p>

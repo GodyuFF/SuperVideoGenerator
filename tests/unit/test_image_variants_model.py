@@ -65,6 +65,31 @@ def test_resolve_variant_media_id():
     assert resolve_variant_media_id(content, v.id) == "media_x"
 
 
+def test_merge_incoming_variants_can_remove_non_base():
+    """提交列表省略某子形象即删除；主形象始终保留。"""
+    content = normalize_image_text_content(
+        TextAssetType.CHARACTER, character_content(summary="角色")
+    )
+    content = merge_incoming_variants(
+        content,
+        [
+            {"kind": "expression", "label": "笑", "variant_prompt": "微笑"},
+            {"kind": "pose", "label": "站", "variant_prompt": "站立"},
+        ],
+    )
+    variants = parse_image_variants(content)
+    assert len(variants) == 3
+    base = get_base_variant(content)
+    assert base is not None
+    expr = next(v for v in variants if v.kind == "expression")
+    kept = merge_incoming_variants(
+        content,
+        [base.model_dump(), expr.model_dump()],
+    )
+    kinds = {v.kind for v in parse_image_variants(kept)}
+    assert kinds == {"base", "expression"}
+
+
 def test_compose_variant_prompt_includes_consistency():
     content = normalize_image_text_content(
         TextAssetType.CHARACTER, character_content(summary="角色A")

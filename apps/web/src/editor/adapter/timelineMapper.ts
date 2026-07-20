@@ -14,6 +14,7 @@ import type {
   VideoLayer as EditorVideoLayer,
 } from "../types";
 import { defaultTransform, emptyTimeline } from "../types";
+import { MAIN_VIDEO_LAYER_ID } from "./svfShotProjection";
 
 /** 将 API 时间轴转为编辑器内部模型。 */
 export function apiToEditorTimeline(data: EditTimelineData | null): EditorTimeline {
@@ -61,9 +62,9 @@ export function apiToEditorTimeline(data: EditTimelineData | null): EditorTimeli
 
   const videoLayers: EditorVideoLayer[] = (data.video_layers?.length
     ? data.video_layers
-    : [{ id: "vly_main", name: "主画面", z_index: 0, clips: data.tracks?.video || [] }]
+    : [{ id: MAIN_VIDEO_LAYER_ID, name: "主画面", z_index: 0, clips: data.tracks?.video || [] }]
   ).map((lyr: VideoLayer) => ({
-    id: lyr.id || "vly_main",
+    id: lyr.id || MAIN_VIDEO_LAYER_ID,
     name: lyr.name || "主画面",
     zIndex: lyr.z_index ?? 0,
     clips: (lyr.clips || []).map((c) => mapClip({ ...c, track: "video" }, "video")),

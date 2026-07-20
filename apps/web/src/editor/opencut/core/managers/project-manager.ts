@@ -33,12 +33,7 @@ import { DEFAULT_FPS } from "@opencut/fps/defaults";
 import { buildDefaultScene, getProjectDurationFromScenes } from "@opencut/timeline/scenes";
 import { buildScene } from "@opencut/services/renderer/scene-builder";
 import { CanvasRenderer } from "@opencut/services/renderer/canvas-renderer";
-import {
-	CURRENT_PROJECT_VERSION,
-	migrations,
-	runStorageMigrations,
-	type MigrationProgress,
-} from "@opencut/services/storage/migrations";
+import { CURRENT_PROJECT_VERSION } from "@opencut/services/storage/constants";
 import { loadFonts } from "@opencut/fonts/google-fonts";
 import { DEFAULTS } from "@opencut/timeline/defaults";
 import { getElementFontFamilies } from "@opencut/timeline/element-utils";
@@ -46,27 +41,13 @@ import { getRaisedProjectFpsForImportedMedia } from "@opencut/fps/utils";
 import type { MediaAsset } from "@opencut/media/types";
 import { isSvfProjectKey } from "@opencut/svf-integration";
 
-export interface MigrationState {
-	isMigrating: boolean;
-	fromVersion: number | null;
-	toVersion: number | null;
-	projectName: string | null;
-}
-
 export class ProjectManager {
 	private active: TProject | null = null;
 	private savedProjects: TProjectMetadata[] = [];
 	private isLoading = true;
 	private isInitialized = false;
 	private invalidProjectIds = new Set<string>();
-	private storageMigrationPromise: Promise<void> | null = null;
 	private listeners = new Set<() => void>();
-	private migrationState: MigrationState = {
-		isMigrating: false,
-		fromVersion: null,
-		toVersion: null,
-		projectName: null,
-	};
 	private exportState: ExportState = {
 		isExporting: false,
 		progress: 0,
@@ -77,28 +58,6 @@ export class ProjectManager {
 	private loadProjectInFlightId: string | null = null;
 
 	constructor(private editor: EditorCore) {}
-
-	private async ensureStorageMigrations({ projectId }: { projectId?: string } = {}): Promise<void> {
-		if (projectId && isSvfProjectKey(projectId)) {
-			return;
-		}
-		if (this.storageMigrationPromise) {
-			await this.storageMigrationPromise;
-			return;
-		}
-
-		this.storageMigrationPromise = (async () => {
-			await runStorageMigrations({
-				migrations,
-				onProgress: (progress: MigrationProgress) => {
-					this.migrationState = progress;
-					this.notify();
-				},
-			});
-		})();
-
-		await this.storageMigrationPromise;
-	}
 
 	async createNewProject({ name }: { name: string }): Promise<string> {
 		const mainScene = buildDefaultScene({ name: "Main scene", isMain: true });
@@ -170,7 +129,6 @@ export class ProjectManager {
 		this.notify();
 
 		this.editor.save.pause();
-		await this.ensureStorageMigrations({ projectId: id });
 
 		try {
 			const result = await storageService.loadProject({ id });
@@ -178,15 +136,30 @@ export class ProjectManager {
 				throw new Error(`Project with id ${id} not found`);
 			}
 
-			const project = result.project;
+      const project = result.project;
 
-			// 原子切换场景，避免 clearScenes 造成 active=null 窗口期
-			this.editor.scenes.initializeScenes({
-				scenes: project.scenes ?? [],
-				currentSceneId: project.currentSceneId,
-			});
+      // 原子切换场景，避免 clearScenes 造成 active=null 窗口期
+      this.editor.scenes.initializeScenes({
+        scenes: project.scenes ?? [],
+        currentSceneId: project.currentSceneId,
+      });
 
-			this.active = project;
+      let activeProject = project;
+      if (isSvfProjectKey(id)) {
+        const scenes = this.editor.scenes.getScenes();
+        const sceneDuration = getProjectDurationFromScenes({ scenes });
+        if (sceneDuration > 0 && sceneDuration !== project.metadata.duration) {
+          activeProject = {
+            ...project,
+            metadata: {
+              ...project.metadata,
+              duration: sceneDuration,
+            },
+          };
+        }
+      }
+
+      this.active = activeProject;
 			this.notify();
 
 			this.editor.media.clearAllAssets();
@@ -296,20 +269,12 @@ export class ProjectManager {
 		}
 
 		try {
-			await this.ensureStorageMigrations();
-			try {
-				const metadata = await storageService.loadAllProjectsMetadata();
-				this.savedProjects = metadata;
-				this.notify();
-			} catch (error) {
-				console.error("Failed to load projects:", error);
-			} finally {
-				this.isLoading = false;
-				this.isInitialized = true;
-				this.notify();
-			}
+			const metadata = await storageService.loadAllProjectsMetadata();
+			this.savedProjects = metadata;
+			this.notify();
 		} catch (error) {
-			console.error("Failed to run migrations:", error);
+			console.error("Failed to load projects:", error);
+		} finally {
 			this.isLoading = false;
 			this.isInitialized = true;
 			this.notify();
@@ -682,10 +647,6 @@ export class ProjectManager {
 
 	getIsInitialized(): boolean {
 		return this.isInitialized;
-	}
-
-	getMigrationState(): MigrationState {
-		return this.migrationState;
 	}
 
 	setActiveProject({ project }: { project: TProject }): void {

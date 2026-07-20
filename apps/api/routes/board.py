@@ -28,6 +28,22 @@ def get_board(
         raise HTTPException(400, f"未知看板类型: {kind}")
     if not state.store.get_project(project_id):
         raise HTTPException(404, "项目不存在")
+    if kind == "storyboard" and script_id:
+        from core.edit.shot_detail_sync import (
+            lazy_sync_storyboard_if_needed,
+            refresh_shot_tts_durations_if_drifted,
+        )
+
+        changed = lazy_sync_storyboard_if_needed(state.store, script_id)
+        refreshed, _ = refresh_shot_tts_durations_if_drifted(state.store, script_id)
+        if changed or refreshed:
+            from core.store.persist import schedule_save
+
+            schedule_save(
+                state.store,
+                conversation_index=state.conversation_index,
+                conversation_store=None,
+            )
     try:
         view = BoardBuilder(state.store).build(kind, project_id, script_id)
     except ValueError as e:

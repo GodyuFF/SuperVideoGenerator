@@ -7,8 +7,21 @@ from typing import Any
 from core.llm.client.tool_calls import ToolCallResult
 from core.models.entities import VideoStyleMode
 from core.llm.model.llm_request import LlmRequest
-from core.llm.master import ACTION_TO_STEP, STEP_META, pipeline_for_style
+from core.llm.master import STEP_META
+from core.llm.master.delegate_deps import delegates_for_style
+from core.llm.master.delegate_tool import DELEGATE_AGENT_ACTION, steps_for_style
 from core.llm.client.token_round import TokenRoundAccumulator
+
+# 测试脚本 LLM 用稳定委派顺序（按 step_type，非字母序）
+_SCRIPTED_STEP_ORDER = [
+    "script_design",
+    "storyboard",
+    "image_gen",
+    "video_gen",
+    "tts_gen",
+    "shot_detail",
+    "edit_compose",
+]
 from core.llm.client.tokens import TokenEstimate
 from core.llm.model.chat_message import ChatMessage
 from core.llm.prompt.chat_messages import extract_react_state_json, last_user_content
@@ -17,7 +30,7 @@ from core.llm.prompt.chat_messages import extract_react_state_json, last_user_co
 class ScriptedLLMClient:
     """模拟 LLMClient.complete / complete_tool_calls，供单元测试使用。"""
 
-    def __init__(self, style_mode: VideoStyleMode = VideoStyleMode.DYNAMIC_IMAGE) -> None:
+    def __init__(self, style_mode: VideoStyleMode = VideoStyleMode.STORYBOOK) -> None:
         self._style_mode = style_mode
         self._token_round: TokenRoundAccumulator | None = None
 
@@ -86,7 +99,7 @@ class ScriptedLLMClient:
         elif role == "master":
             state = extract_react_state_json(request) or {}
             completed = _parse_completed_from_state(state)
-            thought, action, args = self._master_react_tool(completed)
+            thought, action, args = self._master_react_tool(state, completed)
             tool_calls = [_make_tool_call(action, args)]
         elif role == "sub_agent":
             state = extract_react_state_json(request) or {}
@@ -101,12 +114,12 @@ class ScriptedLLMClient:
             if state:
                 action = "finish"
                 thought = "完成"
-                args = {}
+                args: dict[str, Any] = {}
                 for name in state.get("available_actions", []):
                     if name not in completed and name != "finish":
                         action = name
                         thought = f"执行 {action}"
-                        args = {}
+                        args = _args_for_available_action(state, completed, name)
                         break
             else:
                 try:
@@ -121,7 +134,7 @@ class ScriptedLLMClient:
                         if name not in completed and name != "finish":
                             action = name
                             thought = f"执行 {action}"
-                            args = {}
+                            args = _args_for_available_action(data, completed, name)
                             break
             tool_calls = [_make_tool_call(action, args)]
 
@@ -139,13 +152,21 @@ class ScriptedLLMClient:
             },
         )
 
-    def _master_react_tool(self, completed: set[str]) -> tuple[str, str, dict[str, Any]]:
-        pipeline = pipeline_for_style(self._style_mode)
-        for action in pipeline:
-            if action not in completed:
-                meta = STEP_META[ACTION_TO_STEP[action]]
-                return f"委派 {meta['title']}", action, {}
-        return "全部完成", "finish", {}
+    def _master_react_tool(
+        self,
+        state: dict[str, Any],
+        completed: set[str],
+    ) -> tuple[str, str, dict[str, Any]]:
+        if DELEGATE_AGENT_ACTION not in delegates_for_style(self._style_mode):
+            return "全部完成", "finish", {}
+        completed_steps = _completed_step_types(completed)
+        args = _pick_delegate_args(state, completed_steps, self._style_mode)
+        agent_id = args.get("agent_id")
+        if not agent_id:
+            return "全部完成", "finish", {}
+        step_type = _step_type_for_agent(agent_id)
+        title = STEP_META.get(step_type or "", {}).get("title", agent_id)
+        return f"委派 {title}", DELEGATE_AGENT_ACTION, args
 
     def _sub_agent_react_tool(
         self, agent_name: str, completed: set[str]
@@ -158,9 +179,18 @@ class ScriptedLLMClient:
 
     def _pipeline_for_agent(self, agent_name: str) -> list[str]:
         from core.llm.agent.definitions import AGENT_DEFINITIONS
+        from core.llm.master.actions import (
+            filter_storyboard_pipeline_actions,
+            filter_video_pipeline_actions,
+        )
 
         definition = AGENT_DEFINITIONS.get(agent_name)
-        return list(definition.action_pipeline) if definition else []
+        pipeline = list(definition.action_pipeline) if definition else []
+        if agent_name == "storyboard_agent":
+            return filter_storyboard_pipeline_actions(pipeline, self._style_mode)
+        if agent_name == "video_agent":
+            return filter_video_pipeline_actions(pipeline)
+        return pipeline
 
     async def complete_json(
         self,
@@ -196,20 +226,118 @@ class ScriptedLLMClient:
         return text
 
 
-def _make_tool_call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+def _step_type_for_agent(agent_id: str) -> str | None:
+    for step_type, meta in STEP_META.items():
+        if meta.get("agent") == agent_id:
+            return step_type
+    return None
+
+
+def _completed_step_types(completed: set[str]) -> set[str]:
+    """从 completed_actions 解析已完成 step_type。"""
+    steps: set[str] = set()
+    for item in completed:
+        if item.startswith("step:"):
+            steps.add(item[5:])
+        elif item in STEP_META:
+            steps.add(item)
+    return steps
+
+
+def _next_scripted_agent_id(
+    style_mode: VideoStyleMode,
+    completed_steps: set[str],
+) -> str | None:
+    allowed = set(steps_for_style(style_mode))
+    for step_type in _SCRIPTED_STEP_ORDER:
+        if step_type not in allowed:
+            continue
+        if step_type in completed_steps:
+            continue
+        return STEP_META[step_type]["agent"]
+    return None
+
+
+def _pick_delegate_args(
+    state: dict[str, Any],
+    completed_steps: set[str],
+    style_mode: VideoStyleMode,
+) -> dict[str, Any]:
+    readiness = state.get("delegate_readiness") or []
+    for row in readiness:
+        step_type = str(row.get("step_type") or "")
+        agent_id = row.get("agent_id")
+        if not agent_id or step_type in completed_steps or row.get("hard_blockers"):
+            continue
+        return {"agent_id": str(agent_id)}
+    agent_id = _next_scripted_agent_id(style_mode, completed_steps)
+    return {"agent_id": agent_id} if agent_id else {}
+
+
+def _args_for_available_action(
+    state: dict[str, Any],
+    completed: set[str],
+    action: str,
+) -> dict[str, Any]:
+    if action != DELEGATE_AGENT_ACTION:
+        return {}
+    return _pick_delegate_args(state, _completed_step_types(completed), VideoStyleMode.STORYBOOK)
+
+
+def _make_tool_call(name: str, arguments: dict[str, Any], *, call_id: str = "") -> dict[str, Any]:
     args = dict(arguments)
     if "plan_status" not in args:
         args["plan_status"] = f"scripted: 已选择 {name}"
     if "remaining_plan" not in args:
         args["remaining_plan"] = [] if name == "finish" else [f"继续 {name} 后续步骤"]
     return {
-        "id": f"call_scripted_{name}",
+        "id": call_id or f"call_scripted_{name}",
         "type": "function",
         "function": {
             "name": name,
             "arguments": json.dumps(args, ensure_ascii=False),
         },
     }
+
+
+_SCRIPTED_BATCH_CREATES = frozenset(
+    {"create_plot", "create_character", "create_scene", "create_prop"}
+)
+
+
+def _make_tool_calls(actions: list[str]) -> list[dict[str, Any]]:
+    """批量构造 scripted tool_calls（测试同轮多 tool 并行）。"""
+    return [
+        _make_tool_call(
+            action,
+            _scripted_action_json(action),
+            call_id=f"call_scripted_{idx}_{action}",
+        )
+        for idx, action in enumerate(actions)
+    ]
+
+
+def _scripted_sub_agent_tool_calls(
+    agent_name: str,
+    completed: set[str],
+    pipeline: list[str],
+) -> tuple[str, list[dict[str, Any]]]:
+    """子 Agent scripted 响应：parse_brief 后剩余 create_* 可同轮 batch 返回。"""
+    pending = [action for action in pipeline if action not in completed]
+    if not pending:
+        return "任务完成", [_make_tool_call("finish", {})]
+    if agent_name == "script_agent" and "parse_brief" in completed:
+        batch = [action for action in pending if action in _SCRIPTED_BATCH_CREATES]
+        if len(batch) > 1:
+            return (
+                f"[{agent_name}] 批量执行 {len(batch)} 个 create",
+                _make_tool_calls(batch),
+            )
+    action = pending[0]
+    return (
+        f"[{agent_name}] 执行 {action}",
+        [_make_tool_call(action, _scripted_action_json(action))],
+    )
 
 
 def _parse_completed_from_state(state: dict[str, Any]) -> set[str]:
@@ -263,6 +391,7 @@ def _scripted_action_json(action: str) -> dict[str, Any]:
                     "神情专注，整体气质干练而温和。"
                 ),
                 role="主角",
+                tts_voice="zh-CN-XiaoxiaoNeural-Female",
             ),
         },
         "create_scene": {
@@ -305,28 +434,153 @@ def _scripted_action_json(action: str) -> dict[str, Any]:
         },
         "scan_text_assets": {"observation": "扫描完成。", "count": 2},
         "generate_images": {"observation": "图片已生成。"},
-        "load_context": {"observation": "上下文已加载。", "asset_count": 3},
+        "load_context": {
+            "observation": "上下文已加载。",
+            "script_id": "script_fixture",
+            "asset_count": 3,
+        },
         "create_shots": {
             "observation": "镜头已设计。",
             "shots": [
-                {"order": 0, "duration_ms": 3000, "narration_text": "开场", "camera_motion": "ken_burns_in"},
-                {"order": 1, "duration_ms": 4000, "narration_text": "发展", "camera_motion": "pan_right"},
-                {"order": 2, "duration_ms": 3000, "narration_text": "结尾", "camera_motion": "fade"},
+                {
+                    "order": 0,
+                    "duration_ms": 3000,
+                    "sub_shots": [
+                        {
+                            "id": "ssb_scripted_0",
+                            "start_ms": 0,
+                            "end_ms": 3000,
+                            "description": "开场",
+                            "camera_motion": "ken_burns_in",
+                        }
+                    ],
+                    "audio_tracks": [
+                        {
+                            "kind": "voice",
+                            "name": "角色音",
+                            "clips": [{"start_ms": 0, "end_ms": 3000, "text": "开场"}],
+                        }
+                    ],
+                },
+                {
+                    "order": 1,
+                    "duration_ms": 4000,
+                    "sub_shots": [
+                        {
+                            "id": "ssb_scripted_1",
+                            "start_ms": 0,
+                            "end_ms": 4000,
+                            "description": "发展",
+                            "camera_motion": "pan_right",
+                        }
+                    ],
+                    "audio_tracks": [
+                        {
+                            "kind": "voice",
+                            "name": "角色音",
+                            "clips": [{"start_ms": 0, "end_ms": 4000, "text": "发展"}],
+                        }
+                    ],
+                },
+                {
+                    "order": 2,
+                    "duration_ms": 3000,
+                    "sub_shots": [
+                        {
+                            "id": "ssb_scripted_2",
+                            "start_ms": 0,
+                            "end_ms": 3000,
+                            "description": "结尾",
+                            "camera_motion": "fade",
+                        }
+                    ],
+                    "audio_tracks": [
+                        {
+                            "kind": "voice",
+                            "name": "角色音",
+                            "clips": [{"start_ms": 0, "end_ms": 3000, "text": "结尾"}],
+                        }
+                    ],
+                },
             ],
         },
         "create_frames": {
-            "observation": "画面资产已创建。",
+            "observation": "剧本画面 frame 已创建。",
             "frames": [
-                {"order": 0, "description": "开场画面，无人物纯背景或合成画面"},
-                {"order": 1, "description": "发展段落画面"},
-                {"order": 2, "description": "结尾画面"},
+                {
+                    "order": 0,
+                    "sub_shot_id": "ssb_scripted_0",
+                    "description": "开场画面，无人物纯背景或合成画面",
+                },
+                {
+                    "order": 1,
+                    "sub_shot_id": "ssb_scripted_1",
+                    "description": "发展段落画面",
+                },
+                {
+                    "order": 2,
+                    "sub_shot_id": "ssb_scripted_2",
+                    "description": "结尾画面",
+                },
+            ],
+        },
+        "create_video_clips": {
+            "observation": "video_clip 文字资产已创建。",
+            "video_clips": [
+                {
+                    "order": 0,
+                    "sub_shot_id": "ssb_scripted_0",
+                    "description": "开场 AI 视频片段",
+                    "element_refs": {},
+                },
+                {
+                    "order": 1,
+                    "sub_shot_id": "ssb_scripted_1",
+                    "description": "发展段落 AI 视频",
+                    "element_refs": {},
+                },
+                {
+                    "order": 2,
+                    "sub_shot_id": "ssb_scripted_2",
+                    "description": "结尾 AI 视频",
+                    "element_refs": {},
+                },
             ],
         },
         "persist_plan": {"observation": "计划稿已保存。"},
+        "get_shot_details": {"observation": "分镜详情已查询。"},
+        "get_shot_asset_timing": {"observation": "资产时长已查询。", "asset_kind": "all"},
+        "sync_actual_assets": {"observation": "已同步实测资产时长。"},
+        "review_shot": {
+            "observation": "单镜复核",
+            "plan_status": "测试中",
+            "remaining_plan": ["finish"],
+            "shot_id": "shot_scripted_0",
+            "patch": {"display_instructions": "测试展示说明"},
+        },
+        "review_and_restructure": {
+            "observation": "已复核分镜。",
+            "restructure_ops": [],
+            "patches": [
+                {
+                    "shot_id": "shot_scripted_0",
+                    "display_instructions": "Ken Burns 缓慢推近主体",
+                    "camera_motion_refined": "ken_burns_in",
+                }
+            ],
+        },
+        "persist_review": {"observation": "复核结果已保存。"},
+        "update_frames": {"observation": "frame 备注已更新。"},
         "load_shots": {
             "observation": "镜头已加载。",
             "shot_count": 3,
         },
+        "scan_video_clips": {
+            "observation": "已扫描 video_clip。",
+            "total": 3,
+            "ready": 3,
+        },
+        "generate_video_clips": {"observation": "video_clip 视频已生成。"},
         "generate_clips": {"observation": "视频片段已生成。"},
         "extract_narration": {"observation": "旁白已提取。", "line_count": 3},
         "synthesize": {

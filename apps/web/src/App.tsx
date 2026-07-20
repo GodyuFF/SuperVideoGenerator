@@ -10,14 +10,16 @@ import { AgentSettingsPage } from "./pages/AgentSettingsPage";
 import { AiSettingsPage } from "./pages/AiSettingsPage";
 import { LogsPage } from "./pages/LogsPage";
 import { EditorStudioPage } from "./pages/EditorStudioPage";
+import { EditTimelineVizPage } from "./pages/EditTimelineVizPage";
 import { ProjectHomePage } from "./pages/ProjectHomePage";
 import { Workbench } from "./pages/Workbench";
 
 import { LocaleProvider } from "./i18n/LocaleProvider";
 import { SvfThemeProvider } from "./components/theme/SvfThemeProvider";
+import { AppBootGate } from "./components/boot/AppBootGate";
 
 export default function App() {
-  const { route, projectId, scriptId, navigate, navigateHome, navigateToProject, navigateToEditor, navigateToLogs } =
+  const { route, projectId, scriptId, navigate, navigateHome, navigateToProject, navigateToEditor, navigateToLogs, navigateToEditTimelineViz } =
     useAppRoute();
   const ai = useAiConfig();
 
@@ -54,6 +56,15 @@ export default function App() {
         }}
       />
     );
+  } else if (route === "edit_timeline_viz") {
+    content = (
+      <EditTimelineVizPage
+        initialProjectId={projectId}
+        initialScriptId={scriptId}
+        onBack={navigateHome}
+        onNavigate={navigateToEditTimelineViz}
+      />
+    );
   } else if (route === "edit" && projectId && scriptId) {
     content = (
       <EditorStudioPage
@@ -84,13 +95,16 @@ export default function App() {
         onOpenSettings={() => navigate("settings")}
         onOpenAgents={() => navigate("agents")}
         onOpenLogs={() => navigateToLogs()}
+        onOpenEditTimelineViz={() => navigateToEditTimelineViz()}
       />
     );
   }
 
   return (
     <SvfThemeProvider>
-      <LocaleProvider>{content}</LocaleProvider>
+      <LocaleProvider>
+        <AppBootGate>{content}</AppBootGate>
+      </LocaleProvider>
     </SvfThemeProvider>
   );
 }

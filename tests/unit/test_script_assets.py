@@ -58,7 +58,7 @@ def test_create_plot_links_to_script(script_ctx):
         asset_name="开场",
         content={"text": "飞船起飞"},
         observation="",
-    )
+    ).asset
     refs = list_script_asset_refs(store, script_id)
     assert len(refs) == 1
     assert refs[0].target_id == plot.id
@@ -79,10 +79,11 @@ def test_create_character_shared_and_linked(script_ctx):
             role="主角",
         ),
         observation="",
-    )
+    ).asset
     assert char.scope == AssetScope.PROJECT_SHARED
     assert char.source_script_id == script_id
     assert "中年男性" in char.content["description"]
+    assert str(char.content.get("tts_voice", "")).strip()
     assert any(r.target_id == char.id for r in list_script_asset_refs(store, script_id))
 
 
@@ -96,7 +97,7 @@ def test_update_plot_merges_content(script_ctx):
         asset_name="段落1",
         content={"text": "初稿"},
         observation="",
-    )
+    ).asset
     updated = update_text_asset_for_action(
         store,
         action="update_plot",
@@ -124,7 +125,7 @@ def test_delete_removes_asset_and_script_link(script_ctx):
             location="舰桥",
         ),
         observation="",
-    )
+    ).asset
     delete_text_asset_for_action(
         store,
         action="delete_scene",
@@ -149,7 +150,7 @@ def test_delete_blocked_when_media_references(script_ctx):
             role="配角",
         ),
         observation="",
-    )
+    ).asset
     store.add_reference(
         AssetReference(
             source_id="media_1",
@@ -193,6 +194,7 @@ def test_apply_action_result_parse_brief(script_ctx):
 
 
 def test_apply_action_result_update_script(script_ctx):
+    """已确认标题不被 Agent update_script 覆盖，正文仍可更新。"""
     store, _pid, script_id, ctx = script_ctx
     apply_action_result(
         store,
@@ -203,5 +205,35 @@ def test_apply_action_result_update_script(script_ctx):
     )
     script = store.get_script(script_id)
     assert script is not None
-    assert script.title == "新标题"
+    assert script.title == "第一集"
     assert "新正文" in script.content_md
+
+
+def test_apply_action_result_update_script_title_when_placeholder():
+    """占位标题允许由 Agent 在剧本设计时写入正式名。"""
+    store = MemoryStore()
+    project = Project(title="p")
+    store.add_project(project)
+    script = Script(project_id=project.id, title="默认剧本")
+    store.add_script(script)
+    ctx = AgentRunContext(
+        task_brief="设计剧本",
+        work_context={
+            "project_id": project.id,
+            "script_id": script.id,
+            "user_message": "月光故事",
+        },
+        script_id=script.id,
+        step_id="step1",
+        agent_name="script_agent",
+    )
+    apply_action_result(
+        store,
+        "script_agent",
+        "update_script",
+        ctx,
+        {"title": "月光下的约定", "content_md": "# 月光\n\n正文", "observation": "ok"},
+    )
+    updated = store.get_script(script.id)
+    assert updated is not None
+    assert updated.title == "月光下的约定"

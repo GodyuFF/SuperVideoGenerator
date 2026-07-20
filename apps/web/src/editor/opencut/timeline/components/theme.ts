@@ -1,8 +1,8 @@
 import type { TrackType } from "@opencut/timeline";
 
-export const TIMELINE_AUDIO_WAVEFORM_COLOR = "rgba(230, 234, 242, 0.55)";
+export const TIMELINE_AUDIO_WAVEFORM_COLOR = "rgba(140, 185, 220, 0.55)";
 
-/** 时间轴 clip 统一灰底 + 左侧细色条（类名在 svf-opencut-theme.css 定义）。 */
+/** 时间轴 clip 分轨半透明胶片色 + 左侧类型色条（样式在 svf-opencut-theme.css）。 */
 const CLIP_BASE = "svf-timeline-clip";
 
 export const TIMELINE_TRACK_THEME: Record<

@@ -11,10 +11,14 @@ from core.models.entities import (
     MediaAssetType,
     Project,
     Script,
+    Shot,
+    ShotAudioClip,
+    ShotAudioTrack,
+    ShotSubtitle,
+    ShotSubShot,
     TextAsset,
     TextAssetType,
     VideoPlan,
-    VideoPlanShot,
     VideoStyleMode,
 )
 from core.store.memory import MemoryStore
@@ -74,12 +78,30 @@ def timeline_store(tmp_path, monkeypatch) -> MemoryStore:
     )
     store.add_media_asset(audio)
 
-    shot = VideoPlanShot(
+    shot = Shot(
         order=0,
         duration_ms=3000,
-        narration_text="老虎在雪原上",
-        camera_motion="ken_burns_in",
-        asset_refs={"character": [char.id]},
+        sub_shots=[
+            ShotSubShot(
+                start_ms=0,
+                end_ms=3000,
+                description="老虎在雪原上",
+                element_refs={"character": [char.id]},
+                camera_motion="ken_burns_in",
+            )
+        ],
+        audio_tracks=[
+            ShotAudioTrack(
+                kind="voice",
+                name="角色音",
+                clips=[
+                    ShotAudioClip(
+                        start_ms=0, end_ms=3000, media_id=audio.id, text="老虎在雪原上"
+                    )
+                ],
+            )
+        ],
+        subtitles=[ShotSubtitle(start_ms=0, end_ms=3000, text="老虎在雪原上")],
     )
     ensure_shot_frame_image(
         store,
@@ -88,9 +110,12 @@ def timeline_store(tmp_path, monkeypatch) -> MemoryStore:
         shot=shot,
         image_url=api_url,
     )
+    # 关联 TTS 媒体到镜头（供 build_tts_by_shot 反查）
+    audio.metadata = {**(audio.metadata or {}), "shot_id": shot.id}
+    store.add_media_asset(audio)
     plan = VideoPlan(
         script_id=script.id,
-        mode=VideoStyleMode.DYNAMIC_IMAGE,
+        mode=VideoStyleMode.STORYBOOK,
         shots=[shot],
     )
     store.set_video_plan(plan)
@@ -98,7 +123,6 @@ def timeline_store(tmp_path, monkeypatch) -> MemoryStore:
         store,
         script_id=script.id,
         plan=plan,
-        tts_by_shot={plan.shots[0].id: audio.id},
     )
     store.set_edit_timeline(timeline)
     store._test_project_id = project.id  # type: ignore[attr-defined]

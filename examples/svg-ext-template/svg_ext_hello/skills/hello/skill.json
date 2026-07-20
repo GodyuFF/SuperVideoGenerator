@@ -1,0 +1,8 @@
+{
+  "id": "hello",
+  "title": "Hello 扩展",
+  "description": "演示 pip entry_points Skill + Tool 扩展。",
+  "tools": {
+    "enable": ["ext.hello"]
+  }
+}

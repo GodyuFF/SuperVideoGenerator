@@ -9,7 +9,7 @@ from pathlib import Path
 from core.edit.asset_resolver import resolve_clip_media, shot_by_id_for_script
 from core.edit.media_paths import ExportMediaError, resolve_local_path_for_url
 from core.edit.nle_export.errors import NleExportError
-from core.edit.timeline import ensure_video_layers
+from core.edit.timeline import timeline_duration_ms
 from core.models.entities import EditClip, EditTimeline, MediaAssetType
 from core.store.memory import MemoryStore
 
@@ -90,7 +90,6 @@ def stage_media_files(
     staging_dir: Path,
 ) -> MediaBundle:
     """复制时间轴引用的全部媒体到 staging/media 目录。"""
-    timeline = ensure_video_layers(timeline)
     shot_by_id = shot_by_id_for_script(store, script_id)
     media_dir = staging_dir / "media"
     media_dir.mkdir(parents=True, exist_ok=True)

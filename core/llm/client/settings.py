@@ -6,8 +6,12 @@ from typing import Any, Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.llm.providers import DEFAULT_PROVIDER_ID, PROVIDER_PRESETS
+from core.llm.client.providers import DEFAULT_PROVIDER_ID, PROVIDER_PRESETS
 from core.models.entities import ImageSourceMode, ImageTextConfig
+
+# 输出 Token 上限：384k = 384 * 1024
+MAX_OUTPUT_TOKENS = 393_216
+DEFAULT_MAX_TOKENS = 8192
 
 
 class LLMSettings(BaseSettings):
@@ -18,7 +22,7 @@ class LLMSettings(BaseSettings):
     api_key: str | None = None
     base_url: str | None = None
     temperature: float = 0.2
-    max_tokens: int = 8192
+    max_tokens: int = DEFAULT_MAX_TOKENS
     context_window_tokens: int = 1_048_576
     history_keep_messages: int = 10
     timeout_sec: float = 60.0
@@ -182,6 +186,10 @@ class LLMConfigManager:
         if temperature is not None:
             self._settings.temperature = temperature
         if max_tokens is not None:
+            if max_tokens < 256 or max_tokens > MAX_OUTPUT_TOKENS:
+                raise ValueError(
+                    f"max_tokens 须在 256~{MAX_OUTPUT_TOKENS} 之间（当前 {max_tokens}）"
+                )
             self._settings.max_tokens = max_tokens
         if context_window_tokens is not None:
             self._settings.context_window_tokens = context_window_tokens

@@ -11,7 +11,7 @@ import type {
 	ShortcutKey,
 } from "@opencut/actions/keybinding";
 import { isKey } from "@opencut/actions/keybinding";
-import { runMigrations, CURRENT_VERSION } from "./keybindings/migrations";
+import { CURRENT_KEYBINDINGS_VERSION } from "./keybindings/constants";
 
 export interface KeybindingConflict {
 	key: ShortcutKey;
@@ -179,13 +179,11 @@ export const useKeybindingsStore = create<KeybindingsState>()(
 		}),
 		{
 			name: "opencut-keybindings",
-			version: CURRENT_VERSION,
+			version: CURRENT_KEYBINDINGS_VERSION,
 			partialize: (state): PersistedState => ({
 				keybindings: Object.fromEntries(state.keybindings),
 				isCustomized: state.isCustomized,
 			}),
-			migrate: (persisted, version) =>
-				runMigrations({ state: persisted, fromVersion: version }),
 			merge: (persisted, current) => {
 				if (!isPersistedState(persisted)) return current;
 				const entries = Object.entries(persisted.keybindings);

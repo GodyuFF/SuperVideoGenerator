@@ -11,6 +11,13 @@ export interface UserChatMessage {
   skillId?: string;
 }
 
+/** 同轮 ReAct 中的单条 tool 行动（batch 时使用）。 */
+export interface ReactTurnActionItem {
+  action: string;
+  actionInput?: Record<string, string>;
+  observation?: string;
+}
+
 export interface ReactTurnMessage {
   kind: "react_turn";
   id: string;
@@ -23,6 +30,8 @@ export interface ReactTurnMessage {
   actionLabel?: string;
   actionKind?: ActionKind;
   actionInput?: Record<string, string>;
+  /** 同轮并行多个 tool 时的明细（单 tool 时仍用 action/actionInput） */
+  actions?: ReactTurnActionItem[];
   observation?: string;
 }
 
@@ -31,6 +40,8 @@ export interface SubAgentIteration {
   thought?: string;
   action?: string;
   actionInput?: Record<string, string>;
+  /** 同轮并行多个 tool 时的明细 */
+  actions?: ReactTurnActionItem[];
   observation?: string;
 }
 
@@ -59,7 +70,12 @@ export interface SystemChatMessage {
   text: string;
 }
 
-export type A2UIConfirmationStatus = "pending" | "submitted" | "cancelled" | "superseded";
+export type A2UIConfirmationStatus =
+  | "pending"
+  | "submitted"
+  | "cancelled"
+  | "superseded"
+  | "expired";
 
 export interface A2UIChatMessage {
   kind: "a2ui_confirmation";

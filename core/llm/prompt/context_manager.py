@@ -8,6 +8,10 @@ from core.llm.prompt.project_context import (
     build_project_script_context,
     format_project_context_line,
 )
+from core.llm.prompt.tts_voice_context import (
+    build_tts_voice_context,
+    format_tts_voice_hint_block,
+)
 from core.store.memory import MemoryStore
 
 
@@ -70,6 +74,8 @@ class SubAgentContextProvider:
             extra["style_mode"] = str(sm.value if hasattr(sm, "value") else sm)
         if ctx.history_summary:
             extra["history_summary"] = ctx.history_summary
+        if ctx.agent_name == "script_agent":
+            extra.update(build_tts_voice_context())
         if ctx.plan_slice is not None:
             extra["plan_slice"] = ctx.plan_slice.model_dump()
         return extra

@@ -1,18 +1,22 @@
-"""resolve_shot_image_ref 优先 frame、禁止 character 裸图回退。"""
+"""resolve_shot_image_ref 仅返回画面 IMAGE，禁止视频与 character 回退。"""
 
-from core.edit.timeline import resolve_shot_image_ref
+from core.edit.timeline import resolve_shot_image_ref, resolve_shot_video_ref
 from core.models.entities import (
     AssetScope,
     MediaAsset,
     MediaAssetType,
     Project,
     Script,
+    ShotSubShotImage,
+    ShotSubShotVideo,
     TextAsset,
     TextAssetType,
-    VideoPlanShot,
+    Shot,
 )
 from core.store.memory import MemoryStore
+from tests.support.frame_fixtures import ensure_shot_frame_image
 from tests.support.image_text_fixtures import character_content
+from tests.support.shot_fixtures import make_shot
 
 
 def test_resolve_prefers_frame_over_character():
@@ -43,34 +47,15 @@ def test_resolve_prefers_frame_over_character():
     char.primary_media_id = char_media.id
     store.update_text_asset(char)
 
-    frame = TextAsset(
+    shot = make_shot(order=0, text="镜头")
+    shot.sub_shots[0].element_refs = {"character": [char.id]}
+    frame, frame_media = ensure_shot_frame_image(
+        store,
         project_id=project.id,
         script_id=script.id,
-        type=TextAssetType.FRAME,
-        scope=AssetScope.SCRIPT_PRIVATE,
-        name="画面",
-        content={"description": "合成画面", "shot_id": "shot_x"},
-        source_script_id=script.id,
-    )
-    store.add_text_asset(frame)
-    frame_media = MediaAsset(
-        project_id=project.id,
-        script_id=script.id,
-        type=MediaAssetType.IMAGE,
-        name="frame",
-        url="https://images.test/frame.png",
-        source_asset_id=frame.id,
-    )
-    store.add_media_asset(frame_media)
-    frame.primary_media_id = frame_media.id
-    store.update_text_asset(frame)
-
-    shot = VideoPlanShot(
-        narration_text="镜头",
-        asset_refs={
-            "frame": [frame.id],
-            "character": [char.id],
-        },
+        shot=shot,
+        element_refs={"character": [char.id], "frame": []},
+        image_url="https://images.test/frame.png",
     )
     assert resolve_shot_image_ref(store, shot) == frame_media.id
 
@@ -103,8 +88,44 @@ def test_resolve_does_not_fallback_to_character():
     char.primary_media_id = char_media.id
     store.update_text_asset(char)
 
-    shot = VideoPlanShot(
-        narration_text="镜头",
-        asset_refs={"character": [char.id]},
-    )
+    shot = make_shot(order=0, text="镜头")
+    shot.sub_shots[0].element_refs = {"character": [char.id]}
     assert resolve_shot_image_ref(store, shot) is None
+
+
+def test_resolve_image_ignores_video_media_in_images_slot():
+    """误绑到 images[] 的视频 media 不得作为画面预览。"""
+    store = MemoryStore()
+    project = Project(title="p")
+    store.add_project(project)
+    script = Script(project_id=project.id, title="s")
+    store.add_script(script)
+
+    video = MediaAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=MediaAssetType.VIDEO,
+        name="clip",
+        url="https://videos.test/clip.mp4",
+    )
+    store.add_media_asset(video)
+
+    shot = make_shot(order=0, text="镜头")
+    shot.sub_shots[0] = shot.sub_shots[0].model_copy(
+        update={
+            "images": [
+                ShotSubShotImage(kind="video", media_id=video.id, frame_asset_id=""),
+            ],
+            "videos": [
+                ShotSubShotVideo(media_id=video.id, source_kind="video"),
+            ],
+        }
+    )
+    if shot.video_tracks and shot.video_tracks[0].clips:
+        clip = shot.video_tracks[0].clips[0].model_copy(
+            update={"media_id": video.id, "source_kind": "video"}
+        )
+        shot.video_tracks[0] = shot.video_tracks[0].model_copy(update={"clips": [clip]})
+
+    assert resolve_shot_image_ref(store, shot) is None
+    assert resolve_shot_video_ref(store, shot) == video.id

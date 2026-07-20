@@ -5,12 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from core.edit.asset_resolver import validate_edit_timeline
+from core.edit.asset_resolver import resolve_clip_media, validate_edit_timeline
 from core.edit.edit_capabilities import edit_capability_issues
-from core.edit.shot_timing import resolve_shot_timings
+from core.edit.shot_flatten import effective_shot_duration_ms
+from core.edit.shot_timing import _find_video_clip_for_shot, resolve_shot_timings
 from core.edit.timeline import (
+    build_tts_by_shot,
     build_timeline_layer_summary,
-    ensure_video_layers,
     flat_video_clips,
     timeline_duration_ms,
     validate_timeline_clips,
@@ -33,6 +34,14 @@ class AnalyzeTimelineRequest:
     layer_ids: list[str] | None = None
     include_hints: bool = True
     include_shot_alignment: bool = True
+    include_analysis: bool = True
+
+
+def _effective_analysis_flags(req: AnalyzeTimelineRequest) -> tuple[bool, bool]:
+    """根据 include_analysis 决定是否输出 hints 与 shot_alignment。"""
+    if not req.include_analysis:
+        return False, False
+    return req.include_hints, req.include_shot_alignment
 
 
 @dataclass
@@ -74,31 +83,64 @@ def _clip_partial_in_range(clip: EditClip, start_ms: int, end_ms: int) -> bool:
     return clip.start_ms < start_ms or clip.end_ms > end_ms
 
 
-def _serialize_clip_in_range(
+def _serialize_clip_detail(
+    store: MemoryStore,
     clip: EditClip,
     *,
     track: str,
     layer_id: str | None,
+    script_id: str,
     range_start: int,
     range_end: int,
 ) -> dict[str, Any]:
-    """输出与区间相交的 clip 摘要。"""
+    """输出与区间相交的 clip 完整详情（含运镜、变换、素材解析）。"""
     shot_id = ""
     if clip.source_refs and clip.source_refs.shot_id:
         shot_id = clip.source_refs.shot_id
     elif clip.metadata:
         shot_id = str(clip.metadata.get("shot_id") or "")
-    return {
+
+    visible_start = max(clip.start_ms, range_start)
+    visible_end = min(clip.end_ms, range_end)
+    payload: dict[str, Any] = {
         "id": clip.id,
         "track": track,
         "layer_id": layer_id,
         "start_ms": clip.start_ms,
         "end_ms": clip.end_ms,
+        "duration_ms": clip.end_ms - clip.start_ms,
         "label": clip.label,
         "asset_ref": clip.asset_ref,
         "shot_id": shot_id,
         "partial": _clip_partial_in_range(clip, range_start, range_end),
+        "visible_range": {
+            "start_ms": visible_start,
+            "end_ms": visible_end,
+            "duration_ms": max(0, visible_end - visible_start),
+        },
+        "edit_description": clip.edit_description,
+        "motion": clip.motion,
+        "motion_detail": clip.motion_detail.model_dump() if clip.motion_detail else None,
+        "transition_in": clip.transition_in.model_dump() if clip.transition_in else None,
+        "transition_out": clip.transition_out.model_dump() if clip.transition_out else None,
+        "background": clip.background.model_dump() if clip.background else None,
+        "transform": clip.transform.model_dump() if clip.transform else None,
+        "source_refs": clip.source_refs.model_dump() if clip.source_refs else None,
+        "metadata": dict(clip.metadata or {}),
     }
+    try:
+        resolved = resolve_clip_media(store, clip, script_id=script_id)
+        if resolved is not None:
+            payload["resolved"] = {
+                "media_id": resolved.media_id,
+                "media_type": resolved.media_type,
+                "url": resolved.url,
+                "link": resolved.link,
+                "is_accessible": resolved.is_accessible,
+            }
+    except Exception:
+        pass
+    return payload
 
 
 def _scan_gaps_for_clips(
@@ -174,7 +216,6 @@ def _filter_overlaps_to_range(
 ) -> list[dict[str, Any]]:
     """将同层重叠过滤到分析区间。"""
     clip_by_id: dict[str, EditClip] = {}
-    timeline = ensure_video_layers(timeline)
     for layer in timeline.video_layers:
         for clip in layer.clips:
             clip_by_id[clip.id] = clip
@@ -198,7 +239,6 @@ def _filter_missing_to_range(
 ) -> list[dict[str, Any]]:
     """过滤区间内 clip 相关的缺失素材项。"""
     clip_by_id: dict[str, EditClip] = {}
-    timeline = ensure_video_layers(timeline)
     for layer in timeline.video_layers:
         for clip in layer.clips:
             clip_by_id[clip.id] = clip
@@ -220,23 +260,42 @@ def _build_shot_alignment(
     script_id: str,
     timeline: EditTimeline,
 ) -> list[dict[str, Any]]:
-    """对比每镜计划时长与时间轴实际区间。"""
+    """对比每镜计划时长与时间轴实际 clip 区间（不因 authoritative 回退而掩盖漂移）。"""
+    plan = store.get_video_plan_for_script(script_id)
+    if not plan or not plan.shots:
+        return []
+    shots_by_id = {s.id: s for s in plan.shots}
+    tts_by_shot = build_tts_by_shot(store, script_id)
     timings = resolve_shot_timings(store, script_id, timeline=timeline)
     rows: list[dict[str, Any]] = []
     for view in timings:
-        actual_ms = view.timeline_end_ms - view.timeline_start_ms
+        shot = shots_by_id.get(view.shot_id)
+        clip = _find_video_clip_for_shot(timeline, shot) if shot else None
+        if clip is not None:
+            timeline_start_ms = clip.start_ms
+            timeline_end_ms = clip.end_ms
+            actual_ms = timeline_end_ms - timeline_start_ms
+        else:
+            timeline_start_ms = view.timeline_start_ms
+            timeline_end_ms = view.timeline_end_ms
+            actual_ms = timeline_end_ms - timeline_start_ms
         planned_ms = view.duration_ms
         tts_ms = view.tts_duration_ms
-        effective_planned = max(planned_ms, tts_ms) if tts_ms else planned_ms
+        effective_planned = (
+            effective_shot_duration_ms(shot)
+            if shot
+            else max(planned_ms, tts_ms) if tts_ms else planned_ms
+        )
         delta = actual_ms - effective_planned
         rows.append(
             {
                 "shot_id": view.shot_id,
                 "order": view.order,
                 "planned_duration_ms": planned_ms,
+                "effective_planned_duration_ms": effective_planned,
                 "tts_duration_ms": tts_ms,
-                "timeline_start_ms": view.timeline_start_ms,
-                "timeline_end_ms": view.timeline_end_ms,
+                "timeline_start_ms": timeline_start_ms,
+                "timeline_end_ms": timeline_end_ms,
                 "actual_duration_ms": actual_ms,
                 "timeline_source": view.timeline_source,
                 "delta_ms": delta,
@@ -246,8 +305,54 @@ def _build_shot_alignment(
     return rows
 
 
+def _build_audio_shorter_than_media_hints(
+    store: MemoryStore,
+    timeline: EditTimeline,
+    *,
+    range_start: int,
+    range_end: int,
+) -> list[dict[str, Any]]:
+    """检测 audio clip 区间短于素材真实时长的情况。"""
+    from core.edit.timeline import _effective_audio_media_duration_ms
+    from core.models.entities import MediaAssetType
+
+    hints: list[dict[str, Any]] = []
+    for clip in timeline.tracks.get("audio", []):
+        if not _clip_intersects_range(clip, range_start, range_end):
+            continue
+        asset_ref = str(clip.asset_ref or "").strip()
+        if not asset_ref:
+            continue
+        media = store.media_assets.get(asset_ref)
+        if media is None or media.type != MediaAssetType.AUDIO:
+            continue
+        media_ms = _effective_audio_media_duration_ms(store, media)
+        if media_ms <= 0:
+            continue
+        start_ms = int(clip.start_ms or 0)
+        end_ms = int(clip.end_ms or start_ms)
+        clip_ms = max(end_ms - start_ms, 0)
+        if clip_ms >= media_ms - DURATION_MISMATCH_THRESHOLD_MS:
+            continue
+        shot_id = str((clip.metadata or {}).get("shot_id") or "").strip()
+        hints.append(
+            {
+                "type": "audio_shorter_than_media",
+                "severity": "warning",
+                "message": "音频 clip 区间短于素材文件时长，时间轴可能只展示一半",
+                "clip_id": clip.id,
+                "shot_id": shot_id or None,
+                "clip_ms": clip_ms,
+                "media_ms": media_ms,
+                "asset_ref": asset_ref,
+            }
+        )
+    return hints
+
+
 def _build_optimization_hints(
     *,
+    store: MemoryStore,
     gaps: list[dict[str, Any]],
     overlaps: list[dict[str, Any]],
     shot_alignment: list[dict[str, Any]],
@@ -325,6 +430,22 @@ def _build_optimization_hints(
                     "actual_duration_ms": actual_ms,
                 }
             )
+            hints.append(
+                {
+                    "type": "video_shorter_than_audio",
+                    "severity": "warning",
+                    "message": "画面短于配音，建议视频慢放/尾帧定格或拆镜补生成",
+                    "shot_id": row.get("shot_id"),
+                    "tts_duration_ms": tts_ms,
+                    "actual_duration_ms": actual_ms,
+                    "proposed_fixes": [
+                        "video_rate",
+                        "freeze_tail",
+                        "extend_video_gen",
+                        "split_shot",
+                    ],
+                }
+            )
 
     for item in missing_assets:
         hints.append(
@@ -337,6 +458,15 @@ def _build_optimization_hints(
                 "shot_id": item.get("shot_id"),
             }
         )
+
+    hints.extend(
+        _build_audio_shorter_than_media_hints(
+            store,
+            timeline,
+            range_start=range_start,
+            range_end=range_end,
+        )
+    )
 
     for clip_id, field_name, reason in edit_capability_issues(timeline):
         clip = None
@@ -371,7 +501,6 @@ def analyze_edit_timeline(
 ) -> AnalyzeTimelineResult:
     """分析时间轴指定区间的 clip、空白、重叠与优化建议。"""
     req = request or AnalyzeTimelineRequest()
-    timeline = ensure_video_layers(timeline)
     total_duration = timeline_duration_ms(timeline)
     range_start = max(0, int(req.start_ms or 0))
     range_end = int(req.end_ms) if req.end_ms is not None else total_duration
@@ -381,6 +510,8 @@ def analyze_edit_timeline(
 
     track_filter = set(req.tracks) if req.tracks else set(("video", "audio", "subtitle"))
     layer_filter = set(req.layer_ids) if req.layer_ids else None
+    include_hints, include_shot_alignment = _effective_analysis_flags(req)
+    script_id = timeline.script_id
 
     clips_in_range: list[dict[str, Any]] = []
     gaps: list[dict[str, Any]] = []
@@ -392,10 +523,12 @@ def analyze_edit_timeline(
             for clip in layer.clips:
                 if _clip_intersects_range(clip, range_start, range_end):
                     clips_in_range.append(
-                        _serialize_clip_in_range(
+                        _serialize_clip_detail(
+                            store,
                             clip,
                             track="video",
                             layer_id=layer.id,
+                            script_id=script_id,
                             range_start=range_start,
                             range_end=range_end,
                         )
@@ -418,10 +551,12 @@ def analyze_edit_timeline(
         for clip in track_clips:
             if _clip_intersects_range(clip, range_start, range_end):
                 clips_in_range.append(
-                    _serialize_clip_in_range(
+                    _serialize_clip_detail(
+                        store,
                         clip,
                         track=track_name,
                         layer_id=None,
+                        script_id=script_id,
                         range_start=range_start,
                         range_end=range_end,
                     )
@@ -462,12 +597,13 @@ def analyze_edit_timeline(
     )
 
     shot_alignment: list[dict[str, Any]] = []
-    if req.include_shot_alignment:
+    if include_shot_alignment:
         shot_alignment = _build_shot_alignment(store, timeline.script_id, timeline)
 
     optimization_hints: list[dict[str, Any]] = []
-    if req.include_hints:
+    if include_hints:
         optimization_hints = _build_optimization_hints(
+            store=store,
             gaps=gaps,
             overlaps=overlaps,
             shot_alignment=shot_alignment,
@@ -495,7 +631,6 @@ def analyze_edit_timeline(
 
 def _clips_mentioned_in_warning(warning: str, timeline: EditTimeline) -> list[EditClip]:
     """从警告文本中提取可能相关的 clip。"""
-    timeline = ensure_video_layers(timeline)
     matched: list[EditClip] = []
     for layer in timeline.video_layers:
         for clip in layer.clips:
@@ -517,7 +652,7 @@ def build_analyze_summary(
     result = analyze_edit_timeline(
         store,
         timeline,
-        AnalyzeTimelineRequest(include_hints=False),
+        AnalyzeTimelineRequest(include_hints=False, include_shot_alignment=False),
     )
     mismatch_count = sum(1 for row in result.shot_alignment if row.get("mismatch"))
     return {

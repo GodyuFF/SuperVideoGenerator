@@ -5,15 +5,17 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from core.guards.script_style import normalize_style_mode_id
 from core.models.entities import TextAssetType
 from core.models.image_text_asset import (
     extract_traits,
     is_image_text_asset,
     normalize_image_text_content,
 )
+from core.models.video_text_asset import is_video_text_asset, normalize_video_clip_content
 from core.store.memory import MemoryStore
 
-_TEXT_ASSET_TYPES = frozenset({"character", "scene", "prop", "plot"})
+_TEXT_ASSET_TYPES = frozenset({"character", "scene", "prop", "plot", "frame", "video_clip"})
 _CONTENT_PREVIEW_LEN = 120
 
 
@@ -25,6 +27,8 @@ def _preview_text(text: str, limit: int = _CONTENT_PREVIEW_LEN) -> str:
 
 
 def _normalize_content(asset: Any, store: MemoryStore) -> dict[str, Any]:
+    if is_video_text_asset(asset.type.value):
+        return normalize_video_clip_content(asset.content)
     if is_image_text_asset(asset.type):
         content = normalize_image_text_content(asset.type, asset.content)
         if not str(content.get("image_prompt", "")).strip():
@@ -120,7 +124,7 @@ def build_text_assets_list_payload(
         "duration_sec": script.duration_sec,
         "status": script.status.value,
         "content_md": script.content_md,
-        "style_mode": script.style_mode.value if script.style_mode else None,
+        "style_mode": normalize_style_mode_id(script.style_mode) if script.style_mode else None,
     }
 
     asset_items: list[dict[str, Any]] = []

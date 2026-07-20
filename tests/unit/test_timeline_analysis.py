@@ -94,3 +94,53 @@ def test_analyze_overlap_detection(timeline_store: MemoryStore):
     )
     assert result.overlaps
     assert any(h["type"] == "overlap" for h in result.optimization_hints)
+
+
+def test_analyze_clip_detail_fields(timeline_store: MemoryStore):
+    """clips_in_range 应含 edit_description、transform、visible_range 与 resolved。"""
+    script_id = timeline_store._test_script_id  # type: ignore[attr-defined]
+    plan = timeline_store.get_video_plan_for_script(script_id)
+    timeline = compile_timeline_from_shots(timeline_store, script_id=script_id, plan=plan)
+    layer = timeline.video_layers[0]
+    clip = layer.clips[0].model_copy(
+        update={
+            "edit_description": "主体居中，Ken Burns 推近",
+            "motion": "ken_burns_in",
+        }
+    )
+    timeline = timeline.model_copy(
+        update={"video_layers": [layer.model_copy(update={"clips": [clip]})]}
+    )
+    timeline_store.set_edit_timeline(timeline)
+
+    result = analyze_edit_timeline(
+        timeline_store,
+        timeline,
+        AnalyzeTimelineRequest(start_ms=0, end_ms=3000, include_analysis=False),
+    )
+    assert result.clips_in_range
+    video_clip = next(c for c in result.clips_in_range if c["track"] == "video")
+    assert video_clip["edit_description"] == "主体居中，Ken Burns 推近"
+    assert video_clip["motion"] == "ken_burns_in"
+    assert "visible_range" in video_clip
+    assert video_clip["visible_range"]["start_ms"] == 0
+    assert "transform" in video_clip
+    assert result.shot_alignment == []
+    assert result.optimization_hints == []
+
+
+def test_analyze_include_analysis_false_skips_alignment(timeline_store: MemoryStore):
+    """include_analysis=false 时不输出 shot_alignment 与 optimization_hints。"""
+    script_id = timeline_store._test_script_id  # type: ignore[attr-defined]
+    plan = timeline_store.get_video_plan_for_script(script_id)
+    timeline = compile_timeline_from_shots(timeline_store, script_id=script_id, plan=plan)
+    timeline_store.set_edit_timeline(timeline)
+
+    result = analyze_edit_timeline(
+        timeline_store,
+        timeline,
+        AnalyzeTimelineRequest(include_analysis=False),
+    )
+    assert result.clips_in_range
+    assert result.shot_alignment == []
+    assert result.optimization_hints == []

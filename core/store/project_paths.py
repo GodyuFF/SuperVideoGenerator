@@ -45,6 +45,11 @@ def script_exports_dir(project_id: str, script_id: str) -> Path:
     return script_dir(project_id, script_id) / "assets" / "exports"
 
 
+def rag_db_path(project_id: str) -> Path:
+    """项目 RAG 向量索引 SQLite 路径。"""
+    return project_dir(project_id) / "rag" / "embeddings.sqlite"
+
+
 def _write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -233,6 +238,20 @@ def discover_projects_from_disk(store: MemoryStore) -> bool:
                 script = script.model_copy(update={"id": script_path_dir.name})
             if script.project_id != project.id:
                 script = script.model_copy(update={"project_id": project.id})
+            if not (script.created_at or "").strip():
+                try:
+                    from datetime import datetime, timezone
+
+                    mtime = script_meta.stat().st_mtime
+                    script = script.model_copy(
+                        update={
+                            "created_at": datetime.fromtimestamp(
+                                mtime, tz=timezone.utc
+                            ).isoformat()
+                        }
+                    )
+                except OSError:
+                    pass
             if store.get_script(script.id) is None:
                 store.add_script(script)
                 changed = True
@@ -281,13 +300,35 @@ def sync_scripts_from_disk(store: MemoryStore) -> bool:
             existing_md = (existing.content_md or "").strip()
             if disk_md and len(disk_md) > len(existing_md):
                 updates["content_md"] = disk_script.content_md
-            for field in ("title", "status", "duration_sec", "style_mode", "style_locked", "plan_version"):
+            for field in (
+                "title",
+                "status",
+                "duration_sec",
+                "style_mode",
+                "style_locked",
+                "plan_version",
+                "created_at",
+            ):
                 disk_val = getattr(disk_script, field, None)
                 existing_val = getattr(existing, field, None)
                 if disk_val is not None and disk_val != existing_val:
                     if field == "content_md":
                         continue
+                    # 已有 created_at 时不覆盖为空
+                    if field == "created_at" and (not disk_val) and existing_val:
+                        continue
                     updates[field] = disk_val
+            if not (existing.created_at or "").strip() and not updates.get("created_at"):
+                # 历史剧本无创建时间时，用 script.json mtime 回填，保证整体看板排序稳定
+                try:
+                    mtime = script_meta.stat().st_mtime
+                    from datetime import datetime, timezone
+
+                    updates["created_at"] = datetime.fromtimestamp(
+                        mtime, tz=timezone.utc
+                    ).isoformat()
+                except OSError:
+                    pass
             if updates:
                 store.scripts[disk_script.id] = existing.model_copy(update=updates)
                 changed = True

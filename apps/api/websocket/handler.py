@@ -28,14 +28,15 @@ async def websocket_endpoint(websocket: WebSocket, project_id: str, script_id: s
                     approved=data.get("approved", False),
                     values=data.get("values", {}),
                 )
-                resolved = state.confirmation_manager.resolve(response)
-                await websocket.send_json(
-                    {
-                        "type": "a2ui_confirmation_ack",
-                        "resolved": resolved,
-                        "confirmation_id": response.confirmation_id,
-                    }
-                )
+                result = state.confirmation_manager.resolve(response)
+                ack: dict = {
+                    "type": "a2ui_confirmation_ack",
+                    "resolved": result.resolved,
+                    "confirmation_id": response.confirmation_id,
+                }
+                if result.reason is not None:
+                    ack["reason"] = result.reason
+                await websocket.send_json(ack)
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
     except WebSocketDisconnect:

@@ -38,6 +38,7 @@ def load_edit_capability_defs() -> dict[str, Any]:
 def load_edit_capabilities() -> dict[str, Any]:
     """剪辑能力单源（运镜/转场/背景 + FFmpeg 导出可用性）。"""
     from core.edit.export_settings import get_export_manager
+    from core.edit.subtitle_style import build_subtitle_style_context
     from core.edit.timeline import MAX_VIDEO_LAYERS
 
     caps = dict(load_edit_capability_defs())
@@ -45,7 +46,18 @@ def load_edit_capabilities() -> dict[str, Any]:
     caps["max_video_layers"] = MAX_VIDEO_LAYERS
     caps["nle_export_enabled"] = True
     caps["nle_export_formats"] = ["premiere"]
+    export = get_export_manager().get_settings()
+    caps["subtitle_style_context"] = build_subtitle_style_context(
+        export_width=export.width,
+        export_height=export.height,
+    )
     return caps
+
+
+def canonical_motions() -> list[str]:
+    """返回运镜 canonical preset 列表（不含别名键）。"""
+    caps = load_edit_capability_defs()
+    return [str(m) for m in (caps.get("motions") or [])]
 
 
 def known_motions() -> frozenset[str]:
@@ -54,6 +66,21 @@ def known_motions() -> frozenset[str]:
     motions.update((caps.get("motion_aliases") or {}).keys())
     motions.update((caps.get("motion_aliases") or {}).values())
     return frozenset(str(m) for m in motions)
+
+
+_MOTION_LABELS: dict[str, str] = {
+    "ken_burns_in": "推入",
+    "ken_burns_out": "拉出",
+    "ken_burns_pan": "平移",
+    "pan_right": "右移",
+    "static": "静止",
+}
+
+
+def motion_display_label(motion: str | None) -> str:
+    """将运镜 preset 解析为 canonical 并返回中文展示标签。"""
+    canonical = resolve_motion(motion)
+    return _MOTION_LABELS.get(canonical, canonical)
 
 
 def resolve_motion(motion: str | None) -> str:
@@ -101,17 +128,13 @@ def transition_max_duration_ms() -> int:
 
 def edit_capability_issues(timeline) -> list[tuple[str, str, str]]:
     """返回 (clip_id, field, reason) 列表；空表示能力范围内。"""
-    from core.edit.timeline import ensure_video_layers
+    from core.edit.timeline import flat_video_clips
 
     issues: list[tuple[str, str, str]] = []
     caps = load_edit_capability_defs()
     motions = set(caps.get("motions") or [])
 
-    timeline = ensure_video_layers(timeline)
-    if timeline.video_layers:
-        video_clips = [clip for layer in timeline.video_layers for clip in layer.clips]
-    else:
-        video_clips = list(timeline.tracks.get("video", []))
+    video_clips = flat_video_clips(timeline)
 
     seen: set[str] = set()
     for clip in video_clips:

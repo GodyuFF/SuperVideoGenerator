@@ -31,11 +31,49 @@
     "play": "Play",
     "pause": "Pause",
     "open": "Open",
-    "regeneratePrompt": "Regenerate prompt"
+    "previewImage": "Image preview",
+    "regeneratePrompt": "Regenerate prompt",
+    "regenerate": "Regenerate",
+    "resizeDrawer": "Drag to resize panel"
+  },
+  "regenerate": {
+    "default": "Regenerate",
+    "image": "Regenerate image",
+    "tts": "Regenerate TTS",
+    "video": "Regenerate video",
+    "frame": "Regenerate frame",
+    "inProgress": "Generating…",
+    "success": "Regeneration complete",
+    "failed": "Regeneration failed",
+    "panelLabel": "Shot regeneration",
+    "eyebrow": {
+      "tts": "TTS · Voice",
+      "frame": "Frame · Keyframe",
+      "video": "Video · Render"
+    },
+    "hint": {
+      "tts": "Re-synthesize narration from current script",
+      "frame": "Regenerate keyframe from shot description",
+      "video": "Re-render video from frame and audio"
+    }
+  },
+  "generating": {
+    "default": "Generating",
+    "image": "Generating image",
+    "tts": "Generating TTS",
+    "video": "Generating video",
+    "failed": "Generation failed"
   },
   "view": {
     "formatted": "Formatted view",
     "rawJson": "Raw JSON"
+  },
+  "splash": {
+    "eyebrow": "Darkroom · Film",
+    "tagline": "From idea to final cut",
+    "statusDeveloping": "Developing…",
+    "statusLoading": "Loading workspace…",
+    "statusCalibrating": "Calibrating viewfinder…"
   },
   "theme": {
     "system": "System",

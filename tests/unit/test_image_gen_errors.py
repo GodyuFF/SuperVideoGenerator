@@ -97,7 +97,7 @@ def test_format_observation_includes_recovery_guidance():
     analysis = build_image_gen_failure_analysis([item], total_count=1)
     obs = format_image_gen_failure_observation(analysis)
     assert "【失败明细（全部）】" in obs
-    assert "delegate_script_design" in obs
+    assert "delegate_agent" in obs or "script_agent" in obs
     assert "txt_x" in obs
     assert "内容策略" in obs
 

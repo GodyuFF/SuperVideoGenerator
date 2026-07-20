@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient
 
 from apps.api.main import app
 from core.models.entities import GenerationMode, VideoStyleMode
+from tests.support.chat_wait import wait_for_chat_idle
 
 
 @pytest.mark.asyncio
@@ -46,6 +47,23 @@ async def test_create_project_and_script():
 
 
 @pytest.mark.asyncio
+async def test_get_plan_empty_before_chat():
+    """未对话时 GET plan 应返回 200 空计划，而非 404。"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post("/api/projects", json={"title": "空计划测试"})
+        pid = r.json()["id"]
+        r = await client.post(f"/api/projects/{pid}/scripts", json={"title": "S1"})
+        sid = r.json()["id"]
+
+        r = await client.get(f"/api/projects/{pid}/scripts/{sid}/plan")
+        assert r.status_code == 200
+        body = r.json()
+        assert body.get("steps") == []
+        assert body.get("goal", "") == ""
+
+
+@pytest.mark.asyncio
 async def test_chat_rejects_style_change_when_locked():
   """风格锁定后 chat 传入不同 style_mode 应被拒绝。"""
   transport = ASGITransport(app=app)
@@ -59,11 +77,12 @@ async def test_chat_rejects_style_change_when_locked():
       f"/api/projects/{pid}/scripts/{sid}/chat",
       json={
         "message": "第一段剧本",
-        "style_mode": VideoStyleMode.DYNAMIC_IMAGE.value,
+        "style_mode": VideoStyleMode.STORYBOOK.value,
         "generation_mode": GenerationMode.AUTO.value,
       },
     )
-    assert r.status_code == 200
+    assert r.status_code == 202
+    await wait_for_chat_idle(client, pid, sid)
 
     r = await client.post(
       f"/api/projects/{pid}/scripts/{sid}/chat",
@@ -98,11 +117,12 @@ async def test_conversation_api_flow():
                 "message": "制作一段60秒短片",
                 "conversation_id": conv_id,
                 "generation_mode": GenerationMode.AUTO.value,
-                "style_mode": VideoStyleMode.DYNAMIC_IMAGE.value,
+                "style_mode": VideoStyleMode.STORYBOOK.value,
             },
         )
-        assert r.status_code == 200
+        assert r.status_code == 202
         assert r.json()["conversation_id"] == conv_id
+        await wait_for_chat_idle(client, pid, sid)
 
         r = await client.get(f"/api/projects/{pid}/conversations?script_id={sid}")
         assert r.status_code == 200
@@ -145,15 +165,23 @@ async def test_chat_drives_full_pipeline():
       json={
         "message": "制作一段60秒都市情感短片",
         "generation_mode": GenerationMode.AUTO.value,
-        "style_mode": VideoStyleMode.DYNAMIC_IMAGE.value,
+        "style_mode": VideoStyleMode.STORYBOOK.value,
       },
     )
+    assert r.status_code == 202
+    await wait_for_chat_idle(client, pid, sid)
+
+    r = await client.get(f"/api/projects/{pid}/scripts/{sid}")
     assert r.status_code == 200
-    data = r.json()
-    assert data["script"]["status"] == "completed"
-    assert data["script"]["style_locked"] is True
-    assert data["script"]["style_mode"] == "dynamic_image"
-    assert len(data["plan"]["steps"]) >= 4
+    script = r.json()
+    assert script["status"] == "completed"
+    assert script["style_locked"] is True
+    assert script["style_mode"] == "storybook"
+
+    r = await client.get(f"/api/projects/{pid}/scripts/{sid}/plan")
+    assert r.status_code == 200
+    plan = r.json()
+    assert len(plan["steps"]) >= 4
 
     r = await client.get(f"/api/projects/{pid}/scripts/{sid}/assets")
     assert r.status_code == 200
@@ -208,7 +236,7 @@ async def test_patch_text_asset_updates_content():
                 "accessories": "未指定",
             },
             observation="",
-        )
+        ).asset
 
         r = await client.patch(
             f"/api/projects/{pid}/assets/{char.id}",
@@ -223,6 +251,87 @@ async def test_patch_text_asset_updates_content():
         assert body["content"]["costume"] == "红色风衣"
         assert body["content"]["image_prompt"]
         assert "红色风衣" in body["content"]["image_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_patch_text_asset_updates_variant_prompt():
+    """PATCH 图文资产应持久化变体 variant_prompt 并重算变体 image_prompt。"""
+    from core.llm.agent.script_assets import create_text_asset_for_action
+    from core.models.image_text_asset import merge_incoming_variants, parse_image_variants
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post("/api/projects", json={"title": "变体 PATCH"})
+        pid = r.json()["id"]
+        r = await client.post(
+            f"/api/projects/{pid}/scripts",
+            json={"title": "S1", "duration_sec": 60},
+        )
+        sid = r.json()["id"]
+
+        from apps.api.state import state
+
+        char = create_text_asset_for_action(
+            state.store,
+            action="create_character",
+            project_id=pid,
+            script_id=sid,
+            asset_name="变体角色",
+            content=merge_incoming_variants(
+                {
+                    "summary": "测试",
+                    "description": "一位穿蓝色外套的年轻女性，短发，站在城市街头",
+                    "prompt_hint": "侧光",
+                    "visual_style": "未指定",
+                    "color_palette": "未指定",
+                    "role": "主角",
+                    "personality": "开朗",
+                    "age_range": "20岁",
+                    "gender": "女",
+                    "costume": "蓝色外套",
+                    "distinctive_features": "短发",
+                    "ethnicity": "未指定",
+                    "body_type": "未指定",
+                    "height": "未指定",
+                    "build": "未指定",
+                    "hair_style": "短发",
+                    "hair_color": "未指定",
+                    "eye_color": "未指定",
+                    "facial_features": "未指定",
+                    "default_expression": "未指定",
+                    "default_pose": "未指定",
+                    "accessories": "未指定",
+                },
+                [{"kind": "expression", "label": "微笑", "variant_prompt": "温和微笑"}],
+            ),
+            observation="",
+        ).asset
+        expr = [v for v in parse_image_variants(char.content) if v.kind == "expression"][0]
+
+        r = await client.patch(
+            f"/api/projects/{pid}/assets/{char.id}",
+            json={
+                "content": {
+                    "image_variants": [
+                        {
+                            "id": expr.id,
+                            "kind": "expression",
+                            "label": "微笑",
+                            "variant_prompt": "开怀大笑，眼睛弯成月牙",
+                        }
+                    ],
+                    "prompt_locked": True,
+                },
+                "prompt_locked": True,
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        variants = parse_image_variants(body["content"])
+        updated = [v for v in variants if v.id == expr.id][0]
+        assert updated.variant_prompt == "开怀大笑，眼睛弯成月牙"
+        assert updated.image_prompt
+        assert "开怀大笑" in updated.image_prompt
 
 
 @pytest.mark.asyncio
@@ -247,6 +356,21 @@ async def test_manual_asset_crud_and_script_patch():
         assert r.status_code == 200
         plot_id = r.json()["id"]
 
+        r = await client.post(
+            f"/api/projects/{pid}/scripts/{sid}/assets",
+            json={
+                "type": "frame",
+                "name": "手动画面",
+                "content": {
+                    "summary": "城市黎明",
+                    "description": "高空俯瞰清晨城市天际线，薄雾笼罩楼宇，暖色晨光从东侧云层渗出照亮轮廓。" * 2,
+                },
+            },
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["type"] == "frame"
+        frame_id = r.json()["id"]
+
         r = await client.patch(
             f"/api/projects/{pid}/scripts/{sid}",
             json={"content_md": "# 标题\n\n正文", "title": "新名"},
@@ -269,4 +393,7 @@ async def test_manual_asset_crud_and_script_patch():
         script.status = ScriptStatus.COMPLETED
 
         r = await client.delete(f"/api/projects/{pid}/scripts/{sid}/assets/{plot_id}")
+        assert r.status_code == 200
+
+        r = await client.delete(f"/api/projects/{pid}/scripts/{sid}/assets/{frame_id}")
         assert r.status_code == 200

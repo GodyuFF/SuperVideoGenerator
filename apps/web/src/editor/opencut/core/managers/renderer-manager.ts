@@ -4,7 +4,7 @@ import type { ExportOptions, ExportResult } from "@opencut/export";
 import { CanvasRenderer } from "@opencut/services/renderer/canvas-renderer";
 import { SceneExporter } from "@opencut/services/renderer/scene-exporter";
 import { buildScene } from "@opencut/services/renderer/scene-builder";
-import { createTimelineAudioBuffer } from "@opencut/media/audio";
+import { createTimelineAudioBuffer, timelineHasAudio } from "@opencut/media/audio";
 import { formatTimecode } from "opencut-wasm";
 import { frameRateToFloat } from "@opencut/fps/utils";
 import { downloadBlob } from "@opencut/utils/browser";
@@ -169,11 +169,37 @@ export class RendererManager {
 			let audioBuffer: AudioBuffer | null = null;
 			if (includeAudio) {
 				onProgress?.({ progress: 0.05 });
+				if (!timelineHasAudio({ tracks, mediaAssets })) {
+					return {
+						success: false,
+						error:
+							"时间轴无可用音频轨，请确认已添加配音且媒体库已加载完成",
+					};
+				}
+				const hasEmptyAudioFile = mediaAssets.some(
+					(asset) =>
+						asset.type === "audio" &&
+						(!asset.file || asset.file.size === 0),
+				);
+				if (hasEmptyAudioFile) {
+					return {
+						success: false,
+						error:
+							"音频媒体尚未完成加载，请等待剪辑助手加载完成后再导出",
+					};
+				}
 				audioBuffer = await createTimelineAudioBuffer({
 					tracks,
 					mediaAssets,
 					duration,
 				});
+				if (!audioBuffer) {
+					return {
+						success: false,
+						error:
+							"音频解码失败，请检查网络后刷新剪辑助手并重试",
+					};
+				}
 			}
 
 			const scene = buildScene({

@@ -7,7 +7,7 @@ import re
 
 from typing import Any
 
-from core.execution.cancel import ExecutionCancelledError, check_cancelled, gather_with_cancel
+from core.execution.cancel import check_cancelled
 from core.llm.agent.react_core import AgentRunContext
 from core.llm.hook.react_guard import ImageGenerationAbortError
 from core.llm.tools.image.errors import (
@@ -18,7 +18,7 @@ from core.llm.tools.image.errors import (
     format_image_gen_abort_message,
     parse_agnes_api_error_body,
 )
-from core.assets.image_prompt import compose_base_image_prompt, compose_variant_image_prompt
+from core.assets.image_prompt import compose_base_image_prompt, compose_frame_image_prompt, compose_variant_image_prompt
 from core.llm.tools.image.agnes_client import (
     AgnesImageGenerationError,
     generate_image_with_reference_async,
@@ -36,22 +36,30 @@ from core.llm.tools.image.bailian_client import (
     bailian_img2img,
     bailian_txt2img,
 )
+from core.llm.tools.image.ark_client import (
+    ArkImageGenerationError,
+    ark_img2img,
+    ark_txt2img,
+)
 from core.llm.tools.image.reference_url import resolve_reference_url_for_media
 from core.llm.tools.image.variants import collect_variant_generation_items
-from core.llm.tools.image.frames import collect_frame_generation_items
+from core.llm.tools.image.frames import collect_frame_generation_items, collect_reference_media_ids
 from core.llm.tools.image.settings import (
     ImageGenSettings,
     get_image_gen_settings,
     is_image_gen_available,
 )
+from core.models.entities import StyleConfig, TextAssetType
 from core.models.image_text_asset import (
     ImageVariant,
+    ensure_image_variants,
     find_variant as find_image_variant,
     get_base_variant,
     is_image_text_asset,
     normalize_image_text_content,
 )
 from core.store.memory import MemoryStore
+from core.store.persist import schedule_save
 
 IMAGE_GEN_MAX_ATTEMPTS = 3
 
@@ -172,6 +180,101 @@ def _normalize_generation_item(
     return out
 
 
+def _project_style_for_script(store: MemoryStore, script_id: str) -> StyleConfig | None:
+    """读取剧本所属项目的风格配置，供 prompt 组装使用。"""
+    script = store.get_script(script_id)
+    if not script:
+        return None
+    project = store.get_project(script.project_id)
+    if not project:
+        return None
+    return project.config.style
+
+
+def build_regeneration_generation_items(
+    store: MemoryStore,
+    script_id: str,
+    text_asset_id: str,
+    *,
+    variant_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """二次生成专用：忽略 scan 的 needs_generation/has_image，强制从资产 content 组装任务。"""
+    src = store.get_text_asset(text_asset_id)
+    if not src or not is_image_text_asset(src.type):
+        return []
+
+    project_style = _project_style_for_script(store, script_id)
+    content = normalize_image_text_content(src.type, src.content)
+
+    if src.type == TextAssetType.FRAME:
+        from core.llm.tools.image.frames import resolve_frame_generation_prompt
+
+        prompt = resolve_frame_generation_prompt(
+            store, content, project_style=project_style
+        )
+        if not prompt:
+            return []
+        ref_ids, refs_ready, pending_reason = collect_reference_media_ids(store, content)
+        if not refs_ready:
+            return []
+        return [
+            {
+                "source_text_asset_id": src.id,
+                "name": src.name,
+                "image_prompt": prompt,
+                "asset_type": "frame",
+                "reference_media_ids": ref_ids,
+                "pending_reason": pending_reason,
+            }
+        ]
+
+    content = ensure_image_variants(content, primary_media_id=src.primary_media_id)
+    variant = (
+        find_image_variant(content, variant_id)
+        if variant_id
+        else get_base_variant(content)
+    )
+    if not variant:
+        return []
+
+    if variant.kind == "base":
+        prompt = str(variant.image_prompt or content.get("image_prompt", "")).strip()
+        if not prompt:
+            prompt, _ = compose_base_image_prompt(
+                src.type, content, project_style=project_style
+            )
+    else:
+        prompt = str(variant.image_prompt).strip()
+        if not prompt:
+            prompt, _ = compose_variant_image_prompt(
+                src.type, content, variant, project_style=project_style
+            )
+    if not prompt:
+        return []
+
+    item: dict[str, Any] = {
+        "source_text_asset_id": src.id,
+        "variant_id": variant.id,
+        "variant_kind": variant.kind,
+        "name": f"{src.name}-{variant.label or variant.kind}",
+        "image_prompt": prompt,
+    }
+    if variant.kind != "base":
+        base = get_base_variant(content)
+        ref_mid = ""
+        if variant.reference_variant_id:
+            ref_v = find_image_variant(content, variant.reference_variant_id)
+            if ref_v:
+                ref_mid = str(ref_v.media_id or "").strip()
+        if not ref_mid and base:
+            ref_mid = str(base.media_id or "").strip()
+        if not ref_mid:
+            ref_mid = str(src.primary_media_id or "").strip()
+        if ref_mid:
+            item["reference_media_id"] = ref_mid
+    return [item]
+
+
 def slim_generate_images_args(args: dict[str, Any]) -> dict[str, Any]:
     """
     LLM 常填入冗长 items（含 image_prompt）；后端 scan 补全，仅保留 source_text_asset_id。
@@ -242,7 +345,10 @@ def collect_generation_items(
     frame_items = collect_frame_generation_items(
         store, script_id, asset_filter_ids=filter_ids if filter_ids else None
     )
-    return element_items + frame_items
+    from core.assets.element_refs import topo_sort_generation_items
+
+    combined = topo_sort_generation_items(store, element_items + frame_items)
+    return combined
 
 
 def _is_skippable_url(url: str) -> bool:
@@ -272,19 +378,24 @@ async def _emit_image_gen_progress(ctx: AgentRunContext, **payload: Any) -> None
     )
 
 
-async def _emit_assets_changed(ctx: AgentRunContext) -> None:
+async def _emit_assets_changed(
+    ctx: AgentRunContext,
+    *,
+    asset_id: str | None = None,
+) -> None:
     emitter = ctx.work_context.get("emitter")
     if emitter is None:
         return
-    await emitter.emit(
-        {
-            "type": "assets_changed",
-            "script_id": ctx.script_id,
-            "agent_name": "image_agent",
-            "action": "generate_images",
-            "step_id": ctx.step_id,
-        }
-    )
+    payload: dict[str, Any] = {
+        "type": "assets_changed",
+        "script_id": ctx.script_id,
+        "agent_name": "image_agent",
+        "action": "generate_images",
+        "step_id": ctx.step_id,
+    }
+    if asset_id:
+        payload["asset_id"] = asset_id
+    await emitter.emit(payload)
 
 
 async def _generate_one_item(
@@ -298,7 +409,7 @@ async def _generate_one_item(
     semaphore: asyncio.Semaphore,
 ) -> tuple[dict[str, Any] | None, ImageGenFailureItem | None]:
     from core.execution.cancel import check_cancelled
-    from core.llm.agent.llm_action import persist_single_generated_image
+    from core.llm.agent.llm_action import persist_single_generated_image_async
 
     check_cancelled(ctx.script_id)
 
@@ -317,11 +428,11 @@ async def _generate_one_item(
 
         url = str(item.get("url", "")).strip()
         if url and not _is_skippable_url(url):
-            media = persist_single_generated_image(store, ctx, item)
+            media = await persist_single_generated_image_async(store, ctx, item)
             result = dict(item)
             if media:
                 result["media_id"] = media.id
-                await _emit_assets_changed(ctx)
+                await _emit_assets_changed(ctx, asset_id=source_id)
             from core.llm.tools.shared.media_list import resolve_media_access
 
             display_url = resolve_media_access(media.url)["link"] if media else url
@@ -341,6 +452,7 @@ async def _generate_one_item(
         ref_mid = str(item.get("reference_media_id", "")).strip()
         is_sd = settings.provider == "local_sd"
         is_bailian = settings.provider == "bailian"
+        is_volcengine = settings.provider == "volcengine"
 
         # SD 生图时使用英文 trait 标签重新组装 prompt，提升生图质量
         image_prompt = item["image_prompt"]
@@ -398,6 +510,28 @@ async def _generate_one_item(
                         image_prompt,
                         settings=settings,
                     )
+                elif is_volcengine and isinstance(ref_mids, list) and ref_mids:
+                    ref_urls = [
+                        resolve_reference_url_for_media(store, str(m))
+                        for m in ref_mids
+                    ]
+                    image_url = await ark_img2img(
+                        image_prompt,
+                        ref_urls,
+                        settings=settings,
+                    )
+                elif is_volcengine and ref_mid:
+                    ref_url = resolve_reference_url_for_media(store, ref_mid)
+                    image_url = await ark_img2img(
+                        image_prompt,
+                        [ref_url],
+                        settings=settings,
+                    )
+                elif is_volcengine:
+                    image_url = await ark_txt2img(
+                        image_prompt,
+                        settings=settings,
+                    )
                 elif isinstance(ref_mids, list) and ref_mids:
                     ref_urls = [
                         resolve_reference_url_for_media(store, str(m))
@@ -419,7 +553,7 @@ async def _generate_one_item(
                     image_url = await generate_text_to_image_async(
                         item["image_prompt"], settings=settings
                     )
-            except (AgnesImageGenerationError, SdImageGenerationError, BailianImageGenerationError) as e:
+            except (AgnesImageGenerationError, SdImageGenerationError, BailianImageGenerationError, ArkImageGenerationError) as e:
                 last_error = str(e)
                 # 检查是否为提示词不合规错误，若是则尝试修改提示词后重试
                 error_info = parse_agnes_api_error_body(
@@ -479,11 +613,11 @@ async def _generate_one_item(
             break
 
         enriched = {**item, "url": image_url}
-        media = persist_single_generated_image(store, ctx, enriched)
+        media = await persist_single_generated_image_async(store, ctx, enriched)
         if media:
             enriched["media_id"] = media.id
             enriched["url"] = media.url
-            await _emit_assets_changed(ctx)
+            await _emit_assets_changed(ctx, asset_id=source_id)
 
         from core.llm.tools.shared.media_list import resolve_media_access
 
@@ -507,19 +641,29 @@ async def run_concurrent_image_generation(
     ctx: AgentRunContext,
 ) -> tuple[dict[str, Any], list[str]]:
     """
-    并发调用 Agnes API 生图，逐张落盘并通过 WS 推送 image_gen_progress。
+    经全局生成队列串行生图，逐张落盘并通过 WS 推送 image_gen_progress。
     单项失败时最多重试 IMAGE_GEN_MAX_ATTEMPTS 次；仍有失败则抛出 ImageGenerationAbortError。
     """
+    from core.generation.bridge import (
+        ensure_generation_runner,
+        enqueue_and_wait_image_items,
+        image_jobs_to_results,
+        resolve_project_id,
+    )
+
     args = slim_generate_images_args(args)
     check_cancelled(ctx.script_id)
     if not is_image_gen_available():
         return args, []
 
-    items = collect_generation_items(store, script_id, args)
+    forced = args.get("_forced_generation_items")
+    if isinstance(forced, list) and forced:
+        items = [i for i in forced if isinstance(i, dict)]
+    else:
+        items = collect_generation_items(store, script_id, args)
     if not items:
         return args, []
 
-    settings = get_image_gen_settings()
     frame_items = [i for i in items if i.get("reference_media_ids")]
     base_items = [
         i
@@ -535,41 +679,34 @@ async def run_concurrent_image_generation(
         and i.get("variant_kind") != "base"
     ]
 
+    project_id = resolve_project_id(store, ctx, script_id)
+    emitter = ctx.work_context.get("emitter")
+    ensure_generation_runner(store, emitter, ctx)
+
     generated: list[dict[str, Any]] = []
     failures: list[ImageGenFailureItem] = []
 
-    async def _run_batch(batch: list[dict[str, Any]], start_index: int) -> None:
+    async def _run_batch(batch: list[dict[str, Any]]) -> None:
         nonlocal generated, failures
         if not batch:
             return
-        total = len(batch)
-        semaphore = asyncio.Semaphore(max(1, settings.max_concurrency))
-        tasks = [
-            _generate_one_item(
-                store,
-                ctx,
-                item,
-                index=start_index + idx,
-                total=total,
-                settings=settings,
-                semaphore=semaphore,
-            )
-            for idx, item in enumerate(batch, start=1)
-        ]
-        results = await gather_with_cancel(ctx.script_id, tasks)
-        for item_result, failure in results:
-            if failure:
-                failures.append(failure)
-            if item_result:
-                generated.append(item_result)
+        jobs = await enqueue_and_wait_image_items(
+            project_id=project_id,
+            script_id=script_id,
+            items=batch,
+            source="agent",
+        )
+        batch_generated, batch_failures = image_jobs_to_results(store, batch, jobs)
+        generated.extend(batch_generated)
+        failures.extend(batch_failures)
 
-    await _run_batch(base_items, 1)
+    await _run_batch(base_items)
     if deriv_items and not failures:
         check_cancelled(ctx.script_id)
-        await _run_batch(deriv_items, 1)
+        await _run_batch(deriv_items)
     if frame_items and not failures:
         check_cancelled(ctx.script_id)
-        await _run_batch(frame_items, 1)
+        await _run_batch(frame_items)
 
     total = len(items)
 
@@ -590,6 +727,7 @@ async def run_concurrent_image_generation(
 
     merged = dict(args)
     merged["items"] = generated
+    schedule_save(store)
     return merged, []
 
 
@@ -609,3 +747,27 @@ async def enrich_generate_images_args(
             agent_name="image_agent",
         )
     return await run_concurrent_image_generation(store, script_id, args, ctx)
+
+
+async def generate_one_image_item(
+    store: MemoryStore,
+    ctx: AgentRunContext,
+    item: dict[str, Any],
+    *,
+    index: int = 0,
+    total: int = 1,
+) -> None:
+    """供生成队列串行调用的单条生图入口。"""
+    settings = get_image_gen_settings()
+    semaphore = asyncio.Semaphore(1)
+    _result, failure = await _generate_one_item(
+        store,
+        ctx,
+        item,
+        index=index,
+        total=total,
+        settings=settings,
+        semaphore=semaphore,
+    )
+    if failure is not None:
+        raise RuntimeError(failure.error_message)

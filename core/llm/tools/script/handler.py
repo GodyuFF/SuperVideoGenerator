@@ -88,20 +88,15 @@ def _structured_for_action(
     if action in ("parse_brief", "update_script"):
         script = store.get_script(script_id)
         updated: list[str] = []
-        if action == "parse_brief":
-            if args.get("content_md") or args.get("script_md"):
-                updated.append("content_md")
-            if args.get("title"):
+        if args.get("content_md") or args.get("script_md"):
+            updated.append("content_md")
+        if script and args.get("title"):
+            proposed = str(args.get("title") or "").strip()
+            # apply 之后：提案被拒绝则标题不同，不报告 title；写入成功则相同
+            if proposed and proposed == (script.title or "").strip():
                 updated.append("title")
-            if args.get("duration_sec") is not None:
-                updated.append("duration_sec")
-        else:
-            if args.get("title"):
-                updated.append("title")
-            if args.get("content_md"):
-                updated.append("content_md")
-            if args.get("duration_sec") is not None:
-                updated.append("duration_sec")
+        if args.get("duration_sec") is not None:
+            updated.append("duration_sec")
         md = script.content_md if script else ""
         return {
             "script_id": script_id,

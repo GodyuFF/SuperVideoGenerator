@@ -17,7 +17,6 @@ from core.edit.nle_export.xmeml_writer import write_xmeml
 from core.edit.subtitle_align import enrich_subtitles_from_audio
 from core.edit.timeline import (
     enrich_timeline_audio_from_store,
-    ensure_video_layers,
     normalize_timeline_motions,
 )
 from core.models.entities import EditTimeline
@@ -59,7 +58,6 @@ def export_timeline_to_premiere_package(
     settings_mgr = manager or get_export_manager()
     settings: ExportSettings = settings_mgr.get_settings()
 
-    timeline = ensure_video_layers(timeline)
     plan = store.get_video_plan_for_script(script_id)
     timeline = enrich_timeline_audio_from_store(store, timeline, plan)
     if not skip_subtitles:

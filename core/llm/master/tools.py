@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from core.llm.models import ReActToolInfo
+from core.llm.model.react import ReActToolInfo
 from core.llm.tools.shared.assets_summary import (
     build_script_assets_payload,
     format_script_assets_summary,
@@ -68,22 +68,26 @@ class MasterToolExecutor:
         return format_script_assets_summary(payload)
 
 
+_MASTER_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "tool_get_plan_summary": "查询当前计划版本与各步骤执行状态。",
+    "tool_list_assets": "查询当前剧本的文字/图片/音频/视频/成片资产清单（含 URL 与可访问性）。",
+    "tool_read_webpage": "读取指定 URL 的网页正文（只读，http/https）。",
+}
+
+MASTER_TOOL_ACTIONS: list[str] = [
+    "tool_get_plan_summary",
+    "tool_list_assets",
+    "tool_read_webpage",
+]
+
+
 def build_master_tools() -> list[ReActToolInfo]:
     """主编排可调用的工具列表（与 MasterToolExecutor 行动名一致）。"""
     return [
         ReActToolInfo(
-            action_name="tool_get_plan_summary",
-            name="get_plan_summary",
-            description="查询当前计划版本与各步骤执行状态。",
-        ),
-        ReActToolInfo(
-            action_name="tool_list_assets",
-            name="list_assets",
-            description="查询当前剧本的文字/图片/音频/视频/成片资产清单（含 URL 与可访问性）。",
-        ),
-        ReActToolInfo(
-            action_name="tool_read_webpage",
-            name="read_webpage",
-            description="读取指定 URL 的网页正文（只读，http/https）。",
-        ),
+            action_name=action,
+            name=action.removeprefix("tool_"),
+            description=_MASTER_TOOL_DESCRIPTIONS.get(action, action),
+        )
+        for action in MASTER_TOOL_ACTIONS
     ]

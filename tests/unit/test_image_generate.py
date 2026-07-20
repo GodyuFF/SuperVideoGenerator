@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.events.emitter import EventEmitter
+from core.generation.queue import reset_generation_queue_for_tests
 from core.llm.agent.react_core import AgentRunContext
 from core.llm.agent.script_assets import create_text_asset_for_action
 from core.llm.tools.image.generate import (
@@ -45,6 +46,14 @@ def _reset_image_gen_settings():
     reset_image_gen_settings()
 
 
+@pytest.fixture(autouse=True)
+def _reset_generation_queue():
+    """隔离全局生成队列，避免跨用例串扰。"""
+    reset_generation_queue_for_tests()
+    yield
+    reset_generation_queue_for_tests()
+
+
 def _setup_prop_script():
     store = MemoryStore()
     project = Project(title="p1")
@@ -62,7 +71,7 @@ def _setup_prop_script():
             description="测试道具，金属与木质混合，适合作为叙事中的小物件特写展示。",
         ),
         observation="",
-    )
+    ).asset
     return store, script, project, asset
 
 

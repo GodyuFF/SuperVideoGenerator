@@ -18,6 +18,8 @@ import {
 
   svfProjectKey,
 
+  auditClassicProjectDuration,
+
   type ClassicProjectJson,
 
 } from "../adapter/svfProjectAdapter";
@@ -35,6 +37,10 @@ import {
   enrichMediaThumbnailsAsync,
 
   hydrateSvfMediaFiles,
+
+  mergeHydratedDurationsIntoMediaItems,
+
+  syncHydratedAssetDurationsFromApi,
 
   type SvfClassicMediaAsset,
 
@@ -63,6 +69,10 @@ const cache = new Map<string, BridgeCacheEntry>();
 
 
 let installed = false;
+
+/** 原始 IndexedDB saveProject（SVF 强制刷新时写入正确快照）。 */
+let origSaveProjectToIndexedDb: ((opts: { project: ClassicProjectJson }) => Promise<void>) | null =
+  null;
 
 let saveHandler: ((timeline: EditTimelineData) => Promise<EditTimelineData | void>) | null = null;
 
@@ -159,25 +169,39 @@ export async function installSvfStorageBridge(
 
   options: InstallBridgeOptions = {},
 
-): Promise<void> {
+): Promise<EditTimelineData> {
 
   const key = svfProjectKey(projectId, scriptId);
 
 
 
-  if (!options.force && cache.has(key) && !options.initialTimeline) {
+  if (options.force) {
+    cache.delete(key);
+    await purgeSvfIndexedDbProject(key);
+    // 保留已水合 File blob，避免每次打开剪辑重复下载大图/音频
+  }
 
+  const cached = cache.get(key);
+  if (!options.force && cached && !options.initialTimeline) {
     await ensurePatchesInstalled();
-
-    return;
-
+    return cached.base;
+  }
+  if (
+    !options.force &&
+    cached &&
+    options.initialTimeline &&
+    (options.initialTimeline.revision ?? 0) === (cached.base.revision ?? 0)
+  ) {
+    await ensurePatchesInstalled();
+    return cached.base;
   }
 
 
 
   let base: EditTimelineData;
 
-  if (options.initialTimeline) {
+  // force 或缺省快照时从 API 拉取，避免冻结 initialTimeline 的 revision 落后导致 PATCH 409。
+  if (options.initialTimeline && !options.force) {
 
     base = options.initialTimeline;
 
@@ -217,21 +241,40 @@ export async function installSvfStorageBridge(
 
   const mediaAssets = svfMediaItemsToAssets(mediaItems, mediaContext);
 
+  // 复用进程内 blob 缓存；hydrateSvfMediaFiles 对已有 File 会跳过下载
   await hydrateSvfMediaFiles(mediaAssets, mediaContext);
+
+  syncHydratedAssetDurationsFromApi(mediaItems, mediaAssets);
 
   setSvfProjectMediaCache(key, mediaAssets);
 
   enrichMediaThumbnailsAsync(mediaAssets);
 
+  const mediaItemsForProject = mergeHydratedDurationsIntoMediaItems(mediaItems, mediaAssets);
 
+  const project = loadFromSvf(base, mediaItemsForProject, key, scriptId);
 
-  const project = loadFromSvf(base, mediaItems, key, scriptId);
+  const audit = auditClassicProjectDuration(project, base.duration_ms ?? 0);
+
+  if (!audit.ok) {
+
+    console.error(
+
+      `[svf-storage-bridge] 投影时长异常 script=${scriptId}: projected=${audit.projectedMs}ms expected=${audit.expectedMs}ms revision=${base.revision}`,
+
+    );
+
+  }
+
+  await ensurePatchesInstalled();
+
+  await syncSvfProjectToIndexedDb(project);
 
   cache.set(key, { project, base, media: mediaAssets });
 
 
 
-  await ensurePatchesInstalled();
+  return base;
 
 }
 
@@ -270,6 +313,10 @@ async function ensurePatchesInstalled(): Promise<void> {
   const origLoad = svc.loadProject.bind(svc);
 
   const origSave = svc.saveProject.bind(svc);
+
+  origSaveProjectToIndexedDb = origSave as (opts: {
+    project: ClassicProjectJson;
+  }) => Promise<void>;
 
   const origLoadAll = svc.loadAllMediaAssets.bind(svc);
 
@@ -442,6 +489,30 @@ export async function refreshSvfBridgeFromApi(
 
   });
 
+}
+
+
+
+/** 删除 IndexedDB 中陈旧的 SVF 项目条目，避免 OpenCut 误读短时长快照。 */
+async function purgeSvfIndexedDbProject(key: string): Promise<void> {
+  try {
+    await ensurePatchesInstalled();
+    const mod = await import("@opencut/services/storage/service");
+    await mod.storageService.deleteProject({ id: key });
+  } catch (e) {
+    console.warn(`[svf-storage-bridge] 清除 IndexedDB 项目失败: ${key}`, e);
+  }
+}
+
+/** 将最新 loadFromSvf 结果写入 IndexedDB，供 OpenCut 内部直读路径使用。 */
+async function syncSvfProjectToIndexedDb(project: ClassicProjectJson): Promise<void> {
+  try {
+    await ensurePatchesInstalled();
+    if (!origSaveProjectToIndexedDb) return;
+    await origSaveProjectToIndexedDb({ project });
+  } catch (e) {
+    console.warn("[svf-storage-bridge] 同步 IndexedDB 项目失败", e);
+  }
 }
 
 

@@ -25,6 +25,8 @@ export interface ExportResult {
 	buffer?: ArrayBuffer;
 	error?: string;
 	cancelled?: boolean;
+	/** 导出成功但音频被跳过时的警告文案。 */
+	audioWarning?: string;
 }
 
 export interface ExportState {

@@ -61,12 +61,14 @@ def format_edit_compose_failure_observation(
         parts.append(f"建议上游={item.suggested_upstream}")
         lines.append(" · ".join(parts))
 
+    from core.llm.master.actions import STEP_META
+
     redo = upstream_steps_to_redo(report.missing_items)
     if redo:
         lines.append("")
         lines.append(
-            f"建议主编排依次重跑：{', '.join(f'delegate_{s}' for s in redo)}，"
-            "再 delegate_edit_compose。"
+            f"建议主编排依次委派：{', '.join(STEP_META.get(s, {}).get('agent', s) for s in redo)}，"
+            "再 delegate_agent(agent_id=editing_agent)。"
         )
     return "\n".join(lines)
 

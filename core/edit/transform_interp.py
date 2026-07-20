@@ -162,9 +162,8 @@ def build_scaled_video_filter(
 def collect_timeline_boundaries(timeline: EditTimeline) -> list[int]:
     """合并 clip 边界、关键帧与 Ken Burns 采样点，供 composite_slices 细粒度切片。"""
     from core.edit.ken_burns_filter import add_ken_burns_boundaries
-    from core.edit.timeline import ensure_video_layers, timeline_duration_ms
+    from core.edit.timeline import timeline_duration_ms
 
-    timeline = ensure_video_layers(timeline)
     duration = timeline_duration_ms(timeline)
     boundaries = {0, duration}
     for layer in timeline.video_layers:
@@ -198,9 +197,8 @@ def clip_has_animated_transform(clip: EditClip) -> bool:
 def timeline_needs_composite_export(timeline: EditTimeline) -> bool:
     """含 transform/关键帧、Ken Burns 或多层时需走 composite 导出路径。"""
     from core.edit.ken_burns_filter import clip_has_ken_burns
-    from core.edit.timeline import ensure_video_layers
+    from core.edit.timeline import flat_video_clips
 
-    timeline = ensure_video_layers(timeline)
     if len(timeline.video_layers) > 1:
         return True
     for layer in timeline.video_layers:

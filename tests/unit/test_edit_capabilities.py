@@ -5,7 +5,11 @@ from core.edit.edit_capabilities import (
     load_edit_capability_defs,
     resolve_motion,
 )
-from core.edit.timeline import normalize_tracks
+from core.edit.timeline import (
+    extract_agent_video_clips,
+    normalize_tracks,
+    video_layers_from_agent_clips,
+)
 from core.models.entities import EditTimeline
 
 
@@ -19,32 +23,32 @@ def test_resolve_motion_aliases():
 
 def test_edit_capability_issues_accepts_aliases():
     load_edit_capability_defs.cache_clear()
+    raw = {
+        "video": [
+            {
+                "track": "video",
+                "start_ms": 0,
+                "end_ms": 3000,
+                "motion": "gentle_push_in",
+                "motion_detail": {"type": "slow_pan_right"},
+            }
+        ],
+        "audio": [],
+        "subtitle": [],
+    }
     timeline = EditTimeline(
         script_id="scr_test",
         duration_ms=3000,
-        tracks=normalize_tracks(
-            {
-                "video": [
-                    {
-                        "track": "video",
-                        "start_ms": 0,
-                        "end_ms": 3000,
-                        "motion": "gentle_push_in",
-                        "motion_detail": {"type": "slow_pan_right"},
-                    }
-                ],
-                "audio": [],
-                "subtitle": [],
-            }
-        ),
+        tracks=normalize_tracks(raw),
+        video_layers=video_layers_from_agent_clips(extract_agent_video_clips(raw)),
     )
     issues = edit_capability_issues(timeline)
     assert issues == []
 
 
-def test_normalize_tracks_resolves_motion_on_parse():
+def test_extract_agent_video_clips_resolves_motion_on_parse():
     load_edit_capability_defs.cache_clear()
-    tracks = normalize_tracks(
+    clips = extract_agent_video_clips(
         {
             "video": [
                 {
@@ -58,4 +62,4 @@ def test_normalize_tracks_resolves_motion_on_parse():
             "subtitle": [],
         }
     )
-    assert tracks["video"][0].motion == "ken_burns_in"
+    assert clips[0].motion == "ken_burns_in"

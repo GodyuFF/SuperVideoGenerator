@@ -1,5 +1,7 @@
 """超级视频大师 ReAct 编排：与用户对话隔离，向子 Agent 下发任务简报。"""
 
+import asyncio
+import time
 from typing import Any
 
 from core.llm.a2ui.manager import ConfirmationManager
@@ -20,7 +22,7 @@ from core.llm.tools.image.errors import (
     enrich_failure_names,
     format_image_gen_failure_observation,
 )
-from core.llm.agent.react_core import MasterRunContext, ReActDecision
+from core.llm.agent.react_core import MasterRunContext, ReActDecision, ToolCallDecision
 from core.llm.agent.registry import AgentRegistry
 from core.constants import MAX_REACT_ITERATIONS
 from core.conversation import ConversationStore
@@ -29,7 +31,6 @@ from core.events.emitter import EventEmitter
 from core.llm.client import LLMClient
 from core.llm.tools.shared.agent_tools import ASK_USER_QUESTION_ACTION
 from core.llm.master.actions import (
-    ACTION_TO_STEP,
     STEP_META,
     TASK_BRIEFS,
     action_kind,
@@ -37,6 +38,8 @@ from core.llm.master.actions import (
     task_brief_for_step,
     uses_image_text_pipeline,
 )
+from core.llm.agent.agent_registry import resolve_step_for_roster_agent
+from core.llm.master.delegate_tool import DELEGATE_AGENT_ACTION
 from core.llm.image_text_config import (
     effective_image_source,
     resolve_image_text_config,
@@ -47,10 +50,12 @@ from core.llm.hook.confirm_gates import (
     CONFIRM_BEFORE_ACTION,
     build_script_structure_summary,
 )
+from core.guards.script_style import normalize_style_mode_id
 from core.llm.master.session import create_master_react_session
 from core.llm.master.tools import MasterToolExecutor
+from core.llm.client.stream_delta_batcher import make_batched_delta_handler
 from core.llm.react_decide import decide_master_session
-from core.llm.plan_context import (
+from core.llm.model.plan_context import (
     apply_plan_update_to_document,
     build_plan_slice_for_step,
     build_plan_snapshot,
@@ -58,8 +63,9 @@ from core.llm.plan_context import (
     normalize_remaining_plan,
     trim_plan_status_history,
 )
-from core.llm.settings import LLMConfigManager
+from core.llm.client.settings import LLMConfigManager
 from core.llm.streaming import OnDelta
+from core.logging.perf import log_perf
 from core.logging.setup import get_logger, log_stage
 from core.llm.execution_mode import resolve_execution_mode
 from core.models.entities import (
@@ -72,6 +78,7 @@ from core.models.entities import (
     StepStatus,
     VideoStyleMode,
 )
+from core.llm.tool_call_batch import merge_batch_observations
 from core.store.memory import MemoryStore
 from core.super_video_master import MASTER_AGENT_NAME
 
@@ -99,6 +106,7 @@ class MasterReActEngine:
         self._llm_config = llm_config
         self._llm_client = llm_client
         self._tool_executor = MasterToolExecutor(store)
+        self._stream_delta_drains: dict[str, Any] = {}
 
     async def _emit(self, script_id: str, event_type: str, payload: dict[str, Any]) -> None:
         await self._emitter.emit({"script_id": script_id, "type": event_type, **payload})
@@ -137,6 +145,7 @@ class MasterReActEngine:
         decision: ReActDecision,
         observation: str,
     ) -> None:
+        """写入主编排单 tool ReAct 轮次。"""
         self._conversations.add_react_turn(
             conversation_id,
             project_id,
@@ -147,6 +156,35 @@ class MasterReActEngine:
             observation=observation,
             channel="master",
         )
+
+    def _persist_master_react_turn_batch(
+        self,
+        conversation_id: str,
+        project_id: str,
+        script_id: str,
+        decision: ReActDecision,
+        results: list[tuple[str, str, str | BaseException]],
+    ) -> str:
+        """落盘主编排同轮多 tool，并返回合并 observation。"""
+        observation = merge_batch_observations(results)
+        calls = []
+        for call, (_action, _tid, outcome) in zip(decision.calls, results, strict=True):
+            if isinstance(outcome, BaseException):
+                obs_text = f"失败：{outcome}"
+            else:
+                obs_text = str(outcome)
+            calls.append(
+                (call.tool_call_id, call.action, dict(call.action_input or {}), obs_text)
+            )
+        self._conversations.add_react_turn_batch(
+            conversation_id,
+            project_id,
+            script_id,
+            thought=decision.thought,
+            calls=calls,
+            channel="master",
+        )
+        return observation
 
     def _apply_master_plan_update(
         self,
@@ -173,17 +211,20 @@ class MasterReActEngine:
         conversation_id: str,
         plan: PlanDocument,
         session: Any,
+        *,
+        include_full_plan: bool = False,
     ) -> None:
-        await self._emit(
-            script_id,
-            "plan_updated",
-            {
-                "conversation_id": conversation_id,
-                "plan": plan.model_dump(),
-                "plan_status_history": session.plan_status_history,
-                "last_remaining_plan": session.last_remaining_plan,
-            },
-        )
+        """推送 plan 元数据更新；默认轻量 delta，全量 plan 由 plan_ready 承担。"""
+        payload: dict[str, Any] = {
+            "conversation_id": conversation_id,
+            "runtime_summary": plan.runtime_summary,
+            "plan_status_history": session.plan_status_history,
+            "last_remaining_plan": session.last_remaining_plan,
+            "version": plan.version,
+        }
+        if include_full_plan:
+            payload["plan"] = plan.model_dump()
+        await self._emit(script_id, "plan_updated", payload)
 
     def _make_thought_stream_handler(
         self,
@@ -192,9 +233,7 @@ class MasterReActEngine:
         stream_id: str,
         iteration: int,
     ) -> OnDelta:
-        async def on_delta(raw_delta: str) -> None:
-            if not raw_delta:
-                return
+        async def emit_delta(raw_delta: str) -> None:
             await self._emit(
                 script_id,
                 "llm_stream_delta",
@@ -208,7 +247,15 @@ class MasterReActEngine:
                 },
             )
 
+        on_delta, drain = make_batched_delta_handler(emit_delta)
+        self._stream_delta_drains[stream_id] = drain
         return on_delta
+
+    async def _drain_stream_delta(self, stream_id: str) -> None:
+        """刷出流式 delta 批量缓冲。"""
+        drain = self._stream_delta_drains.pop(stream_id, None)
+        if drain is not None:
+            await drain()
 
     async def _start_llm_stream(
         self,
@@ -277,13 +324,17 @@ class MasterReActEngine:
             parts.append(f"目标时长 {script.duration_sec}s")
         return " ".join(parts)
 
-    def _make_step(self, step_type: str, depends_on: list[str]) -> PlanStep:
+    def _make_step(self, step_type: str, depends_on: list[str], *, profile_id: str) -> PlanStep:
+        """创建计划步骤，Agent 目标按 Profile roster 解析。"""
+        from core.llm.agent.agent_registry import resolve_roster_agent_for_step
+
         meta = STEP_META[step_type]
+        agent_id = resolve_roster_agent_for_step(step_type, profile_id) or meta["agent"]
         return PlanStep(
             type=step_type,
             title=meta["title"],
             description=meta["description"],
-            agent=meta["agent"],
+            agent=agent_id,
             depends_on=depends_on,
         )
 
@@ -324,16 +375,43 @@ class MasterReActEngine:
             generation_mode=generation_mode,
             execution_mode=resolved_execution,
         )
+        script_for_hints = self._store.get_script(script_id)
+        if script_for_hints is not None and script_for_hints.style_hints:
+            from core.guards.script_style import format_style_hints_line
 
+            hints_line = format_style_hints_line(script_for_hints.style_hints)
+            if hints_line:
+                session.extra["style_hints"] = hints_line
+        if skill_overlay:
+            session.extra["skill_overlay"] = skill_overlay
+            mcp_servers = skill_overlay.get("mcp_servers") or []
+            if mcp_servers:
+                from core.extensions.mcp.loader import ensure_mcp_servers
+
+                await ensure_mcp_servers(list(mcp_servers))
+
+        from core.llm.master.delegate_deps import resolve_delegate_readiness
         from core.llm.master.pipeline_progress import (
             build_pipeline_progress,
             build_resume_observation,
             detect_resume_target_step,
+            seed_completed_steps_for_message,
         )
 
         progress = build_pipeline_progress(self._store, script_id, style_mode)
         resume_target = detect_resume_target_step(user_message)
+        seeded = seed_completed_steps_for_message(
+            self._store, script_id, style_mode, user_message
+        )
+        ctx.completed_step_types = set(seeded)
+        session.completed_step_types = set(seeded)
         session.extra["pipeline_progress"] = progress
+        session.extra["delegate_readiness"] = resolve_delegate_readiness(
+            self._store,
+            script_id,
+            style_mode,
+            profile_id=session._profile_id(),
+        )
         if resume_target:
             session.extra["user_resume_target"] = resume_target
         resume_obs = build_resume_observation(
@@ -344,6 +422,13 @@ class MasterReActEngine:
         if resume_obs:
             ctx.observations.append(resume_obs)
             session.observations = list(ctx.observations)
+        if seeded:
+            ctx.observations.append(
+                "已根据 Store 复用完成步骤："
+                + "、".join(sorted(seeded))
+                + "。勿无故重跑；用户明确要求重做时除外。"
+            )
+            session.observations = list(ctx.observations)
 
         plan_goal = (user_message or "").strip() or script.title
         plan = PlanDocument(
@@ -351,7 +436,7 @@ class MasterReActEngine:
             goal=plan_goal,
             constraints={
                 "duration_sec": script.duration_sec,
-                "style_mode": style_mode.value,
+                "style_mode": normalize_style_mode_id(style_mode) or VideoStyleMode.STORYBOOK.value,
                 "orchestration": "react",
                 "conversation_isolation": True,
             },
@@ -362,6 +447,7 @@ class MasterReActEngine:
         script.status = ScriptStatus.EXECUTING
 
         log_stage(logger, "master.react", "主 Agent ReAct 开始", script_id=script_id)
+        react_start = time.perf_counter()
         await self._emit(
             script_id,
             "conversation_started",
@@ -404,6 +490,26 @@ class MasterReActEngine:
                 session.observations = list(ctx.observations)
                 session.completed_step_types = set(ctx.completed_step_types)
                 session.execution_plan = build_plan_snapshot(plan)
+                from core.llm.master.delegate_deps import resolve_delegate_readiness
+
+                scan_start = time.perf_counter()
+                session.extra["delegate_readiness"] = resolve_delegate_readiness(
+                    self._store,
+                    script_id,
+                    style_mode,
+                    profile_id=session._profile_id(),
+                )
+                session.extra["pipeline_progress"] = build_pipeline_progress(
+                    self._store, script_id, style_mode
+                )
+                scan_ms = (time.perf_counter() - scan_start) * 1000
+                log_perf(
+                    "master.react",
+                    "delegate_scan",
+                    duration_ms=scan_ms,
+                    iteration=ctx.iteration,
+                    script_id=script_id,
+                )
 
                 stream_id = f"master-thought-{ctx.iteration}"
                 await self._start_llm_stream(
@@ -454,6 +560,7 @@ class MasterReActEngine:
                             "kind": "master",
                         },
                     )
+                    await self._drain_stream_delta(stream_id)
                     await self._end_llm_stream(
                         script_id,
                         conversation_id,
@@ -464,6 +571,7 @@ class MasterReActEngine:
                     )
                     raise RuntimeError(observation) from e
 
+                await self._drain_stream_delta(stream_id)
                 await self._end_llm_stream(
                     script_id,
                     conversation_id,
@@ -482,10 +590,16 @@ class MasterReActEngine:
                 await self._emit_plan_updated(script_id, conversation_id, plan, session)
 
                 if session.is_delegate_action(decision.action):
-                    step_type = session.step_type_for_delegate(decision.action)
+                    agent_id = str(
+                        decision.action_input.get("agent_id", "")
+                    ).strip()
+                    step_type = resolve_step_for_roster_agent(
+                        agent_id,
+                        session._profile_id(),
+                    )
                     if step_type and step_type in ctx.completed_step_types:
                         observation = (
-                            f"步骤 {step_type} 已完成，请勿重复委派 {decision.action}。"
+                            f"步骤 {step_type} 已完成，请勿重复委派 agent_id={agent_id}。"
                         )
                         ctx.observations.append(observation)
                         session.observations = list(ctx.observations)
@@ -574,7 +688,12 @@ class MasterReActEngine:
                         user_aborted = True
                         break
                     except Exception as e:
-                        observation = f"ask_user_question 失败：{e}"
+                        from core.llm.a2ui.manager import ConfirmationTimeoutError
+
+                        if isinstance(e, ConfirmationTimeoutError):
+                            observation = "用户确认超时，未收到回答。"
+                        else:
+                            observation = f"ask_user_question 失败：{e}"
                         values = {}
                     if user_aborted:
                         break
@@ -596,6 +715,71 @@ class MasterReActEngine:
                             "conversation_id": conversation_id,
                             "kind": "ask_user",
                             "user_values": values if values else None,
+                        },
+                    )
+                    continue
+
+                if decision.is_batch and all(
+                    session.is_tool_action(c.action) for c in decision.calls
+                ):
+                    batch_mode = decision.batch_mode
+                    await self._emit(
+                        script_id,
+                        "react_action_batch",
+                        {
+                            "iteration": ctx.iteration,
+                            "conversation_id": conversation_id,
+                            "actions": [
+                                {
+                                    "action": c.action,
+                                    "action_input": dict(c.action_input or {}),
+                                }
+                                for c in decision.calls
+                            ],
+                            "batch_size": len(decision.calls),
+                            "batch_mode": batch_mode,
+                        },
+                    )
+
+                    async def _run_tool(call: ToolCallDecision) -> tuple[str, str, str | BaseException]:
+                        """执行主编排单条 tool_*，普通异常作为结果返回。"""
+                        try:
+                            obs = await self._tool_executor.execute(
+                                call.action,
+                                script_id,
+                                call.action_input,
+                            )
+                            return call.action, call.tool_call_id, obs
+                        except Exception as e:
+                            return call.action, call.tool_call_id, e
+
+                    if batch_mode == "sequential":
+                        tool_results = [await _run_tool(c) for c in decision.calls]
+                    else:
+                        tool_results = await asyncio.gather(
+                            *[_run_tool(c) for c in decision.calls]
+                        )
+                    for call in decision.calls:
+                        session.completed_tools.add(call.action.removeprefix("tool_"))
+                    observation = self._persist_master_react_turn_batch(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        decision,
+                        tool_results,
+                    )
+                    ctx.observations.append(observation)
+                    session.observations = list(ctx.observations)
+                    await self._emit(
+                        script_id,
+                        "react_observation",
+                        {
+                            "iteration": ctx.iteration,
+                            "observation": observation,
+                            "conversation_id": conversation_id,
+                            "kind": "tool",
+                            "batch_size": len(decision.calls),
+                            "batch_mode": batch_mode,
                         },
                     )
                     continue
@@ -658,7 +842,88 @@ class MasterReActEngine:
                     )
                     continue
 
-                step_type = ACTION_TO_STEP[decision.action]
+                from core.llm.master.delegate_deps import is_hard_blocked
+
+                agent_id = str(
+                    decision.action_input.get("agent_id", "")
+                ).strip()
+                hard_reason = is_hard_blocked(
+                    self._store,
+                    script_id,
+                    style_mode,
+                    agent_id,
+                    profile_id=session._profile_id(),
+                )
+                if hard_reason:
+                    observation = f"无法委派 {agent_id}：{hard_reason}"
+                    ctx.observations.append(observation)
+                    session.observations = list(ctx.observations)
+                    self._persist_master_react_turn(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        decision,
+                        observation,
+                    )
+                    await self._emit(
+                        script_id,
+                        "react_observation",
+                        {
+                            "iteration": ctx.iteration,
+                            "observation": observation,
+                            "conversation_id": conversation_id,
+                        },
+                    )
+                    continue
+
+                if not agent_id:
+                    observation = "delegate_agent 缺少 agent_id 参数。"
+                    ctx.observations.append(observation)
+                    session.observations = list(ctx.observations)
+                    self._persist_master_react_turn(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        decision,
+                        observation,
+                    )
+                    await self._emit(
+                        script_id,
+                        "react_observation",
+                        {
+                            "iteration": ctx.iteration,
+                            "observation": observation,
+                            "conversation_id": conversation_id,
+                        },
+                    )
+                    continue
+
+                step_type = resolve_step_for_roster_agent(
+                    agent_id,
+                    session._profile_id(),
+                )
+                if not step_type:
+                    observation = f"未知或不可委派的 agent_id: {agent_id}"
+                    ctx.observations.append(observation)
+                    session.observations = list(ctx.observations)
+                    self._persist_master_react_turn(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        decision,
+                        observation,
+                    )
+                    await self._emit(
+                        script_id,
+                        "react_observation",
+                        {
+                            "iteration": ctx.iteration,
+                            "observation": observation,
+                            "conversation_id": conversation_id,
+                        },
+                    )
+                    continue
+
                 image_text_cfg = resolve_image_text_config(project, self._llm_config)
                 resolved_image_source = effective_image_source(image_text_cfg)
 
@@ -767,7 +1032,7 @@ class MasterReActEngine:
                         continue
 
                 depends_on = [last_step_id] if last_step_id else []
-                step = self._make_step(step_type, depends_on)
+                step = self._make_step(step_type, depends_on, profile_id=session._profile_id())
                 plan.steps.append(step)
                 self._store.set_plan(script_id, plan)
                 last_step_id = step.id
@@ -934,8 +1199,11 @@ class MasterReActEngine:
                         ):
                             ctx.completed_step_types.discard(upstream)
                     else:
-                        for delegate in e.structured.get("suggested_delegates") or []:
-                            upstream = ACTION_TO_STEP.get(str(delegate))
+                        for suggested_id in e.structured.get("suggested_agent_ids") or []:
+                            upstream = resolve_step_for_roster_agent(
+                                str(suggested_id),
+                                session._profile_id(),
+                            )
                             if upstream:
                                 ctx.completed_step_types.discard(upstream)
                 except TtsAbortError as e:
@@ -1143,6 +1411,14 @@ class MasterReActEngine:
                 iterations=ctx.iteration,
                 status=script.status.value,
             )
+            log_perf(
+                "master.react",
+                "主 Agent ReAct 结束",
+                duration_ms=(time.perf_counter() - react_start) * 1000,
+                script_id=script_id,
+                iterations=ctx.iteration,
+                status=script.status.value if script else "unknown",
+            )
             return list(ctx.observations)
         except Exception as e:
             script = self._store.get_script(script_id)
@@ -1170,6 +1446,15 @@ class MasterReActEngine:
                 script_id=script_id,
                 iterations=ctx.iteration,
                 error=str(e),
+            )
+            log_perf(
+                "master.react",
+                "主 Agent ReAct 异常结束",
+                duration_ms=(time.perf_counter() - react_start) * 1000,
+                level="warning",
+                script_id=script_id,
+                iterations=ctx.iteration,
+                error=type(e).__name__,
             )
             raise
 

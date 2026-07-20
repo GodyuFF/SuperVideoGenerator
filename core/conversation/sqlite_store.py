@@ -12,8 +12,9 @@ from typing import Any
 from core.llm.a2ui.schemas import A2UIConfirmationRequest, A2UIConfirmationResponse
 from core.conversation.store import ConversationMessage, MessageKind, MessageRole, load_conversation_messages
 from core.models.entities import Conversation, ConversationStatus, new_id
+from core.store.project_paths import DATA_ROOT
 
-DEFAULT_DB_PATH = Path("data/conversations.db")
+DEFAULT_DB_PATH = DATA_ROOT / "conversations.db"
 
 
 def _utc_now() -> str:
@@ -191,8 +192,9 @@ class ConversationSqliteStore:
     def backfill_messages(self, messages_dict: dict[str, list[ConversationMessage]]) -> int:
         """将内存/JSON 中的消息补写入 SQLite（INSERT OR IGNORE）。"""
         imported = 0
-        for msgs in messages_dict.values():
-            for msg in msgs:
+        # 快照避免 persist_store_async 线程迭代时主线程 setdefault 新增 key
+        for msgs in list(messages_dict.values()):
+            for msg in list(msgs):
                 self.append_message(msg)
                 imported += 1
         return imported
@@ -229,6 +231,72 @@ class ConversationSqliteStore:
             )
             conn.commit()
         return msg
+
+    def append_messages_batch(self, messages: list[ConversationMessage]) -> int:
+        """批量插入消息（单次 connect + commit）。"""
+        if not messages:
+            return 0
+        with self._connect() as conn:
+            for msg in messages:
+                if not msg.created_at:
+                    msg.created_at = _utc_now()
+                content_json = json.dumps(msg.content, ensure_ascii=False)
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO conversation_messages (
+                        id, conversation_id, project_id, script_id, channel,
+                        agent_name, step_id, role, message_kind, tool_call_id,
+                        content, created_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        msg.id,
+                        msg.conversation_id,
+                        msg.project_id,
+                        msg.script_id,
+                        msg.channel,
+                        msg.agent_name,
+                        getattr(msg, "step_id", "") or "",
+                        msg.role.value
+                        if isinstance(msg.role, MessageRole)
+                        else str(msg.role),
+                        msg.message_kind.value
+                        if isinstance(msg.message_kind, MessageKind)
+                        else str(msg.message_kind),
+                        msg.tool_call_id,
+                        content_json,
+                        msg.created_at,
+                    ),
+                )
+            conn.commit()
+        return len(messages)
+
+    def list_messages_page(
+        self,
+        conversation_id: str,
+        *,
+        limit: int = 80,
+        before_created_at: str | None = None,
+    ) -> list[ConversationMessage]:
+        """按时间倒序分页拉取消息（返回升序）。"""
+        clauses = ["conversation_id = ?"]
+        params: list[Any] = [conversation_id]
+        if before_created_at:
+            clauses.append("created_at < ?")
+            params.append(before_created_at)
+        params.append(max(1, min(limit, 500)))
+        sql = f"""
+            SELECT * FROM (
+                SELECT * FROM conversation_messages
+                WHERE {' AND '.join(clauses)}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+            ) sub
+            ORDER BY created_at ASC, id ASC
+        """
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_message(r) for r in rows]
 
     def list_messages(self, conversation_id: str) -> list[ConversationMessage]:
         with self._connect() as conn:
@@ -325,18 +393,18 @@ class ConversationSqliteStore:
     ) -> int:
         """一次性从 dev_store.json 导入；返回导入消息条数。"""
         imported = 0
-        for conv in conversations.values():
+        for conv in list(conversations.values()):
             self.upsert_conversation(conv)
-        for msgs in messages_dict.values():
-            for msg in msgs:
+        for msgs in list(messages_dict.values()):
+            for msg in list(msgs):
                 self.append_message(msg)
                 imported += 1
         return imported
 
     def import_messages_dict(self, raw: dict[str, list[dict]]) -> int:
         imported = 0
-        for items in raw.values():
-            for item in items:
+        for items in list(raw.values()):
+            for item in list(items):
                 msgs = load_conversation_messages([item])
                 for msg in msgs:
                     self.append_message(msg)

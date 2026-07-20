@@ -1,8 +1,10 @@
 """交互记录写入与 WebSocket 推送。"""
 
+import asyncio
 from typing import Any
 
 from core.events.emitter import EventEmitter
+from core.interaction_log.async_writer import get_interaction_log_writer
 from core.interaction_log.file_store import InteractionFileStore
 from core.interaction_log.models import InteractionRecord
 from core.interaction_log.store import InteractionLogStore
@@ -31,27 +33,38 @@ class InteractionRecorder:
         return self._store
 
     async def record(self, record: InteractionRecord) -> InteractionRecord:
-        saved = self._store.append(record)
-        if self._file_store:
-            self._file_store.append(saved)
+        """入队异步落盘；保留 log_stage 于事件循环。"""
+        writer = get_interaction_log_writer()
+        if writer is not None:
+            writer.enqueue(record)
+        else:
+            self._store.append(record)
+            if self._file_store:
+                self._file_store.append(record)
         log_stage(
             logger,
             "interaction",
-            saved.summary or saved.kind,
-            kind=saved.kind,
-            source=saved.source,
-            script_id=saved.script_id or "-",
+            record.summary or record.kind,
+            kind=record.kind,
+            source=record.source,
+            script_id=record.script_id or "-",
         )
         if self._emitter and self._emit_ws_events:
             await self._emitter.emit(
                 {
                     "type": "interaction_log",
-                    "script_id": saved.script_id,
-                    "project_id": saved.project_id,
-                    "record": saved.model_dump(),
+                    "script_id": record.script_id,
+                    "project_id": record.project_id,
+                    "record": record.model_dump(),
                 }
             )
-        return saved
+        return record
+
+    async def flush(self, timeout: float = 5.0) -> None:
+        """等待后台 writer 刷盘（测试用）。"""
+        writer = get_interaction_log_writer()
+        if writer is not None:
+            await asyncio.to_thread(writer.flush, timeout)
 
     async def record_agent_action(
         self,

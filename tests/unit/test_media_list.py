@@ -8,9 +8,12 @@ from core.llm.agent.react_core import AgentRunContext
 from core.llm.tools import get_tool_registry
 from core.llm.tools.shared.executor import AgentToolExecutor
 from core.llm.tools.shared.media_list import (
+    build_media_item,
     build_media_list_payload,
     is_placeholder_media_url,
     resolve_media_access,
+    resolve_media_duration_ms,
+    resolve_media_play_link,
 )
 from core.models.entities import (
     MediaAsset,
@@ -168,3 +171,94 @@ def test_executor_list_images_summary():
     text = executor.execute_by_action("image_agent", "list_images", ctx)
     assert "https://static.test/scene.jpg" in text
     assert "场景图" in text
+
+
+def test_build_media_item_includes_duration_ms_from_metadata():
+    """metadata.duration_ms 应出现在 list 载荷中。"""
+    store = MemoryStore()
+    project = Project(title="p1")
+    store.add_project(project)
+    script = Script(project_id=project.id, title="s1")
+    store.add_script(script)
+    media = MediaAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=MediaAssetType.AUDIO,
+        name="16s 音效",
+        url="https://cdn.test/sfx.mp3",
+        metadata={"duration_ms": 16000},
+    )
+    store.add_media_asset(media)
+    item = build_media_item(store, media)
+    assert item["duration_ms"] == 16000
+
+
+def test_build_media_item_probes_local_audio(tmp_path, monkeypatch):
+    """无 metadata 时应对本地 audio 文件探测 duration_ms。"""
+    import wave
+
+    from core.store import project_paths
+
+    monkeypatch.setattr(project_paths, "PROJECTS_ROOT", tmp_path)
+    media_dir = tmp_path / "p1" / "scripts" / "s1" / "assets" / "media"
+    media_dir.mkdir(parents=True)
+    wav_path = media_dir / "sfx.wav"
+    with wave.open(str(wav_path), "w") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(44100)
+        handle.writeframes(b"\x00\x00" * 44100)
+
+    store = MemoryStore()
+    project = Project(title="p1")
+    store.add_project(project)
+    script = Script(project_id=project.id, title="s1")
+    store.add_script(script)
+    rel = "projects/p1/scripts/s1/assets/media/sfx.wav"
+    media = MediaAsset(
+        project_id=project.id,
+        script_id=script.id,
+        type=MediaAssetType.AUDIO,
+        name="本地音效",
+        url=rel,
+    )
+    store.add_media_asset(media)
+    item = build_media_item(store, media)
+    assert item.get("duration_ms", 0) >= 900
+
+
+def test_resolve_media_duration_ms_prefers_metadata():
+    """resolve_media_duration_ms 应优先 metadata。"""
+    media = MediaAsset(
+        project_id="p",
+        script_id="s",
+        type=MediaAssetType.AUDIO,
+        name="x",
+        url="https://cdn.test/x.mp3",
+        metadata={"duration_ms": 12345},
+    )
+    access = resolve_media_access(media.url)
+    assert resolve_media_duration_ms(media, access) == 12345
+
+
+def test_resolve_media_play_link_absolute_local_path(tmp_path, monkeypatch):
+    """绝对本地路径应映射为 /api/ 播放链接，而非 file://。"""
+    from core.store import project_paths
+
+    monkeypatch.setattr(project_paths, "PROJECTS_ROOT", tmp_path)
+    media_dir = tmp_path / "p1" / "scripts" / "s1" / "assets" / "media"
+    media_dir.mkdir(parents=True)
+    audio_path = media_dir / "media_abc.mp3"
+    audio_path.write_bytes(b"\x00" * 256)
+
+    media = MediaAsset(
+        project_id="p1",
+        script_id="s1",
+        type=MediaAssetType.AUDIO,
+        name="旁白",
+        url=str(audio_path.resolve()),
+    )
+    link = resolve_media_play_link(media)
+    assert link == "/api/projects/p1/scripts/s1/assets/media/media_abc.mp3"
+    item = build_media_item(MemoryStore(), media)
+    assert item["link"] == link

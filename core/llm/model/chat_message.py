@@ -152,21 +152,92 @@ def _canonical_block_to_anthropic(block: ContentBlock) -> ContentBlock:
 
 
 def _assistant_blocks_for_wire(blocks: list[ContentBlock]) -> list[ContentBlock]:
-    """assistant content blocks → Anthropic wire blocks（含 thinking 模式兼容）。"""
+    """assistant content blocks → Anthropic wire blocks。"""
     non_results = [b for b in blocks if b.get("type") != "tool_result"]
     has_tool_use = any(b.get("type") == "tool_use" for b in non_results)
     has_thinking = any(b.get("type") == "thinking" for b in non_results)
     converted = [_canonical_block_to_anthropic(b) for b in non_results]
     if has_tool_use and not has_thinking:
-        if converted and converted[0].get("type") == "text":
-            first = converted[0]
-            converted[0] = {
-                "type": "thinking",
-                "thinking": str(first.get("text", "")),
-            }
-        else:
-            converted.insert(0, {"type": "thinking", "thinking": ""})
+        converted.insert(0, {"type": "thinking", "thinking": ""})
     return converted
+
+
+def _last_wire_assistant_tool_use_ids(wire: list[AnthropicMessage]) -> set[str]:
+    """取 wire 序列中最后一条 assistant 消息的 tool_use id 集合。"""
+    for msg in reversed(wire):
+        if msg.get("role") != "assistant":
+            continue
+        ids: set[str] = set()
+        for block in msg.get("content", []):
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                tool_id = str(block.get("id", "")).strip()
+                if tool_id:
+                    ids.add(tool_id)
+        return ids
+    return set()
+
+
+def _tool_result_to_observation_text(content_text: str) -> str:
+    """将 tool 观察内容格式化为可读文本。"""
+    text = content_text.strip()
+    if not text:
+        return "[观察]"
+    return text if text.startswith("[观察]") else f"[观察] {text}"
+
+
+def _flatten_tool_use_block_text(block: ContentBlock) -> str:
+    """将 tool_use block 展平为可读行动文本。"""
+    name = str(block.get("name", "")).strip()
+    inp = block.get("input", {})
+    if isinstance(inp, str):
+        input_str = inp
+    else:
+        input_str = json.dumps(inp, ensure_ascii=False)
+    return f"[行动] {name}: {input_str}" if name else f"[行动] {input_str}"
+
+
+def _user_block_for_wire(
+    block: ContentBlock,
+    *,
+    valid_tool_use_ids: set[str],
+) -> ContentBlock:
+    """user 内嵌 block → wire block；tool_result 无配对时降级为 text。"""
+    btype = block.get("type")
+    if btype == "tool_result":
+        tool_id = str(block.get("tool_use_id", "")).strip()
+        content = str(block.get("content", "")).strip()
+        if tool_id and tool_id in valid_tool_use_ids:
+            return _canonical_block_to_anthropic(block)
+        return text_block(_tool_result_to_observation_text(content))
+    if btype == "tool_use":
+        return text_block(_flatten_tool_use_block_text(block))
+    return _canonical_block_to_anthropic(block)
+
+
+def validate_wire_tool_pairs(wire: list[AnthropicMessage]) -> list[AnthropicMessage]:
+    """将 wire 中 orphan tool_result 降级为 text，保证 API 可发送。"""
+    fixed: list[AnthropicMessage] = []
+    for msg in wire:
+        role = str(msg.get("role", ""))
+        if role != "user":
+            fixed.append(msg)
+            continue
+        prev_ids = _last_wire_assistant_tool_use_ids(fixed)
+        new_blocks: list[ContentBlock] = []
+        for block in msg.get("content", []):
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") != "tool_result":
+                new_blocks.append(block)
+                continue
+            tool_id = str(block.get("tool_use_id", "")).strip()
+            content = str(block.get("content", "")).strip()
+            if tool_id and tool_id in prev_ids:
+                new_blocks.append(block)
+            else:
+                new_blocks.append(text_block(_tool_result_to_observation_text(content)))
+        fixed.append({"role": "user", "content": new_blocks})
+    return fixed
 
 
 def canonical_to_anthropic_messages(messages: list[ChatMessage]) -> list[AnthropicMessage]:
@@ -188,42 +259,52 @@ def canonical_to_anthropic_messages(messages: list[ChatMessage]) -> list[Anthrop
             continue
 
         if role == "user":
+            valid_ids = _last_wire_assistant_tool_use_ids(wire)
             for block in blocks:
-                pending_user_blocks.append(_canonical_block_to_anthropic(block))
+                pending_user_blocks.append(
+                    _user_block_for_wire(block, valid_tool_use_ids=valid_ids)
+                )
             continue
 
         if role == "tool":
             tool_id = str(msg.get("tool_call_id", ""))
             content_text = _blocks_to_text_content(blocks)
-            pending_user_blocks.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tool_id,
-                    "content": content_text,
-                }
-            )
+            valid_ids = _last_wire_assistant_tool_use_ids(wire)
+            if tool_id and tool_id in valid_ids:
+                pending_user_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_id,
+                        "content": content_text,
+                    }
+                )
+            else:
+                pending_user_blocks.append(
+                    text_block(_tool_result_to_observation_text(content_text))
+                )
             continue
 
         if role != "assistant":
             continue
 
         flush_user()
-        orphan_tool_results: list[ContentBlock] = []
         assistant_source: list[ContentBlock] = []
         for block in blocks:
             if block.get("type") == "tool_result":
-                orphan_tool_results.append(_canonical_block_to_anthropic(block))
+                content = str(block.get("content", "")).strip()
+                if content:
+                    assistant_source.append(
+                        text_block(_tool_result_to_observation_text(content))
+                    )
             else:
                 assistant_source.append(block)
 
         assistant_blocks = _assistant_blocks_for_wire(assistant_source)
         if assistant_blocks:
             wire.append({"role": "assistant", "content": assistant_blocks})
-        if orphan_tool_results:
-            pending_user_blocks.extend(orphan_tool_results)
 
     flush_user()
-    return wire
+    return validate_wire_tool_pairs(wire)
 
 
 def anthropic_to_canonical_messages(messages: list[AnthropicMessage]) -> list[ChatMessage]:
@@ -318,15 +399,7 @@ def parse_action_content(content: str) -> tuple[str, dict[str, Any]]:
             return name, parsed
     except json.JSONDecodeError:
         pass
-    try:
-        from core.llm.json_parse import parse_llm_json_object
-
-        parsed = parse_llm_json_object(rest)
-        if isinstance(parsed, dict):
-            return name, parsed
-    except ValueError:
-        pass
-    return name, {"raw": rest}
+    return name, {}
 
 
 def format_action_content(action: str, action_input: dict[str, Any]) -> str:

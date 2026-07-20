@@ -26,10 +26,6 @@ class MessageRole(str, Enum):
     TOOL = "tool"
 
 
-# 兼容旧导入名
-ConversationRole = MessageRole
-
-
 class MessageKind(str, Enum):
     """消息语义分类（非 wire role）。"""
 
@@ -67,11 +63,8 @@ class ConversationMessage(BaseModel):
 def load_conversation_messages(
     items: list[dict],
 ) -> list[ConversationMessage]:
-    """从 JSON 列表加载消息，必要时执行旧格式迁移。"""
-    from core.conversation.migrate import upgrade_conversation_messages
-
-    upgraded = upgrade_conversation_messages(items)
-    return [ConversationMessage.model_validate(i) for i in upgraded]
+    """从 JSON 列表加载消息。"""
+    return [ConversationMessage.model_validate(i) for i in items]
 
 
 def conversation_key(
@@ -91,13 +84,22 @@ def _utc_now() -> str:
 class ConversationStore:
     """按 conversation_id + channel 隔离的多 Agent 会话存储。"""
 
-    def __init__(self, sqlite_store: Any | None = None) -> None:
+    def __init__(
+        self,
+        sqlite_store: Any | None = None,
+        write_queue: Any | None = None,
+    ) -> None:
         self._messages: dict[str, list[ConversationMessage]] = {}
         self._agent_suspend: dict[str, dict[str, Any]] = {}
         self._sqlite = sqlite_store
+        self._write_queue = write_queue
 
     def set_sqlite_store(self, sqlite_store: Any) -> None:
         self._sqlite = sqlite_store
+
+    def set_write_queue(self, write_queue: Any) -> None:
+        """注入异步批量写入队列。"""
+        self._write_queue = write_queue
 
     @property
     def messages(self) -> dict[str, list[ConversationMessage]]:
@@ -132,7 +134,9 @@ class ConversationStore:
             created_at=_utc_now(),
         )
         self._messages.setdefault(key, []).append(msg)
-        if self._sqlite is not None:
+        if self._write_queue is not None:
+            self._write_queue.enqueue(msg)
+        elif self._sqlite is not None:
             self._sqlite.append_message(msg)
         return msg
 
@@ -212,14 +216,15 @@ class ConversationStore:
         channel: Literal["master", "agent"],
         agent_name: str = "",
         step_id: str = "",
+        tool_call_id: str = "",
     ) -> tuple[ConversationMessage, ConversationMessage]:
         """写入一轮 ReAct：assistant（text + tool_use）+ tool（observation）。"""
         action_msg_id = new_id("msg")
-        tool_call_id = tool_call_id_for_action(action_msg_id)
+        resolved_tool_id = tool_call_id.strip() or tool_call_id_for_action(action_msg_id)
         blocks: list[ContentBlock] = [thinking_block(thought)]
         blocks.append(
             tool_use_block(
-                tool_id=tool_call_id,
+                tool_id=resolved_tool_id,
                 name=action,
                 input_data=action_input,
             )
@@ -242,10 +247,62 @@ class ConversationStore:
             MessageRole.TOOL,
             observation,
             agent_name,
-            tool_call_id=tool_call_id,
+            tool_call_id=resolved_tool_id,
             step_id=step_id,
         )
         return assistant_msg, tool_msg
+
+    def add_react_turn_batch(
+        self,
+        conversation_id: str,
+        project_id: str,
+        script_id: str,
+        *,
+        thought: str,
+        calls: list[tuple[str, str, dict[str, Any], str]],
+        channel: Literal["master", "agent"],
+        agent_name: str = "",
+        step_id: str = "",
+    ) -> tuple[ConversationMessage, list[ConversationMessage]]:
+        """写入同轮多 tool ReAct：1 条 assistant（thinking + N tool_use）+ N 条 tool 消息。"""
+        blocks: list[ContentBlock] = [thinking_block(thought)]
+        tool_messages: list[ConversationMessage] = []
+        resolved_calls: list[tuple[str, str, dict[str, Any], str]] = []
+        for idx, (tool_call_id, action, action_input, observation) in enumerate(calls):
+            resolved_id = tool_call_id.strip() or tool_call_id_for_action(f"{new_id('msg')}_{idx}")
+            resolved_calls.append((resolved_id, action, action_input, observation))
+            blocks.append(
+                tool_use_block(
+                    tool_id=resolved_id,
+                    name=action,
+                    input_data=action_input,
+                )
+            )
+        assistant_msg = self.add(
+            conversation_id,
+            project_id,
+            script_id,
+            channel,
+            MessageRole.ASSISTANT,
+            blocks,
+            agent_name,
+            step_id=step_id,
+        )
+        for resolved_id, action, _action_input, observation in resolved_calls:
+            tool_messages.append(
+                self.add(
+                    conversation_id,
+                    project_id,
+                    script_id,
+                    channel,
+                    MessageRole.TOOL,
+                    observation,
+                    agent_name,
+                    tool_call_id=resolved_id,
+                    step_id=step_id,
+                )
+            )
+        return assistant_msg, tool_messages
 
     def add_orphan_observation(
         self,
@@ -277,6 +334,17 @@ class ConversationStore:
     ) -> list[ConversationMessage]:
         key = conversation_key(conversation_id, channel, agent_name)
         return list(self._messages.get(key, []))
+
+    def list_all_messages_for_conversation(
+        self, conversation_id: str
+    ) -> list[ConversationMessage]:
+        """返回单对话全部 channel 的消息（用于时间线重建）。"""
+        prefix = f"{conversation_id}:"
+        items: list[ConversationMessage] = []
+        for key, msgs in self._messages.items():
+            if key.startswith(prefix):
+                items.extend(msgs)
+        return sorted(items, key=lambda m: (m.created_at, m.id))
 
     def list_master_messages_for_ui(
         self, conversation_id: str

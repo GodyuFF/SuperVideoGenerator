@@ -8,6 +8,7 @@ from core.llm.tools.image.register import register_image_tools
 from core.llm.tools.registry import ToolRegistry
 from core.llm.tools.script.register import register_script_tools
 from core.llm.tools.storyboard.register import register_storyboard_tools
+from core.llm.tools.storyboard_refine.register import register_storyboard_refine_tools
 from core.llm.tools.tts.register import register_tts_tools
 from core.llm.tools.video.register import register_video_tools
 
@@ -20,12 +21,13 @@ def register_all_tools(registry: ToolRegistry) -> None:
     register_script_tools(registry)
     register_image_tools(registry)
     register_storyboard_tools(registry)
+    register_storyboard_refine_tools(registry)
     register_video_tools(registry)
     register_tts_tools(registry)
     register_editing_tools(registry)
 
 
-def build_agent_tools_compat() -> dict[str, list]:
+def build_agent_tools() -> dict[str, list]:
     from core.llm.tools import get_tool_registry
 
     return agent_tools_from_registry(get_tool_registry())
@@ -58,6 +60,7 @@ def agent_tools_from_registry(registry: ToolRegistry) -> dict[str, list]:
     _exclude_common: dict[str, frozenset[str]] = {
         # 分镜 Agent 应通过 load_context 读取剧本，勿用 read_webpage
         "storyboard_agent": frozenset({"read_webpage"}),
+        "storyboard_refine_agent": frozenset({"read_webpage"}),
         "tts_agent": frozenset({"read_webpage"}),
         "editing_agent": frozenset({"read_webpage"}),
         "image_agent": frozenset({"read_webpage"}),

@@ -5,7 +5,7 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from core.llm.tool_calls import ToolCallResult
+from core.llm.client.tool_calls import ToolCallResult
 
 OnDelta = Callable[[str], Awaitable[None]]
 
@@ -144,6 +144,63 @@ def parse_sse_data_line(line: str) -> str | None:
     if not delta or "content" not in delta:
         return None
     return delta["content"]
+
+
+def extract_tool_call_stream_parts(delta: dict[str, Any]) -> list[str]:
+    """从 tool_calls SSE delta 提取文本片段（thinking 与 content 均保留，供通用场景）。"""
+    parts: list[str] = []
+    thinking_start = delta.get("anthropic_thinking_start")
+    if isinstance(thinking_start, dict):
+        text = str(thinking_start.get("thinking", ""))
+        if text:
+            parts.append(text)
+    thinking_delta = delta.get("anthropic_thinking_delta")
+    if isinstance(thinking_delta, dict):
+        text = str(thinking_delta.get("thinking", ""))
+        if text:
+            parts.append(text)
+    if delta.get("content"):
+        parts.append(str(delta["content"]))
+    return parts
+
+
+def extract_complete_stream_parts(delta: dict[str, Any]) -> tuple[str, str]:
+    """从 SSE delta 拆分正文 text 与 extended thinking 片段（供 complete/complete_json 聚合）。"""
+    text = str(delta.get("content", "")) if delta.get("content") else ""
+    thinking_parts: list[str] = []
+    for key in ("anthropic_thinking_start", "anthropic_thinking_delta"):
+        block = delta.get(key)
+        if isinstance(block, dict):
+            part = str(block.get("thinking", ""))
+            if part:
+                thinking_parts.append(part)
+    return text, "".join(thinking_parts)
+
+
+class ThoughtStreamExtractor:
+    """从 tool_calls 流提取 ReAct thought 增量，thinking 激活后忽略 content 镜像避免重复打印。"""
+
+    def __init__(self) -> None:
+        self._saw_thinking = False
+
+    def feed(self, delta: dict[str, Any]) -> list[str]:
+        """摄入单条 SSE delta，返回应推送给前端的 thought 文本片段。"""
+        parts: list[str] = []
+        thinking_start = delta.get("anthropic_thinking_start")
+        if isinstance(thinking_start, dict):
+            text = str(thinking_start.get("thinking", ""))
+            if text:
+                self._saw_thinking = True
+                parts.append(text)
+        thinking_delta = delta.get("anthropic_thinking_delta")
+        if isinstance(thinking_delta, dict):
+            text = str(thinking_delta.get("thinking", ""))
+            if text:
+                self._saw_thinking = True
+                parts.append(text)
+        if not self._saw_thinking and delta.get("content"):
+            parts.append(str(delta["content"]))
+        return parts
 
 
 class ToolCallAccumulator:

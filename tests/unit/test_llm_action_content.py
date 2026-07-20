@@ -5,6 +5,7 @@ from core.llm.agent.llm_action import _coerce_asset_content, apply_action_result
 from core.llm.agent.react_core import AgentRunContext
 from core.models.entities import Project, Script, TextAsset, TextAssetType, AssetScope
 from core.store.memory import MemoryStore
+from tests.support.shot_fixtures import shot_design_payload
 
 
 def test_coerce_asset_content_from_string():
@@ -66,8 +67,8 @@ def test_extract_llm_content_field_text_key():
     assert extract_llm_content_field(data, "create_plot") == data["text"]
 
 
-def test_apply_action_result_create_shots_normalizes_one_based_order():
-    """LLM 返回 1 基 order 时，落盘应规范为 0 基。"""
+def test_apply_action_result_create_shots_preserves_order_values():
+    """LLM 返回的 order 值原样落盘（不再强制 0 基规范化）。"""
     store = MemoryStore()
     project = Project(title="p1")
     store.add_project(project)
@@ -87,24 +88,14 @@ def test_apply_action_result_create_shots_normalizes_one_based_order():
         ctx,
         {
             "shots": [
-                {
-                    "order": 1,
-                    "duration_ms": 3000,
-                    "narration_text": "第一镜",
-                    "camera_motion": "ken_burns_in",
-                },
-                {
-                    "order": 2,
-                    "duration_ms": 4000,
-                    "narration_text": "第二镜",
-                    "camera_motion": "pan_right",
-                },
+                shot_design_payload(order=1, text="第一镜"),
+                shot_design_payload(order=2, text="第二镜", camera_motion="pan_right"),
             ],
         },
     )
     shots = ctx.work_context["_pending_shots"]
-    assert [s.order for s in shots] == [0, 1]
-    assert shots[0].narration_text == "第一镜"
+    assert [s.order for s in shots] == [1, 2]
+    assert shots[0].audio_tracks[0].clips[0].text == "第一镜"
 
     store = MemoryStore()
     project = Project(title="p1")

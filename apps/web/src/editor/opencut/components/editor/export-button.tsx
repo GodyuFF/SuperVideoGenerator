@@ -1,16 +1,11 @@
 import { useState } from "react";
-import { TransitionTopIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
 	Popover,
 	PopoverContent,
 	PopoverTrigger,
 } from "@opencut/components/ui/popover";
 import { Button } from "@opencut/components/ui/button";
-import { Label } from "@opencut/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@opencut/components/ui/radio-group";
 import { Progress } from "@opencut/components/ui/progress";
-import { Checkbox } from "@opencut/components/ui/checkbox";
 import { cn } from "@opencut/utils/ui";
 import {
 	getExportMimeType,
@@ -18,32 +13,22 @@ import {
 	downloadBuffer,
 } from "@opencut/export";
 import { Check, Copy, Download, RotateCcw } from "lucide-react";
-import {
-	EXPORT_FORMAT_VALUES,
-	EXPORT_QUALITY_VALUES,
-	type ExportFormat,
-	type ExportQuality,
-} from "@opencut/export";
-import {
-	Section,
-	SectionContent,
-	SectionHeader,
-	SectionTitle,
-} from "@opencut/components/section";
+import type { ExportFormat, ExportQuality } from "@opencut/export";
 import { useEditor } from "@opencut/editor/use-editor";
 import { DEFAULT_EXPORT_OPTIONS } from "@opencut/export/defaults";
 import { useOpencutT } from "@opencut/i18n/useOpencutT";
+import { toast } from "sonner";
+import { isSvfProjectKey } from "@opencut/svf-integration";
+import {
+	getSvfProjectMediaCache,
+	hasHydrationFailures,
+} from "../../../adapter/SvfMediaBridge";
 
-function isExportFormat(value: string): value is ExportFormat {
-	return EXPORT_FORMAT_VALUES.some((formatValue) => formatValue === value);
-}
+/** 导出按钮展示场景：`cinema` 剪辑 Tab，`studio` 专业剪辑顶栏。 */
+export type ExportButtonSurface = "studio" | "cinema";
 
-function isExportQuality(value: string): value is ExportQuality {
-	return EXPORT_QUALITY_VALUES.some((qualityValue) => qualityValue === value);
-}
-
-/** 导出按钮与弹出面板入口。 */
-export function ExportButton() {
+/** 导出按钮与扁平静态弹出面板（剪辑 Tab 与专业剪辑顶栏共用）。 */
+export function ExportButton({ surface = "studio" }: { surface?: ExportButtonSurface }) {
 	const { tExport } = useOpencutT();
 	const [isExportPopoverOpen, setIsExportPopoverOpen] = useState(false);
 	const editor = useEditor();
@@ -67,31 +52,33 @@ export function ExportButton() {
 				<button
 					type="button"
 					className={cn(
-						"svf-opencut-export-btn flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-white",
-						hasProject ? "cursor-pointer" : "cursor-not-allowed opacity-50",
+						"btn-secondary btn-sm svf-export-trigger",
+						surface === "cinema" && "edit-cinema-export-trigger",
+						!hasProject && "cursor-not-allowed opacity-50",
 					)}
-					onClick={hasProject ? () => setIsExportPopoverOpen(true) : undefined}
 					disabled={!hasProject}
-					onKeyDown={(event) => {
-						if (hasProject && (event.key === "Enter" || event.key === " ")) {
-							event.preventDefault();
-							setIsExportPopoverOpen(true);
-						}
-					}}
 				>
-					<HugeiconsIcon icon={TransitionTopIcon} className="size-3.5" />
+					<Download className="size-3.5 shrink-0" aria-hidden />
 					<span>{tExport("export")}</span>
 				</button>
 			</PopoverTrigger>
-			{hasProject && <ExportPopover onOpenChange={setIsExportPopoverOpen} />}
+			{hasProject && (
+				<ExportPopover
+					onOpenChange={setIsExportPopoverOpen}
+					surface={surface}
+				/>
+			)}
 		</Popover>
 	);
 }
 
+/** 导出选项弹出层：格式、质量、音频与进度反馈。 */
 function ExportPopover({
 	onOpenChange,
+	surface = "studio",
 }: {
 	onOpenChange: (open: boolean) => void;
+	surface?: ExportButtonSurface;
 }) {
 	const { tExport } = useOpencutT();
 	const editor = useEditor();
@@ -108,8 +95,20 @@ function ExportPopover({
 		DEFAULT_EXPORT_OPTIONS.includeAudio ?? true,
 	);
 
+	const projectKey = activeProject?.metadata.id ?? "";
+	const mediaHydrationBlocked =
+		Boolean(projectKey) &&
+		isSvfProjectKey(projectKey) &&
+		hasHydrationFailures(getSvfProjectMediaCache(projectKey));
+
 	const handleExport = async () => {
 		if (!activeProject) return;
+		if (shouldIncludeAudio && mediaHydrationBlocked) {
+			toast.error(
+				"音频媒体加载失败，无法导出有声成片。请检查网络后刷新剪辑助手。",
+			);
+			return;
+		}
 
 		const result = await editor.project.export({
 			options: {
@@ -132,6 +131,10 @@ function ExportPopover({
 				mimeType: getExportMimeType({ format }),
 			});
 
+			if (result.audioWarning) {
+				toast.warning(result.audioWarning);
+			}
+
 			editor.project.clearExportState();
 			onOpenChange(false);
 		}
@@ -142,7 +145,12 @@ function ExportPopover({
 	};
 
 	return (
-		<PopoverContent className="bg-background mr-4 flex w-80 flex-col p-0">
+		<PopoverContent
+			className="edit-cinema-export-popover svf-editor-overlay-content z-[10001] flex w-[min(20rem,calc(100vw-2rem))] flex-col p-0"
+			align="end"
+			side="bottom"
+			sideOffset={8}
+		>
 			{exportResult && !exportResult.success ? (
 				<ExportError
 					error={exportResult.error || tExport("unknownError")}
@@ -150,8 +158,8 @@ function ExportPopover({
 				/>
 			) : (
 				<>
-					<div className="flex items-center justify-between p-3 border-b">
-						<h3 className="font-medium text-sm">
+					<div className="edit-cinema-export-popover-head flex items-center justify-between border-b px-3 py-2.5">
+						<h3 className="text-sm font-medium">
 							{isExporting
 								? tExport("exportingProject")
 								: tExport("exportProject")}
@@ -161,99 +169,32 @@ function ExportPopover({
 					<div className="flex flex-col gap-4">
 						{!isExporting && (
 							<>
-								<div className="flex flex-col">
-									<Section
-										collapsible
-										defaultOpen={false}
-										showTopBorder={false}
+								<SvfExportOptionsForm
+									surface={surface}
+									format={format}
+									quality={quality}
+									shouldIncludeAudio={shouldIncludeAudio}
+									mediaHydrationBlocked={mediaHydrationBlocked}
+									onFormatChange={setFormat}
+									onQualityChange={setQuality}
+									onIncludeAudioChange={setShouldIncludeAudio}
+								/>
+
+								<div className="edit-cinema-export-popover-foot p-3 pt-0">
+									{mediaHydrationBlocked && shouldIncludeAudio && (
+										<p className="edit-cinema-export-warn mb-2 text-xs">
+											音频媒体加载失败，导出将不可用。请刷新后重试。
+										</p>
+									)}
+									<button
+										type="button"
+										className="btn-primary btn-sm edit-cinema-export-submit w-full"
+										disabled={shouldIncludeAudio && mediaHydrationBlocked}
+										onClick={() => void handleExport()}
 									>
-										<SectionHeader>
-											<SectionTitle>{tExport("format")}</SectionTitle>
-										</SectionHeader>
-										<SectionContent>
-											<RadioGroup
-												value={format}
-												onValueChange={(value) => {
-													if (isExportFormat(value)) {
-														setFormat(value);
-													}
-												}}
-											>
-												<div className="flex items-center space-x-2">
-													<RadioGroupItem value="mp4" id="mp4" />
-													<Label htmlFor="mp4">{tExport("formatMp4")}</Label>
-												</div>
-												<div className="flex items-center space-x-2">
-													<RadioGroupItem value="webm" id="webm" />
-													<Label htmlFor="webm">{tExport("formatWebm")}</Label>
-												</div>
-											</RadioGroup>
-										</SectionContent>
-									</Section>
-
-									<Section collapsible defaultOpen={false}>
-										<SectionHeader>
-											<SectionTitle>{tExport("quality")}</SectionTitle>
-										</SectionHeader>
-										<SectionContent>
-											<RadioGroup
-												value={quality}
-												onValueChange={(value) => {
-													if (isExportQuality(value)) {
-														setQuality(value);
-													}
-												}}
-											>
-												<div className="flex items-center space-x-2">
-													<RadioGroupItem value="low" id="low" />
-													<Label htmlFor="low">{tExport("qualityLow")}</Label>
-												</div>
-												<div className="flex items-center space-x-2">
-													<RadioGroupItem value="medium" id="medium" />
-													<Label htmlFor="medium">
-														{tExport("qualityMedium")}
-													</Label>
-												</div>
-												<div className="flex items-center space-x-2">
-													<RadioGroupItem value="high" id="high" />
-													<Label htmlFor="high">{tExport("qualityHigh")}</Label>
-												</div>
-												<div className="flex items-center space-x-2">
-													<RadioGroupItem value="very_high" id="very_high" />
-													<Label htmlFor="very_high">
-														{tExport("qualityVeryHigh")}
-													</Label>
-												</div>
-											</RadioGroup>
-										</SectionContent>
-									</Section>
-
-									<Section collapsible defaultOpen={false}>
-										<SectionHeader>
-											<SectionTitle>{tExport("audio")}</SectionTitle>
-										</SectionHeader>
-										<SectionContent>
-											<div className="flex items-center space-x-2">
-												<Checkbox
-													id="include-audio"
-													checked={shouldIncludeAudio}
-													onCheckedChange={(checked) =>
-														setShouldIncludeAudio(!!checked)
-													}
-												/>
-												<Label htmlFor="include-audio">
-													{tExport("includeAudio")}
-												</Label>
-											</div>
-										</SectionContent>
-									</Section>
-								</div>
-
-								<div className="p-3 pt-0">
-									<Button onClick={handleExport} className="w-full gap-2">
-										<Download className="size-4" />
+										<Download className="size-4" aria-hidden />
 										{tExport("export")}
-									</Button>
+									</button>
 								</div>
 							</>
 						)}
@@ -270,13 +211,13 @@ function ExportPopover({
 									<Progress value={progress * 100} className="w-full" />
 								</div>
 
-								<Button
-									variant="outline"
-									className="w-full rounded-md"
+								<button
+									type="button"
+									className="btn-secondary btn-sm w-full"
 									onClick={handleCancel}
 								>
 									{tExport("cancel")}
-								</Button>
+								</button>
 							</div>
 						)}
 					</div>
@@ -286,6 +227,142 @@ function ExportPopover({
 	);
 }
 
+const EXPORT_FORMAT_OPTIONS: {
+	value: ExportFormat;
+	labelKey: "formatMp4" | "formatWebm";
+}[] = [
+	{ value: "mp4", labelKey: "formatMp4" },
+	{ value: "webm", labelKey: "formatWebm" },
+];
+
+const EXPORT_QUALITY_OPTIONS: {
+	value: ExportQuality;
+	labelKey: "qualityLow" | "qualityMedium" | "qualityHigh" | "qualityVeryHigh";
+	shortKey:
+		| "qualityLowShort"
+		| "qualityMediumShort"
+		| "qualityHighShort"
+		| "qualityVeryHighShort";
+}[] = [
+	{ value: "low", labelKey: "qualityLow", shortKey: "qualityLowShort" },
+	{ value: "medium", labelKey: "qualityMedium", shortKey: "qualityMediumShort" },
+	{ value: "high", labelKey: "qualityHigh", shortKey: "qualityHighShort" },
+	{
+		value: "very_high",
+		labelKey: "qualityVeryHigh",
+		shortKey: "qualityVeryHighShort",
+	},
+];
+
+/** 扁平静态导出表单，使用 SVF 令牌避免 OpenCut 主题污染。 */
+function SvfExportOptionsForm({
+	surface,
+	format,
+	quality,
+	shouldIncludeAudio,
+	mediaHydrationBlocked,
+	onFormatChange,
+	onQualityChange,
+	onIncludeAudioChange,
+}: {
+	surface: ExportButtonSurface;
+	format: ExportFormat;
+	quality: ExportQuality;
+	shouldIncludeAudio: boolean;
+	mediaHydrationBlocked: boolean;
+	onFormatChange: (value: ExportFormat) => void;
+	onQualityChange: (value: ExportQuality) => void;
+	onIncludeAudioChange: (value: boolean) => void;
+}) {
+	const { tExport } = useOpencutT();
+	const formatGroupName = `${surface}-export-format`;
+
+	return (
+		<div className="edit-cinema-export-form">
+			<fieldset className="edit-cinema-export-field">
+				<legend className="edit-cinema-export-label">{tExport("format")}</legend>
+				<div className="edit-cinema-export-options">
+					{EXPORT_FORMAT_OPTIONS.map((option) => {
+						const selected = format === option.value;
+						return (
+							<label
+								key={option.value}
+								className={cn(
+									"edit-cinema-export-option",
+									selected && "edit-cinema-export-option--selected",
+								)}
+							>
+								<input
+									type="radio"
+									name={formatGroupName}
+									value={option.value}
+									checked={selected}
+									className="edit-cinema-export-sr-only"
+									onChange={() => onFormatChange(option.value)}
+								/>
+								<span className="edit-cinema-export-option-marker" aria-hidden />
+								<span className="edit-cinema-export-option-text">
+									{tExport(option.labelKey)}
+								</span>
+							</label>
+						);
+					})}
+				</div>
+			</fieldset>
+
+			<fieldset className="edit-cinema-export-field">
+				<legend className="edit-cinema-export-label">{tExport("quality")}</legend>
+				<div
+					className="edit-cinema-export-segments"
+					role="radiogroup"
+					aria-label={tExport("quality")}
+				>
+					{EXPORT_QUALITY_OPTIONS.map((option) => {
+						const selected = quality === option.value;
+						return (
+							<button
+								key={option.value}
+								type="button"
+								role="radio"
+								aria-checked={selected}
+								title={tExport(option.labelKey)}
+								className={cn(
+									"edit-cinema-export-segment",
+									selected && "edit-cinema-export-segment--selected",
+								)}
+								onClick={() => onQualityChange(option.value)}
+							>
+								{tExport(option.shortKey)}
+							</button>
+						);
+					})}
+				</div>
+			</fieldset>
+
+			<div className="edit-cinema-export-field">
+				<label
+					className={cn(
+						"edit-cinema-export-audio",
+						mediaHydrationBlocked && "edit-cinema-export-audio--blocked",
+					)}
+				>
+					<input
+						type="checkbox"
+						className="edit-cinema-export-audio-input"
+						checked={shouldIncludeAudio}
+						onChange={(event) => onIncludeAudioChange(event.target.checked)}
+					/>
+					<span className="edit-cinema-export-audio-box" aria-hidden />
+					<span className="edit-cinema-export-audio-text">
+						{tExport("includeAudio")}
+					</span>
+				</label>
+			</div>
+		</div>
+	);
+}
+
+/** 导出失败时的复制与重试操作区。 */
 function ExportError({
 	error,
 	onRetry,
@@ -305,31 +382,31 @@ function ExportError({
 	return (
 		<div className="space-y-4 p-3">
 			<div className="flex flex-col gap-1.5">
-				<p className="text-destructive text-sm font-medium">
+				<p className="edit-cinema-export-warn text-sm font-medium">
 					{tExport("exportFailed")}
 				</p>
-				<p className="text-muted-foreground text-xs">{error}</p>
+				<p className="text-xs" style={{ color: "var(--svf-muted)" }}>
+					{error}
+				</p>
 			</div>
 
 			<div className="flex gap-2">
-				<Button
-					variant="outline"
-					size="sm"
-					className="h-8 flex-1 text-xs"
-					onClick={handleCopy}
+				<button
+					type="button"
+					className="btn-secondary btn-sm flex-1 text-xs"
+					onClick={() => void handleCopy()}
 				>
-					{copied ? <Check className="text-constructive" /> : <Copy />}
+					{copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
 					{tExport("copy")}
-				</Button>
-				<Button
-					variant="outline"
-					size="sm"
-					className="h-8 flex-1 text-xs"
+				</button>
+				<button
+					type="button"
+					className="btn-secondary btn-sm flex-1 text-xs"
 					onClick={onRetry}
 				>
-					<RotateCcw />
+					<RotateCcw className="size-3.5" />
 					{tExport("retry")}
-				</Button>
+				</button>
 			</div>
 		</div>
 	);

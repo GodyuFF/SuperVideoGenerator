@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SuperVideoGenerator</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      .app-splash-page {
+        min-height: 100%;
+        background: #080a0f;
+        color: #e6eaf2;
+        overflow: hidden;
+      }
+
+      .app-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+
+      .app-splash__ambient {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(224, 99, 74, 0.08), transparent 60%),
+          radial-gradient(ellipse 60% 40% at 100% 100%, rgba(201, 162, 39, 0.05), transparent 50%);
+        pointer-events: none;
+      }
+
+      .app-splash__sprocket {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 6px;
+        background: repeating-linear-gradient(
+          90deg,
+          transparent 0,
+          transparent 7px,
+          #5c667a 7px,
+          #5c667a 9px,
+          transparent 9px,
+          transparent 20px
+        );
+        opacity: 0.65;
+        animation: app-splash-sprocket-drift 2.4s linear infinite;
+      }
+
+      @keyframes app-splash-sprocket-drift {
+        from {
+          background-position-x: 0;
+        }
+        to {
+          background-position-x: 40px;
+        }
+      }
+
+      .app-splash__body {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.85rem;
+        width: min(92vw, 40rem);
+        padding: 3rem 1.5rem 2.5rem;
+        text-align: center;
+      }
+
+      .app-splash__eyebrow {
+        margin: 0 0 0.5rem;
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.72rem;
+        font-weight: 500;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #e0634a;
+      }
+
+      .app-splash__viewfinder {
+        position: relative;
+        width: min(78vw, 36rem);
+        height: min(45vw, 20.88rem);
+        margin-bottom: 0.5rem;
+      }
+
+      .app-splash__corner {
+        position: absolute;
+        width: 1.75rem;
+        height: 1.75rem;
+        border-color: #e0634a;
+        border-style: solid;
+        opacity: 0.9;
+      }
+
+      .app-splash__corner--tl {
+        top: 0;
+        left: 0;
+        border-width: 3px 0 0 3px;
+      }
+
+      .app-splash__corner--tr {
+        top: 0;
+        right: 0;
+        border-width: 3px 3px 0 0;
+      }
+
+      .app-splash__corner--bl {
+        bottom: 0;
+        left: 0;
+        border-width: 0 0 3px 3px;
+      }
+
+      .app-splash__corner--br {
+        bottom: 0;
+        right: 0;
+        border-width: 0 3px 3px 0;
+      }
+
+      .app-splash__film-window {
+        position: absolute;
+        inset: 0.85rem 1.1rem;
+        border: 1px solid #2a3347;
+        border-radius: 3px;
+        background: #0d0f10;
+        overflow: hidden;
+        box-shadow: inset 0 0 32px rgba(0, 0, 0, 0.45);
+      }
+
+      .app-splash__film-track {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        padding: 6px 10px;
+        animation: app-splash-film-roll 2.1s linear infinite;
+      }
+
+      .app-splash__frame {
+        flex-shrink: 0;
+        height: 2.4rem;
+        border-radius: 2px;
+        border: 1px solid #222a3c;
+        position: relative;
+      }
+
+      .app-splash__frame::after {
+        content: "";
+        position: absolute;
+        inset: 3px 5px;
+        border-radius: 1px;
+        opacity: 0.55;
+      }
+
+      .app-splash__frame--tone-0::after {
+        background: linear-gradient(90deg, rgba(224, 99, 74, 0.35), rgba(224, 99, 74, 0.08));
+      }
+
+      .app-splash__frame--tone-1::after {
+        background: linear-gradient(90deg, rgba(201, 162, 39, 0.28), rgba(201, 162, 39, 0.06));
+      }
+
+      .app-splash__frame--tone-2::after {
+        background: linear-gradient(90deg, rgba(107, 159, 212, 0.22), rgba(107, 159, 212, 0.05));
+      }
+
+      @keyframes app-splash-film-roll {
+        from {
+          transform: translateY(0);
+        }
+        to {
+          transform: translateY(-50%);
+        }
+      }
+
+      .app-splash__scanline {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          #e0634a 20%,
+          rgba(255, 255, 255, 0.85) 50%,
+          #e0634a 80%,
+          transparent
+        );
+        box-shadow: 0 0 16px rgba(224, 99, 74, 0.22);
+        opacity: 0.85;
+        animation: app-splash-scan 2.4s ease-in-out infinite;
+      }
+
+      @keyframes app-splash-scan {
+        0%,
+        100% {
+          top: 8%;
+          opacity: 0.2;
+        }
+        45% {
+          opacity: 0.95;
+        }
+        50% {
+          top: 88%;
+          opacity: 0.95;
+        }
+      }
+
+      .app-splash__grain {
+        position: absolute;
+        inset: 0;
+        opacity: 0.07;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        pointer-events: none;
+        mix-blend-mode: soft-light;
+      }
+
+      .app-splash__title {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        margin: 0.25rem 0 0;
+        font-family: "Newsreader", Georgia, serif;
+        font-size: 2rem;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+        color: #e6eaf2;
+      }
+
+      .app-splash__brand-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #e0634a;
+        box-shadow: 0 0 12px rgba(224, 99, 74, 0.22);
+        animation: app-splash-dot-pulse 1.4s ease-in-out infinite;
+      }
+
+      @keyframes app-splash-dot-pulse {
+        0%,
+        100% {
+          transform: scale(0.88);
+          opacity: 0.65;
+        }
+        50% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      .app-splash__tagline {
+        margin: 0;
+        font-family: "Outfit", system-ui, sans-serif;
+        font-size: 0.95rem;
+        color: #8e9aaf;
+      }
+
+      .app-splash__status {
+        margin: 0.2rem 0 0.65rem;
+        min-height: 1.25rem;
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.85rem;
+        letter-spacing: 0.06em;
+        color: #b8c0d0;
+      }
+
+      .app-splash__leader {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        width: 100%;
+        margin-top: 0.35rem;
+      }
+
+      .app-splash__leader-track {
+        flex: 1;
+        height: 4px;
+        border-radius: 999px;
+        background: #222a3c;
+        overflow: hidden;
+      }
+
+      .app-splash__leader-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #e0634a, #c9a227);
+        box-shadow: 0 0 12px rgba(224, 99, 74, 0.22);
+        animation: app-splash-progress 2.4s ease-out forwards;
+      }
+
+      @keyframes app-splash-progress {
+        from {
+          width: 0;
+        }
+        to {
+          width: 94%;
+        }
+      }
+
+      .app-splash__leader-mark {
+        flex-shrink: 0;
+        min-width: 2rem;
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        color: #5c667a;
+        text-align: right;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .app-splash__sprocket,
+        .app-splash__film-track,
+        .app-splash__scanline,
+        .app-splash__brand-dot,
+        .app-splash__leader-fill {
+          animation: none;
+        }
+
+        .app-splash__leader-fill {
+          width: 94%;
+        }
+      }
+    </style>
+  </head>
+  <body class="app-splash-page">
+    <div class="app-splash" role="status" aria-live="polite" aria-busy="true">
+      <div class="app-splash__ambient" aria-hidden="true"></div>
+      <div class="app-splash__sprocket" aria-hidden="true"></div>
+
+      <div class="app-splash__body">
+        <p class="app-splash__eyebrow">暗房 · 胶片</p>
+
+        <div class="app-splash__viewfinder" aria-hidden="true">
+          <span class="app-splash__corner app-splash__corner--tl"></span>
+          <span class="app-splash__corner app-splash__corner--tr"></span>
+          <span class="app-splash__corner app-splash__corner--bl"></span>
+          <span class="app-splash__corner app-splash__corner--br"></span>
+          <div class="app-splash__film-window">
+            <div class="app-splash__film-track">
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+              <div class="app-splash__frame app-splash__frame--tone-2"></div>
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+              <div class="app-splash__frame app-splash__frame--tone-2"></div>
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+              <div class="app-splash__frame app-splash__frame--tone-2"></div>
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+              <div class="app-splash__frame app-splash__frame--tone-2"></div>
+              <div class="app-splash__frame app-splash__frame--tone-0"></div>
+              <div class="app-splash__frame app-splash__frame--tone-1"></div>
+            </div>
+            <div class="app-splash__scanline"></div>
+            <div class="app-splash__grain"></div>
+          </div>
+        </div>
+
+        <h1 class="app-splash__title">
+          <span class="app-splash__brand-dot" aria-hidden="true"></span>
+          SuperVideoGenerator
+        </h1>
+        <p class="app-splash__tagline">从创意到成片</p>
+        <p class="app-splash__status" id="svf-boot-status">正在显影…</p>
+
+        <div class="app-splash__leader" aria-hidden="true">
+          <div class="app-splash__leader-track">
+            <div class="app-splash__leader-fill"></div>
+          </div>
+          <span class="app-splash__leader-mark" id="svf-boot-progress">0</span>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var statuses = ["正在显影…", "载入工作区…", "校准取景器…"];
+        var idx = 0;
+        var statusEl = document.getElementById("svf-boot-status");
+        var progressEl = document.getElementById("svf-boot-progress");
+        setInterval(function () {
+          idx = (idx + 1) % statuses.length;
+          if (statusEl) statusEl.textContent = statuses[idx];
+        }, 720);
+        var start = performance.now();
+        function tick() {
+          var elapsed = performance.now() - start;
+          var p = Math.min(94, (elapsed / 2400) * 94);
+          if (progressEl) progressEl.textContent = String(Math.round(p));
+          if (p < 94) requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      })();
+    </script>
+  </body>
+</html>

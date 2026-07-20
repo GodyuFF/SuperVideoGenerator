@@ -22,11 +22,6 @@ COMPOSE_FINAL_SCHEMA: dict[str, Any] = {
         "timeline_id": {"type": "string", "description": "剪辑计划稿 ID"},
         "final_url": {"type": "string", "description": "成片 URL（无 API 时可省略）"},
         "url": {"type": "string"},
-        "timeline": {
-            "type": "array",
-            "items": build_video_plan_shot_schema(),
-            "description": "legacy：镜头数组；优先使用 timeline_id",
-        },
         "skip_subtitles": {
             "type": "boolean",
             "description": "为 true 时导出纯画面+配音，不回填 TTS 字幕轨、不烧录字幕",
@@ -85,11 +80,11 @@ ANALYZE_EDIT_TIMELINE_SCHEMA: dict[str, Any] = merge_plan_tracking(
             "observation": _OBSERVATION,
             "start_ms": {
                 "type": "integer",
-                "description": "分析区间起点（毫秒），默认 0",
+                "description": "查询区间起点（毫秒）；读取某时间段剪辑详情时须指定",
             },
             "end_ms": {
                 "type": "integer",
-                "description": "分析区间终点（毫秒），默认全片时长",
+                "description": "查询区间终点（毫秒）；读取某时间段剪辑详情时须指定",
             },
             "tracks": {
                 "type": "array",
@@ -108,6 +103,10 @@ ANALYZE_EDIT_TIMELINE_SCHEMA: dict[str, Any] = merge_plan_tracking(
             "include_shot_alignment": {
                 "type": "boolean",
                 "description": "是否输出每镜对齐信息，默认 true",
+            },
+            "include_analysis": {
+                "type": "boolean",
+                "description": "是否输出 gaps/overlaps/hints/alignment 等结构分析；仅读 clip 详情时可设 false 以减 token",
             },
         },
         "required": ["observation"],

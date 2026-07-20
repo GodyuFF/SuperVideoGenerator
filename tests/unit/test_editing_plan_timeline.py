@@ -2,7 +2,7 @@
 
 import pytest
 
-from core.edit.timeline import compile_timeline_from_shots
+from core.edit.timeline import compile_timeline_from_shots, flat_video_clips
 from core.llm.agent.react_core import AgentRunContext
 from core.llm.tools.editing.context import build_edit_context_payload
 from core.llm.tools.output_schemas import (
@@ -12,6 +12,7 @@ from core.llm.tools.output_schemas import (
 )
 from core.llm.tools.editing.timeline_handler import (
     handle_analyze_edit_timeline,
+    handle_get_edit_timeline,
     handle_load_edit_context,
     handle_plan_edit_timeline,
     handle_validate_edit_assets,
@@ -27,7 +28,7 @@ from core.models.entities import (
     TextAsset,
     TextAssetType,
     VideoPlan,
-    VideoPlanShot,
+    Shot,
     VideoStyleMode,
 )
 from core.store.memory import MemoryStore
@@ -62,12 +63,20 @@ def editing_store() -> MemoryStore:
     store.add_media_asset(media)
     prop.primary_media_id = media.id
     store.update_text_asset(prop)
-    shot = VideoPlanShot(
+    from core.models.entities import ShotSubShot
+
+    shot = Shot(
         order=0,
         duration_ms=4000,
-        narration_text="展示道具",
-        camera_motion="ken_burns_in",
-        asset_refs={"prop": [prop.id]},
+        sub_shots=[
+            ShotSubShot(
+                start_ms=0,
+                end_ms=4000,
+                description="展示道具",
+                element_refs={"prop": [prop.id]},
+                camera_motion="ken_burns_in",
+            )
+        ],
     )
     ensure_shot_frame_image(
         store,
@@ -78,7 +87,7 @@ def editing_store() -> MemoryStore:
     )
     plan = VideoPlan(
         script_id=script.id,
-        mode=VideoStyleMode.DYNAMIC_IMAGE,
+        mode=VideoStyleMode.STORYBOOK,
         shots=[shot],
     )
     store.set_video_plan(plan)
@@ -99,9 +108,11 @@ def test_load_edit_context_includes_plan_and_media(editing_store: MemoryStore):
     assert payload["assets_with_images"]
     assert payload["linked_image_count"] >= 1
     shot = payload["video_plan"]["shots"][0]
-    assert "variant_refs" in shot
+    assert "sub_shots" in shot
     assert shot["resolved"]["image_media_id"]
     assert shot["resolved"]["image_accessible"] is True
+    assert "subtitle_style_context" in payload
+    assert payload["subtitle_style_context"]["subtitle_style"]["placement"] == "bottom_center"
 
 
 def test_output_schema_for_load_edit_context():
@@ -126,7 +137,7 @@ def test_load_edit_context_structured_passes_schema(editing_store: MemoryStore):
 
     ctx = AgentRunContext(
         task_brief="加载剪辑上下文",
-        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        work_context={"style_mode": VideoStyleMode.STORYBOOK},
         script_id=script_id,
         step_id="edit_compose",
         agent_name="editing_agent",
@@ -163,7 +174,7 @@ def test_plan_edit_timeline_merges_llm_tracks_with_plan(editing_store: MemorySto
 
     ctx = AgentRunContext(
         task_brief="生成剪辑计划稿",
-        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        work_context={"style_mode": VideoStyleMode.STORYBOOK},
         script_id=script_id,
         step_id="edit_compose",
         agent_name="editing_agent",
@@ -219,7 +230,7 @@ def test_plan_edit_timeline_merges_llm_tracks_with_plan(editing_store: MemorySto
     timeline = editing_store.get_edit_timeline_for_script(script_id)
     assert timeline is not None
     assert timeline.duration_ms == 4000
-    video_clip = timeline.tracks["video"][0]
+    video_clip = flat_video_clips(timeline)[0]
     assert video_clip.edit_description == "Ken Burns 推近道具"
     assert video_clip.motion_detail is not None
     assert video_clip.source_refs is not None
@@ -234,7 +245,7 @@ def test_plan_edit_timeline_video_layers(editing_store: MemoryStore):
 
     ctx = AgentRunContext(
         task_brief="生成多图层剪辑计划",
-        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        work_context={"style_mode": VideoStyleMode.STORYBOOK},
         script_id=script_id,
         step_id="edit_compose",
         agent_name="editing_agent",
@@ -319,7 +330,7 @@ def test_load_edit_context_includes_layer_summary(editing_store: MemoryStore):
     media_id = editing_store._test_media_id  # type: ignore[attr-defined]
     ctx = AgentRunContext(
         task_brief="规划",
-        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        work_context={"style_mode": VideoStyleMode.STORYBOOK},
         script_id=script_id,
         step_id="edit_compose",
         agent_name="editing_agent",
@@ -361,7 +372,7 @@ def test_plan_edit_timeline_observation_lists_all_warnings(editing_store: Memory
     media_id = editing_store._test_media_id  # type: ignore[attr-defined]
     ctx = AgentRunContext(
         task_brief="重叠测试",
-        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        work_context={"style_mode": VideoStyleMode.STORYBOOK},
         script_id=script_id,
         step_id="edit_compose",
         agent_name="editing_agent",
@@ -409,7 +420,7 @@ def test_validate_edit_assets_output_schema_matches_handler(editing_store: Memor
     project_id = editing_store._test_project_id  # type: ignore[attr-defined]
     ctx = AgentRunContext(
         task_brief="校验素材",
-        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        work_context={"style_mode": VideoStyleMode.STORYBOOK},
         script_id=script_id,
         step_id="edit_compose",
         agent_name="editing_agent",
@@ -450,7 +461,7 @@ def test_plan_edit_timeline_replace_empty_subtitle_skips_enrich(editing_store: M
     project_id = editing_store._test_project_id  # type: ignore[attr-defined]
     ctx = AgentRunContext(
         task_brief="规划无字幕轨",
-        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        work_context={"style_mode": VideoStyleMode.STORYBOOK},
         script_id=script_id,
         step_id="edit_compose",
         agent_name="editing_agent",
@@ -509,7 +520,7 @@ def test_analyze_edit_timeline_tool(editing_store: MemoryStore):
     editing_store.set_edit_timeline(timeline)
     ctx = AgentRunContext(
         task_brief="分析剪辑",
-        work_context={"style_mode": VideoStyleMode.DYNAMIC_IMAGE},
+        work_context={"style_mode": VideoStyleMode.STORYBOOK},
         script_id=script_id,
         step_id="edit_compose",
         agent_name="editing_agent",
@@ -526,6 +537,43 @@ def test_analyze_edit_timeline_tool(editing_store: MemoryStore):
     assert structured["range"]["end_ms"] == 2000
     assert "clips_in_range" in structured
     assert structured["shot_alignment"]
+    video_clips = [c for c in structured["clips_in_range"] if c.get("track") == "video"]
+    assert video_clips
+    assert "visible_range" in video_clips[0]
+    assert "edit_description" in video_clips[0]
+
+
+def test_analyze_edit_timeline_detail_only(editing_store: MemoryStore):
+    """include_analysis=false 时仅返回 clip 详情，不含 alignment/hints。"""
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    project_id = editing_store._test_project_id  # type: ignore[attr-defined]
+    plan = editing_store.get_video_plan_for_script(script_id)
+    assert plan
+    timeline = compile_timeline_from_shots(editing_store, script_id=script_id, plan=plan)
+    editing_store.set_edit_timeline(timeline)
+    ctx = AgentRunContext(
+        task_brief="读取详情",
+        work_context={"style_mode": VideoStyleMode.STORYBOOK},
+        script_id=script_id,
+        step_id="edit_compose",
+        agent_name="editing_agent",
+        project_id=project_id,
+    )
+    result = handle_analyze_edit_timeline(
+        editing_store,
+        ctx,
+        {
+            "observation": "读 0-2 秒详情",
+            "start_ms": 0,
+            "end_ms": 2000,
+            "include_analysis": False,
+        },
+    )
+    assert result.ok is True
+    structured = result.structured
+    assert structured["clips_in_range"]
+    assert structured["shot_alignment"] == []
+    assert structured["optimization_hints"] == []
 
 
 def test_load_edit_context_includes_shot_timings(editing_store: MemoryStore):
@@ -540,4 +588,81 @@ def test_load_edit_context_includes_shot_timings(editing_store: MemoryStore):
     assert shots[0]["timeline_start_ms"] is not None
     assert shots[0]["timeline_end_ms"] is not None
     assert payload["edit_timeline"]["analyze_summary"]
+
+
+def test_get_edit_timeline_matches_store_after_plan(editing_store: MemoryStore):
+    """get_edit_timeline 与 store 中 EditTimeline 须为同一 revision 数据。"""
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    project_id = editing_store._test_project_id  # type: ignore[attr-defined]
+    shot_id = editing_store._test_shot_id  # type: ignore[attr-defined]
+    media_id = editing_store._test_media_id  # type: ignore[attr-defined]
+    ctx = AgentRunContext(
+        task_brief="规划",
+        work_context={"style_mode": VideoStyleMode.STORYBOOK},
+        script_id=script_id,
+        step_id="edit_compose",
+        agent_name="editing_agent",
+        project_id=project_id,
+    )
+    handle_plan_edit_timeline(
+        editing_store,
+        ctx,
+        {
+            "video_layers": [
+                {
+                    "name": "主画面",
+                    "z_index": 0,
+                    "clips": [
+                        {
+                            "track": "video",
+                            "start_ms": 0,
+                            "end_ms": 4000,
+                            "asset_ref": media_id,
+                            "source_refs": {"shot_id": shot_id, "video_plan_shot_order": 0},
+                        }
+                    ],
+                }
+            ],
+            "tracks": {"audio": [], "subtitle": []},
+        },
+    )
+    stored = editing_store.get_edit_timeline_for_script(script_id)
+    assert stored is not None
+    result = handle_get_edit_timeline(editing_store, ctx, {})
+    assert result.structured["duration_ms"] == stored.duration_ms
+    assert result.structured["revision"] == stored.revision
+    assert len(result.structured["layer_summary"]["video_layers"]) == len(stored.video_layers)
+
+
+def test_compile_timeline_uses_video_clip_camera_motion(editing_store: MemoryStore):
+    """compile_timeline_from_shots 应使用镜内视频 clip 的运镜。"""
+    from core.models.entities import ShotVideoClip, ShotVideoTrack
+
+    script_id = editing_store._test_script_id  # type: ignore[attr-defined]
+    plan = editing_store.get_video_plan_for_script(script_id)
+    assert plan
+    shot = plan.shots[0]
+    shot = shot.model_copy(
+        update={
+            "video_tracks": [
+                ShotVideoTrack(
+                    z_index=0,
+                    clips=[
+                        ShotVideoClip(
+                            start_ms=0,
+                            end_ms=4000,
+                            media_id=editing_store._test_media_id,  # type: ignore[attr-defined]
+                            source_kind="still",
+                            camera_motion="ken_burns_out",
+                        )
+                    ],
+                )
+            ]
+        }
+    )
+    plan = plan.model_copy(update={"shots": [shot]})
+    editing_store.set_video_plan(plan)
+    timeline = compile_timeline_from_shots(editing_store, script_id=script_id, plan=plan)
+    video_clip = flat_video_clips(timeline)[0]
+    assert video_clip.motion == "ken_burns_out"
 

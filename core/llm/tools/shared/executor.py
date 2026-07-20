@@ -51,11 +51,14 @@ class AgentToolExecutor:
             return "当前无视频计划稿。"
         lines = [f"计划稿 {vp.id}，模式 {vp.mode.value}，共 {len(vp.shots)} 镜："]
         for shot in sorted(vp.shots, key=lambda s: s.order):
-            narr = shot.narration_text
+            narr = "".join(
+                c.text for t in shot.audio_tracks if t.kind == "voice" for c in t.clips
+            )
+            if not narr and shot.sub_shots:
+                narr = shot.sub_shots[0].description
             preview = f"{narr[:40]}…" if len(narr) > 40 else narr
             lines.append(
-                f"- 镜{shot.order + 1}: {shot.duration_ms}ms "
-                f"{shot.camera_motion} | {preview}"
+                f"- 镜{shot.order + 1}: {shot.duration_ms}ms | {preview}"
             )
         return "\n".join(lines)
 

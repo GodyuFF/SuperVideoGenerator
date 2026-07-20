@@ -25,8 +25,40 @@ export interface A2UIConfirmationRequest {
   step_id?: string;
 }
 
+/** A2UI 确认提交的 WebSocket ack 结果。 */
+export interface A2UIConfirmAck {
+  resolved: boolean;
+  reason?: "expired" | "already_resolved" | "unknown" | string;
+}
+
 /** WebSocket 事件（通用字典） */
 export type WsEvent = Record<string, unknown>;
+
+/** 生成队列单条任务（与后端 GenerationJob.to_public_dict 对齐）。 */
+export interface GenerationQueueJob {
+  id: string;
+  kind: "image" | "video";
+  asset_id: string;
+  label: string;
+  status: "queued" | "running" | "done" | "failed";
+  error?: string | null;
+  variant_id?: string | null;
+  source?: string;
+}
+
+/** 生成队列快照（HTTP GET 与 WS generation_queue_snapshot）。 */
+export interface GenerationQueueSnapshot {
+  type: "generation_queue_snapshot";
+  script_id: string;
+  project_id?: string;
+  active: GenerationQueueJob | null;
+  queued: GenerationQueueJob[];
+  recent: GenerationQueueJob[];
+  counts: { queued: number; running: number };
+}
+
+/** WebSocket 推送的生成队列快照事件。 */
+export type GenerationQueueSnapshotEvent = GenerationQueueSnapshot;
 
 /** 生图进度 WebSocket 事件 */
 export interface ImageGenProgressEvent {
@@ -50,6 +82,22 @@ export interface StepOutput {
   url?: string;
 }
 
+/** 单张生图任务进度（Plan 步骤内嵌）。 */
+export interface ImageGenProgressItem {
+  index: number;
+  sourceTextAssetId: string;
+  name: string;
+  status: "pending" | "started" | "completed" | "failed";
+  url?: string;
+  error?: string;
+}
+
+/** Plan 步骤内嵌的生图进度。 */
+export interface PlanStepImageGenProgress {
+  total: number;
+  items: ImageGenProgressItem[];
+}
+
 /** Plan 执行步骤 */
 export interface PlanStep {
   id: string;
@@ -61,6 +109,8 @@ export interface PlanStep {
   progress?: number;
   error?: string;
   outputs?: StepOutput[];
+  /** 生图进行中时的逐张进度，步骤完成后清除。 */
+  image_gen_progress?: PlanStepImageGenProgress;
 }
 
 /** 主编排 PlanDocument（与 API / WS 对齐） */
@@ -78,22 +128,8 @@ export interface PlanViewState extends PlanDocument {
   last_remaining_plan: string[];
 }
 
-/** 分镜镜头 */
-export interface VideoPlanShot {
-  id: string;
-  order: number;
-  duration_ms: number;
-  camera_motion: string;
-  narration_text: string;
-}
-
-/** 视频计划稿 */
-export interface VideoPlan {
-  id: string;
-  script_id: string;
-  mode: string;
-  shots: VideoPlanShot[];
-}
+/** 分镜镜头与视频计划稿（对齐镜内多轨 API） */
+export type { VideoPlanShot, VideoPlanData as VideoPlan } from "./types/videoPlan";
 
 /** 剧本详情 */
 export interface ScriptDetail {
@@ -175,7 +211,12 @@ export interface LlmConfigSection {
   model: string;
   base_url: string;
   temperature: number;
+  /** 输出 Token 上限（API max_tokens） */
   max_tokens: number;
+  /** 输入 Token 上限，超限时触发历史压缩（默认 1M） */
+  context_window_tokens: number;
+  /** 压缩时保留最近 ReAct 轮次数 */
+  history_keep_messages: number;
   use_llm_react: boolean;
   /** 工作台 ReAct：true=完整思考/观察；false=仅工具名称 */
   show_react_details: boolean;
@@ -230,8 +271,12 @@ export interface ImageConfigSection extends ImageGenConfigSection {
 export interface VideoConfigSection {
   enabled: boolean;
   provider: string;
+  provider_label?: string;
+  available_providers?: { id: string; label: string }[];
   model: string;
   base_url: string;
+  default_model_volcengine?: string;
+  default_base_url_volcengine?: string;
   max_duration_sec: number;
   resolution: string;
   timeout_sec: number;
@@ -279,15 +324,25 @@ export interface ExportConfigSection {
   active: boolean;
 }
 
+/** RAG Embedding（共享资产复用）配置分区。 */
+export interface EmbeddingConfigSection {
+  enabled: boolean;
+  base_url: string;
+  model: string;
+  has_api_key: boolean;
+  active: boolean;
+}
+
 export interface AiConfig {
   llm: LlmConfigSection;
   image: ImageConfigSection;
   video: VideoConfigSection;
   tts: TtsConfigSection;
   export: ExportConfigSection;
+  embedding: EmbeddingConfigSection;
 }
 
-export type AiConfigTab = "llm" | "image" | "video" | "tts" | "export";
+export type AiConfigTab = "llm" | "image" | "video" | "tts" | "export" | "embedding";
 
 /** PATCH /api/ai/config 请求体 */
 export interface AiConfigPatch {
@@ -300,6 +355,8 @@ export interface AiConfigPatch {
     show_react_details: boolean;
     temperature: number;
     max_tokens: number;
+    context_window_tokens: number;
+    history_keep_messages: number;
   }>;
   image?: Partial<{
     enabled: boolean;
@@ -361,17 +418,10 @@ export interface AiConfigPatch {
     height: number;
     crf: number;
   }>;
-}
-
-/** @deprecated 兼容旧类型别名 */
-export type LLMConfig = LlmConfigSection & { image_text_defaults?: ImagePipelineConfig };
-
-/** @deprecated 兼容旧 PATCH */
-export type LLMConfigPatch = AiConfigPatch["llm"] &
-  Partial<{
-    image_source_default: ImageSourceMode;
-    image_text_preset: ImagePipelineConfig["image_text_preset"];
-    comic_preset: ImagePipelineConfig["comic_preset"];
-    image_batch_pending_assets: boolean;
-    image_allow_search_fallback: boolean;
+  embedding?: Partial<{
+    enabled: boolean;
+    api_key: string;
+    base_url: string;
+    model: string;
   }>;
+}

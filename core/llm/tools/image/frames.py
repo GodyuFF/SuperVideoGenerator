@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from core.assets.image_prompt import compose_frame_image_prompt
+from core.assets.linked_assets_prompt import merge_prompt_with_linked_assets
 from core.llm.tools.image.variants import _variant_media_ready
 from core.models.entities import StyleConfig, TextAssetType
 from core.models.image_text_asset import normalize_image_text_content
 from core.store.memory import MemoryStore
 
-_ELEMENT_BUCKETS = ("scene", "character", "prop")
-_DEFAULT_REFERENCE_ORDER = ["scene", "character", "prop"]
+_ELEMENT_BUCKETS = ("scene", "character", "prop", "frame")
+_DEFAULT_REFERENCE_ORDER = ["scene", "character", "prop", "frame"]
 
 
 def _resolve_element_media_id(
@@ -83,11 +84,9 @@ def build_frame_scan_row(
     content = normalize_image_text_content(asset.type, asset.content)
     ref_ids, refs_ready, pending_reason = collect_reference_media_ids(store, content)
     has_image, image_status = _frame_image_status(store, asset)
-    prompt = str(content.get("image_prompt", "")).strip()
-    if not prompt:
-        prompt, _ = compose_frame_image_prompt(
-            content, store=store, project_style=project_style
-        )
+    prompt = resolve_frame_generation_prompt(
+        store, content, project_style=project_style
+    )
     needs_generation = refs_ready and not has_image
     if not refs_ready:
         needs_generation = False
@@ -148,11 +147,9 @@ def collect_frame_generation_items(
         has_image, _ = _frame_image_status(store, asset)
         if has_image:
             continue
-        prompt = str(content.get("image_prompt", "")).strip()
-        if not prompt:
-            prompt, _ = compose_frame_image_prompt(
-                content, store=store, project_style=project_style
-            )
+        prompt = resolve_frame_generation_prompt(
+            store, content, project_style=project_style
+        )
         if not prompt:
             continue
         items.append(
@@ -166,3 +163,23 @@ def collect_frame_generation_items(
             }
         )
     return items
+
+
+def resolve_frame_generation_prompt(
+    store: MemoryStore,
+    content: dict[str, Any],
+    *,
+    project_style: StyleConfig | None = None,
+) -> str:
+    """
+    生图用最终提示词：用户/锁存 image_prompt + 关联资产动态上下文。
+
+    无 image_prompt 时走 compose_frame_image_prompt（已含关联块）。
+    """
+    authored = str(content.get("image_prompt", "")).strip()
+    if not authored:
+        prompt, _ = compose_frame_image_prompt(
+            content, store=store, project_style=project_style
+        )
+        return prompt
+    return merge_prompt_with_linked_assets(authored, store, content)

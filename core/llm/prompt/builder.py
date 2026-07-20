@@ -34,7 +34,7 @@ def build_react_system(role_prompt: str = "") -> str:
     return base
 
 
-def build_action_system(agent_name: str, profile: PromptProfile = PromptProfile.DEFAULT) -> str:
+def build_action_system(agent_name: str, profile: PromptProfile | str = PromptProfile.DEFAULT) -> str:
     """行动执行固定 system prompt：全局 tool 协议 + profile hint。"""
     parts = [get_action_json_system_base()]
     hint = get_agent_action_hint(agent_name, profile)
@@ -74,9 +74,19 @@ def filter_available_actions(
     ]
 
 
-def build_react_static_system(role_prompt: str = "", *, goal_mode: bool = False) -> str:
-    """ReAct 静态 system：全局协议 + 角色 + 可选 goal_mode 规则。"""
+def build_react_static_system(
+    role_prompt: str = "",
+    *,
+    goal_mode: bool = False,
+    agent_name: str = "",
+    profile: PromptProfile | str = "",
+) -> str:
+    """ReAct 静态 system：全局协议 + 角色 + 可选模式 hint + goal_mode 规则。"""
     base = build_react_system(role_prompt)
+    if agent_name and profile:
+        hint = get_agent_action_hint(agent_name, profile)
+        if hint.strip():
+            base = f"{base}\n\n## 模式补充\n{hint.strip()}"
     if goal_mode:
         extra = load_text("rules/goal_mode.md")
         if extra:
@@ -128,48 +138,6 @@ def build_react_state_json(
     if extra:
         ctx.update(extra)
     return json.dumps(ctx, ensure_ascii=False, indent=2)
-
-
-def build_react_json_user(
-    *,
-    task_brief: str,
-    available_actions: list[str],
-    completed: list[str],
-    observations: list[str] | None = None,
-    extra: dict[str, Any] | None = None,
-    include_observations: bool = True,
-) -> str:
-    """兼容别名：同 build_react_state_json。"""
-    return build_react_state_json(
-        task_brief=task_brief,
-        available_actions=available_actions,
-        completed=completed,
-        observations=observations,
-        extra=extra,
-        include_observations=include_observations,
-    )
-
-
-def build_react_system_with_state(
-    role_prompt: str,
-    state_json: str,
-    *,
-    goal_mode: bool = False,
-    hint: str = "",
-    instructions: str | None = None,
-) -> str:
-    """兼容包装：静态 system + 状态块拼接（测试/日志用；运行时请拆分 static + turn_user）。"""
-    static = build_react_static_system(role_prompt, goal_mode=goal_mode)
-    turn = build_react_state_turn_content(state_json, hint=hint, instructions=instructions)
-    return f"{static.rstrip()}\n\n{turn}"
-
-
-def append_action_context_to_system(system_prompt: str, action_context: str) -> str:
-    """兼容包装：静态 system + 行动上下文拼接（测试/日志用；运行时请拆分 static + turn_user）。"""
-    turn = build_action_context_turn_content(action_context)
-    if not turn:
-        return system_prompt
-    return f"{system_prompt.rstrip()}\n\n{turn}"
 
 
 def build_action_user(slots: dict[str, str]) -> str:

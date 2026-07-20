@@ -1,8 +1,10 @@
-"""web_search tool 的 input/output JSON Schema（供未来 Registry 注册）。"""
+"""web_search tool 的 input/output JSON Schema。"""
 
 from __future__ import annotations
 
 from typing import Any
+
+from core.llm.tools.shared.input_common import merge_plan_tracking
 
 
 def _object_schema(
@@ -11,6 +13,7 @@ def _object_schema(
     required: list[str] | None = None,
     additional_properties: bool = False,
 ) -> dict[str, Any]:
+    """组装 object 类型 JSON Schema。"""
     out: dict[str, Any] = {
         "type": "object",
         "properties": properties,
@@ -22,6 +25,7 @@ def _object_schema(
 
 
 def web_search_input_schema() -> dict[str, Any]:
+    """领域参数 schema（不含 ReAct plan 跟踪字段）。"""
     return _object_schema(
         {
             "query": {
@@ -42,6 +46,22 @@ def web_search_input_schema() -> dict[str, Any]:
             },
         },
         required=["query"],
+        # 允许 plan_status 等 ReAct 公共字段透传；完整 required 见 web_search_react_input_schema
+        additional_properties=True,
+    )
+
+
+def web_search_react_input_schema() -> dict[str, Any]:
+    """ReAct / Registry 完整输入 schema（含 observation 与 plan 跟踪）。"""
+    base = web_search_input_schema()
+    props = dict(base.get("properties") or {})
+    return merge_plan_tracking(
+        {
+            "type": "object",
+            "properties": props,
+            "required": ["query", "observation"],
+            "additionalProperties": True,
+        }
     )
 
 

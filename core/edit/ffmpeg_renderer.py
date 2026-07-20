@@ -22,7 +22,6 @@ from core.edit.media_paths import ExportMediaError, resolve_local_path_for_url
 from core.edit.subtitle_align import enrich_subtitles_from_audio
 from core.edit.timeline import (
     enrich_timeline_audio_from_store,
-    ensure_video_layers,
     flat_video_clips,
     normalize_timeline_motions,
     timeline_duration_ms,
@@ -169,7 +168,10 @@ def _render_video_segment(
     output_path: Path,
     settings: ExportSettings,
     transform: dict[str, Any] | None = None,
+    playback_rate: float = 1.0,
+    freeze_tail_ms: int = 0,
 ) -> None:
+    """渲染真视频片段；支持 playback_rate 慢放与尾帧 freeze 垫时长。"""
     if _transform_needs_overlay(transform):
         _render_clip_with_transform(
             ffmpeg=ffmpeg,
@@ -181,14 +183,29 @@ def _render_video_segment(
             transform=transform or {},
         )
         return
-    vf = _scale_pad_filter(settings.width, settings.height)
+
+    rate = float(playback_rate or 1.0)
+    if rate <= 0:
+        rate = 1.0
+    freeze_sec = max(0.0, int(freeze_tail_ms or 0) / 1000.0)
+    target_sec = max(duration_sec, 0.1)
+
+    vf_parts = [_scale_pad_filter(settings.width, settings.height)]
+    # NLE 语义：rate<1 慢放 → setpts 放大 PTS；rate>1 加速 → 缩小 PTS
+    if abs(rate - 1.0) > 0.001:
+        vf_parts.append(f"setpts={1.0 / rate:.6f}*PTS")
+    if freeze_sec > 0.05:
+        vf_parts.append(f"tpad=stop_mode=clone:stop_duration={freeze_sec:.3f}")
+    vf = ",".join(vf_parts)
+
+    # 输入侧：若只要 rate/freeze，仍用 -t 限制输出总长
     cmd = [
         ffmpeg,
         "-y",
         "-i",
         str(video_path),
         "-t",
-        f"{max(duration_sec, 0.1):.3f}",
+        f"{target_sec:.3f}",
         "-vf",
         vf,
         "-c:v",
@@ -203,6 +220,24 @@ def _render_video_segment(
         str(output_path),
     ]
     _run_ffmpeg(cmd, label="视频片段")
+
+
+def _clip_playback_rate(clip: Any) -> float:
+    """从 EditClip.metadata 读取 playback_rate。"""
+    meta = getattr(clip, "metadata", None) or {}
+    try:
+        return float(meta.get("playback_rate") or 1.0)
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def _clip_freeze_tail_ms(clip: Any) -> int:
+    """从 EditClip.metadata 读取 freeze_tail_ms。"""
+    meta = getattr(clip, "metadata", None) or {}
+    try:
+        return max(0, int(meta.get("freeze_tail_ms") or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _concat_segments(ffmpeg: str, segment_files: list[Path], output_path: Path) -> None:
@@ -225,23 +260,39 @@ def _concat_segments(ffmpeg: str, segment_files: list[Path], output_path: Path) 
     _run_ffmpeg(cmd, label="拼接视频轨")
 
 
+def _atempo_filter(rate: float) -> str:
+    """生成 atempo 滤镜链（单段 0.5–2.0）。"""
+    r = float(rate or 1.0)
+    if r <= 0:
+        r = 1.0
+    r = max(0.5, min(2.0, r))
+    if abs(r - 1.0) < 0.001:
+        return ""
+    return f"atempo={r:.4f}"
+
+
 def _mix_audio_tracks(
     ffmpeg: str,
-    audio_inputs: list[tuple[Path, int]],
+    audio_inputs: list[tuple[Path, int, float]],
     duration_sec: float,
     output_path: Path,
 ) -> None:
+    """混音；每项为 (path, delay_ms, playback_rate)。"""
     if not audio_inputs:
         return
     if len(audio_inputs) == 1:
-        path, delay_ms = audio_inputs[0]
+        path, delay_ms, rate = audio_inputs[0]
+        af_parts = [f"adelay={delay_ms}|{delay_ms}"]
+        atempo = _atempo_filter(rate)
+        if atempo:
+            af_parts.append(atempo)
         cmd = [
             ffmpeg,
             "-y",
             "-i",
             str(path),
             "-af",
-            f"adelay={delay_ms}|{delay_ms}",
+            ",".join(af_parts),
             "-t",
             f"{max(duration_sec, 0.1):.3f}",
             "-c:a",
@@ -253,9 +304,13 @@ def _mix_audio_tracks(
 
     inputs: list[str] = []
     filters: list[str] = []
-    for idx, (path, delay_ms) in enumerate(audio_inputs):
+    for idx, (path, delay_ms, rate) in enumerate(audio_inputs):
         inputs.extend(["-i", str(path)])
-        filters.append(f"[{idx}:a]adelay={delay_ms}|{delay_ms}[a{idx}]")
+        parts = [f"adelay={delay_ms}|{delay_ms}"]
+        atempo = _atempo_filter(rate)
+        if atempo:
+            parts.append(atempo)
+        filters.append(f"[{idx}:a]{','.join(parts)}[a{idx}]")
     mix_inputs = "".join(f"[a{i}]" for i in range(len(audio_inputs)))
     filter_complex = ";".join(filters) + f";{mix_inputs}amix=inputs={len(audio_inputs)}:duration=longest[aout]"
     cmd = [
@@ -328,7 +383,6 @@ def _resolve_media_path(
 
 
 def _find_video_clip(timeline: EditTimeline, clip_id: str):
-    timeline = ensure_video_layers(timeline)
     for layer in timeline.video_layers:
         for clip in layer.clips:
             if clip.id == clip_id:
@@ -609,7 +663,7 @@ def export_timeline_to_mp4(
     *,
     project_id: str,
     script_id: str,
-    style_mode: VideoStyleMode = VideoStyleMode.DYNAMIC_IMAGE,
+    style_mode: VideoStyleMode = VideoStyleMode.STORYBOOK,
     manager: ExportConfigManager | None = None,
     skip_subtitles: bool = False,
 ) -> FfmpegExportResult:
@@ -617,14 +671,15 @@ def export_timeline_to_mp4(
     check_cancelled(script_id)
     settings_mgr = manager or get_export_manager()
     settings = settings_mgr.get_settings()
-    if not settings_mgr.get_settings().enabled:
-        raise FfmpegExportError("FFmpeg 导出未启用")
+    if not settings_mgr.is_ffmpeg_export_enabled():
+        from core.edit.export_settings import CLASSIC_EXPORT_ONLY_MESSAGE
+
+        raise FfmpegExportError(CLASSIC_EXPORT_ONLY_MESSAGE)
 
     ffmpeg = settings_mgr.resolve_ffmpeg()
     if not is_ffmpeg_available(ffmpeg):
         raise FfmpegExportError(ffmpeg_missing_message(ffmpeg))
 
-    timeline = ensure_video_layers(timeline)
     plan = store.get_video_plan_for_script(script_id)
     timeline = enrich_timeline_audio_from_store(store, timeline, plan)
     if not skip_subtitles:
@@ -725,6 +780,8 @@ def export_timeline_to_mp4(
                         output_path=seg_path,
                         settings=settings,
                         transform=transform,
+                        playback_rate=_clip_playback_rate(clip),
+                        freeze_tail_ms=_clip_freeze_tail_ms(clip),
                     )
                 else:
                     _render_image_segment(
@@ -769,7 +826,7 @@ def export_timeline_to_mp4(
                 )
                 video_only = video_with_subs
 
-        audio_inputs: list[tuple[Path, int]] = []
+        audio_inputs: list[tuple[Path, int, float]] = []
         for clip in timeline.tracks.get("audio", []):
             resolved = resolve_clip_media(
                 store, clip, script_id=script_id, shot_by_id=shot_by_id
@@ -787,7 +844,7 @@ def export_timeline_to_mp4(
                 media_type=media.type.value,
                 url=media.url,
             )
-            audio_inputs.append((local, max(0, clip.start_ms)))
+            audio_inputs.append((local, max(0, clip.start_ms), _clip_playback_rate(clip)))
 
         audio_path: Path | None = None
         if audio_inputs:

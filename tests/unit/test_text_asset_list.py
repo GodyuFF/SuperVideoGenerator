@@ -99,6 +99,8 @@ def test_build_text_assets_list_filters_by_types():
         "plot",
         "prop",
         "scene",
+        "frame",
+        "video_clip",
     }
     assert payload["counts_by_type"]["scene"] == 0
 

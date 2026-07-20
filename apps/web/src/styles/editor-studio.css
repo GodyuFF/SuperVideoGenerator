@@ -8,7 +8,7 @@
   flex-direction: column;
   flex: 1;
   gap: 0;
-  min-height: 420px;
+  min-height: min(420px, 55vh);
   height: 100%;
   border: 1px solid var(--svf-frame);
   border-radius: var(--svf-radius-lg);
@@ -28,10 +28,34 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem 0.75rem;
   padding: 0.65rem 1rem;
   background: var(--svf-surface-2);
   border-bottom: 1px solid var(--svf-frame);
+}
+
+.edit-cinema-toolbar-left,
+.edit-cinema-toolbar-right {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.edit-cinema-toolbar-right {
+  margin-left: auto;
+}
+
+.edit-cinema-transport {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.edit-cinema-studio-btn {
+  white-space: nowrap;
 }
 
 .edit-cinema-group {
@@ -66,13 +90,262 @@
   font-family: var(--svf-font-mono);
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--svf-accent);
+  color: var(--svf-text, #e6eaf2);
   padding: 0.2rem 0.55rem;
-  background: var(--svf-accent-glow);
-  border: 1px solid color-mix(in srgb, var(--svf-accent) 25%, transparent);
+  background: hsl(214 10% 16%);
+  border: 1px solid hsl(214 8% 28%);
+  border-left: 3px solid var(--svf-accent);
   border-radius: var(--svf-radius-sm);
-  min-width: 7.5rem;
+  min-width: 9.5rem;
   text-align: center;
+}
+
+.edit-cinema-export-slot {
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+}
+
+.edit-cinema-export-portal {
+  display: flex;
+  align-items: center;
+}
+
+.edit-cinema-export-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+/* 剪辑 Tab 导出弹层：独立暗房令牌，隔离 OpenCut 全局 button 覆盖 */
+.edit-cinema-export-popover {
+  background: var(--svf-surface-2);
+  color: var(--svf-text);
+  border: 1px solid var(--svf-frame);
+  border-radius: var(--svf-radius);
+  box-shadow: var(--svf-shadow-md);
+  overflow: hidden;
+}
+
+.edit-cinema-export-popover-head {
+  border-color: var(--svf-frame);
+  background: var(--svf-surface-3);
+}
+
+.edit-cinema-export-popover-head h3 {
+  margin: 0;
+  font-family: var(--svf-font-body);
+  color: var(--svf-text);
+}
+
+.edit-cinema-export-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.85rem 0.9rem 0;
+}
+
+.edit-cinema-export-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.edit-cinema-export-label {
+  display: block;
+  margin: 0 0 0.4rem;
+  font-family: var(--svf-font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--svf-muted);
+}
+
+.edit-cinema-export-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.edit-cinema-export-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--svf-frame-soft);
+  border-radius: var(--svf-radius-sm);
+  background: var(--svf-surface);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.edit-cinema-export-option:hover {
+  background: var(--svf-hover);
+  border-color: var(--svf-frame);
+}
+
+.edit-cinema-export-option--selected {
+  border-color: color-mix(in srgb, var(--svf-accent) 55%, var(--svf-frame));
+  background: color-mix(in srgb, var(--svf-accent) 8%, var(--svf-surface));
+}
+
+.edit-cinema-export-option-marker {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  border: 2px solid var(--svf-frame);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.edit-cinema-export-option--selected .edit-cinema-export-option-marker {
+  border-color: var(--svf-accent);
+}
+
+.edit-cinema-export-option--selected .edit-cinema-export-option-marker::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: var(--svf-accent);
+}
+
+.edit-cinema-export-option-text {
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--svf-text-soft);
+}
+
+.edit-cinema-export-option--selected .edit-cinema-export-option-text {
+  color: var(--svf-text);
+}
+
+.edit-cinema-export-segments {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.edit-cinema-export-segment {
+  appearance: none;
+  border: 1px solid var(--svf-frame-soft);
+  border-radius: var(--svf-radius-sm);
+  background: var(--svf-surface);
+  color: var(--svf-text-soft);
+  font-family: var(--svf-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 0.4rem 0.25rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.edit-cinema-export-segment:hover {
+  background: var(--svf-hover);
+  color: var(--svf-text);
+}
+
+.edit-cinema-export-segment--selected {
+  border-color: var(--svf-accent);
+  background: color-mix(in srgb, var(--svf-accent) 12%, var(--svf-surface));
+  color: var(--svf-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--svf-accent) 35%, transparent);
+}
+
+.edit-cinema-export-audio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--svf-frame-soft);
+  border-radius: var(--svf-radius-sm);
+  background: var(--svf-surface);
+  cursor: pointer;
+}
+
+.edit-cinema-export-sr-only,
+.edit-cinema-export-audio-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.edit-cinema-export-audio-box {
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 1px solid var(--svf-frame);
+  border-radius: 3px;
+  background: var(--svf-surface-3);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.edit-cinema-export-audio-input:checked + .edit-cinema-export-audio-box {
+  border-color: var(--svf-accent);
+  background: color-mix(in srgb, var(--svf-accent) 18%, var(--svf-surface-3));
+}
+
+.edit-cinema-export-audio-input:checked + .edit-cinema-export-audio-box::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 1px;
+  width: 5px;
+  height: 8px;
+  border: solid var(--svf-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.edit-cinema-export-audio-text {
+  font-size: 0.8125rem;
+  color: var(--svf-text-soft);
+}
+
+.edit-cinema-export-audio--blocked {
+  opacity: 0.65;
+}
+
+.edit-cinema-export-popover-foot {
+  padding-top: 0.35rem;
+}
+
+.edit-cinema-export-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.edit-cinema-export-warn {
+  color: var(--svf-danger);
+}
+
+.light .edit-cinema-export-popover {
+  background: var(--svf-surface-2);
+}
+
+.light .edit-cinema-export-option,
+.light .edit-cinema-export-segment,
+.light .edit-cinema-export-audio {
+  background: var(--svf-surface);
+}
+
+.light .edit-cinema-timecode {
+  color: hsl(222 28% 14%);
+  background: hsl(220 14% 94%);
+  border-color: hsl(220 12% 84%);
 }
 
 .edit-cinema-status {
@@ -183,6 +456,92 @@
   min-width: 0;
 }
 
+.svf-studio-chrome-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.svf-studio-chrome-utilities {
+  padding: 0.15rem 0.3rem;
+}
+
+.svf-studio-chrome-workflow {
+  gap: 0.4rem;
+}
+
+.svf-studio-export-slot {
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+}
+
+.svf-export-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.svf-studio-overflow {
+  position: relative;
+}
+
+.svf-studio-overflow-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 10002;
+  min-width: 11rem;
+  padding: 0.35rem;
+  border: 1px solid var(--svf-frame);
+  border-radius: var(--svf-radius-sm);
+  background: var(--svf-surface-2);
+  box-shadow: var(--svf-shadow-md);
+}
+
+.svf-studio-overflow-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  padding: 0.45rem 0.55rem;
+  border: none;
+  border-radius: var(--svf-radius-sm);
+  background: transparent;
+  color: var(--svf-text-soft);
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.svf-studio-overflow-item:hover:not(:disabled) {
+  background: var(--svf-hover);
+  color: var(--svf-text);
+}
+
+.svf-studio-overflow-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.svf-studio-overflow-item--danger {
+  color: var(--svf-danger);
+}
+
+.svf-studio-overflow-item--danger:hover:not(:disabled) {
+  background: var(--svf-danger-soft);
+  color: var(--svf-danger);
+}
+
+.svf-studio-overflow-divider {
+  height: 1px;
+  margin: 0.25rem 0.15rem;
+  background: var(--svf-frame-soft);
+}
+
 .svf-studio-chrome-actions {
   display: flex;
   flex-wrap: wrap;
@@ -224,7 +583,10 @@
 }
 
 .editor-studio-page-shell {
-  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* OpenCut Classic 根容器双主题 */
@@ -263,11 +625,21 @@
     display: none;
   }
 
-  .edit-cinema-divider {
-    display: none;
-  }
-
   .edit-cinema-header {
     gap: 0.4rem;
+  }
+
+  .edit-cinema-toolbar-left,
+  .edit-cinema-toolbar-right {
+    width: 100%;
+  }
+
+  .edit-cinema-toolbar-right {
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+
+  .edit-cinema-export-segments {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

@@ -10,6 +10,7 @@ import {
 } from "./opencut/svf-storage-bridge";
 import { loadFromSvf } from "./adapter/svfProjectAdapter";
 import { fetchSvfScriptMedia } from "./adapter/SvfMediaProvider";
+import { mergeHydratedDurationsIntoMediaItems } from "./adapter/SvfMediaBridge";
 import type { EditTimelineData } from "../edit/types";
 
 const activeSessions = new Set<string>();
@@ -66,13 +67,16 @@ export async function reloadClassicFromApi(
   const cached = getSvfBridgeCache(key);
   const mediaAssets = cached?.media ?? [];
   const mediaItemsForProject = mediaAssets.length
-    ? mediaAssets.map((a) => ({
-        id: a.id,
-        name: a.name,
-        type: a.type,
-        url: a.url,
-        duration_ms: a.duration ? a.duration * 1000 : undefined,
-      }))
+    ? mergeHydratedDurationsIntoMediaItems(
+        mediaAssets.map((a) => ({
+          id: a.id,
+          name: a.name,
+          type: a.type,
+          url: a.url,
+          duration_ms: a.duration ? a.duration * 1000 : undefined,
+        })),
+        mediaAssets,
+      )
     : (await fetchSvfScriptMedia(projectId, scriptId)).map((r) => ({
         id: r.id,
         name: r.name,

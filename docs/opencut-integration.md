@@ -1,8 +1,17 @@
 # OpenCut Classic 深度融合架构
 
-> 更新日期：2026-07-09
+> 更新日期：2026-07-12（音效 API + shot 投影往返）
 
 SuperVideoGenerator 以仓库根目录 [opencut-classic/](../opencut-classic/) 为参考，将完整 Classic 编辑器源码 Vite 化移植到 [`apps/web/src/editor/opencut/`](../apps/web/src/editor/opencut/)，经 SVF 适配层对接 FastAPI 与 editing_agent。
+
+## SSOT 与三端一致
+
+- **权威数据**：`EditTimeline.video_layers` + `tracks`（API/store）；预览、Classic 编辑、FFmpeg 导出均读写此结构。
+- **`loadFromSvf`**：始终从 API `video_layers` 构建 video/overlay；`metadata.classic_project` 仅按 clip id **merge 装饰**（effects/masks/animations），不覆盖时序/layout。
+- **Transform**：`svfTransformBridge.ts` 将归一化 x/y 映射为 OpenCut 像素偏移 `(x-0.5)*canvas`。
+- **运镜**：`svfMotionBridge.ts` 端口化 `core/edit/transform_interp.interpolate_transform`，生成 OpenCut 动画通道。
+- **排序**：主层 `z_index=0` clip 按 `video_plan_shot_order` 排序（`svfClipOrder.ts`，与 `compose.py` 一致）。
+- **Tab 保存**：`OpenCutPreviewPane` 注册 `saveTimeline` PATCH；导出前 `getClassicBridgeTimeline()` flushSave。
 
 ## 路径与术语规范
 
@@ -42,8 +51,9 @@ editing_agent tools → opencut_handler → patch_timeline → store
 双导出：全屏工作室外层 SVF chrome 提供 FFmpeg 导出；`chromeMode=standalone` 时内层 `SvfEditorHeader` 隐藏浏览器导出/完成按钮，避免双层顶栏重复。
 ```
 
-## 嵌入约束（SVF 弹窗）
+## 嵌入约束（SVF 弹窗 / 独立页）
 
+- **真全屏布局**：`EditorStudioModal` 与 `EditorStudioPage` 使用 `100dvh` 高度链，overlay 无 padding，Classic 根容器无圆角边框（`editor-studio-modal-shell` / `editor-studio-page-shell`）。
 - **TooltipProvider**：`SvfClassicEditorShell` 必须包裹 `TooltipProvider`（与 OpenCut 根 layout 一致），否则素材 Tab 等 `Tooltip` 组件会白屏崩溃。
 - **FrameRate**：`svfProjectAdapter.normalizeClassicSettings()` 将 legacy 数字 `fps: 30` 转为 `{ numerator: 30, denominator: 1 }`；OpenCut wasm 不接受浮点 fps。
 - **错误边界**：`ClassicEditorErrorBoundary` 包裹 `EditorProvider`，渲染失败时显示重试 UI。
@@ -58,8 +68,14 @@ editing_agent tools → opencut_handler → patch_timeline → store
 - **SVF 媒体可见性**：`SvfMediaBridge` 将剧本媒体标记为 `ephemeral: false`，避免 Classic Assets 面板过滤掉已注入媒体。
 - **媒体 URL 解析**：API 返回 `url`（相对 data 路径）与 `link`（`/api/...` 可播放路径）；`resolveUrl()` **优先 `link`**，并经 `resolveMediaPlayUrl()` 规范化后写入 Classic 资产，供 `fetch` 水合。
 - **媒体水合**：`hydrateSvfMediaFiles(assets, { projectId, scriptId })` 在 bridge 安装时 `fetch` → `File`，供 `videoCache` / WASM 解码；失败标记 `hydrationFailed`，`getVideoHydrationState()` 驱动 `MediaHydrationBanner`；`scene-builder` 拒绝 `file.size === 0`。
-- **mediaId 重映射**：`loadFromSvf` 对 `metadata.classic_project` 快照场景重写 `mediaId`；`inferClipMediaType` 按媒体类型推断 element type；`clipToElement` 在 `mergeClassicElement` 后 `reconcileElementMediaType`，避免 classic 快照把 video 锁成 image 导致预览黑屏。
-- **双层 chrome**：`chromeMode=standalone` 时隐藏内层 `SvfEditorHeader`，主题/语言切换移至外层 `EditorStudioContent`；导出/完成由 `svf-studio-chrome` 提供。
+- **媒体时长**：`build_media_item` 输出 `duration_ms`（metadata 与本地探测偏差 >5% 时以探测为准）；`SvfMediaBridge` 水合后对 File 调用 `probeMediaDuration` 写入 `asset.duration`；`mergeHydratedDurationsIntoMediaItems` 在 `installSvfStorageBridge` 首载时把水合时长回灌 `loadFromSvf` lookup（与 `reloadClassicFromApi` 一致）。
+- **clip trim 语义**：`clipToElement` 对 audio/video 设 `trimEnd=0`（全长 clip）或 `trimEnd=sourceDuration-visible`；`resolveSourceDurationMs` 优先读水合缓存；非 `user_locked` 的 audio 在源长于 clip 时防御性扩展可见时长至源全长，避免时间轴半宽。
+- **无波形提示**：音频 clip 水合失败时时间轴显示 `audioClipHydrationMissing` 警告文案。
+- **mediaId 重映射**：`loadFromSvf` 对快照场景重写 `mediaId`；`inferClipMediaType` 按媒体类型推断 element type；`reconcileElementMediaType` 避免 classic 装饰把 video 锁成 image。
+- **shot 投影往返**（2026-07-12）：`svfShotProjection.ts` + `clipToElement`/`elementToClip` 保留 `source_refs.shot_id`/`video_plan_shot_order` 与 `metadata.shot_offset_ms`/`shot_track_id` 等投影键；PATCH 后 `patch_timeline` 调用 `apply_timeline_edits_to_shots` 回写 VideoPlan；主层 ID 统一为 `vly_z0`。
+- **Agent 热更新**：`edit_timeline_updated` → `fetchTimeline` + `reloadClassicFromApi` + `buildTimelineFingerprint` 强制 bridge reload。
+- **时间轴 clip 显示**：text/audio clip 背景层铺满 `inset-0` 容器（`w-full` + `h-full`），取消 `CLIP_VISUAL_GAP` 与 ring 内缩，默认态即完整占据时间范围与轨道高度。
+- **双层 chrome**：外层 SVF chrome 提供 NLE 工程导出与完成/关闭；内层 `SvfEditorHeader` 始终显示 OpenCut **浏览器「导出」**（成片 MP4/WebM）。
 - **剪辑 Tab 布局**：`edit-cinema` flex 高度链 + 状态栏位于预览下方；Tab 内嵌预览隐藏 OpenCut 底部工具栏，避免与顶栏播放控件重复。
 
 ## 目录
@@ -78,8 +94,14 @@ editing_agent tools → opencut_handler → patch_timeline → store
 | `apps/web/src/editor/opencut/SvfClassicEditorShell.tsx` | 完整顶栏 + 四区布局 |
 | `apps/web/src/editor/opencut/SvfEditorHeader.tsx` | SVF 定制 EditorHeader（`chromeMode` 控制导出/完成可见性） |
 | `apps/web/src/editor/opencut/` | 移植的 OpenCut Classic 源码（609+ 文件） |
-| `apps/web/src/editor/adapter/svfProjectAdapter.ts` | EditTimeline ↔ TProject 双向映射（含 classic_project） |
+| `apps/web/src/editor/adapter/svfShotProjection.ts` | 镜内多轨投影 metadata 往返（shot_offset_ms / source_refs） |
+| `apps/web/src/editor/adapter/svfProjectAdapter.ts` | EditTimeline ↔ TProject 双向映射（SSOT + classic 装饰） |
+| `apps/web/src/editor/adapter/svfTransformBridge.ts` | 归一化 transform ↔ OpenCut 像素 params |
+| `apps/web/src/editor/adapter/svfMotionBridge.ts` | 运镜/关键帧插值 → OpenCut animations |
+| `apps/web/src/editor/adapter/svfClipOrder.ts` | 主层 clip 导出排序键 |
 | `apps/web/src/editor/adapter/SvfMediaBridge.ts` | SVF 媒体 → Classic MediaAsset |
+| `apps/web/src/editor/adapter/probeMediaDuration.ts` | 浏览器端 File 时长探测 |
+| `apps/web/src/editor/adapter/svfTrimFields.ts` | clip trim/sourceDuration 计算 |
 | `apps/web/src/edit/` | snake_case 类型 + `useEditTimeline` hook |
 | `opencut-classic/` | 上游参考源码 |
 
@@ -87,23 +109,39 @@ editing_agent tools → opencut_handler → patch_timeline → store
 
 持久化始终使用 SVF `EditTimeline`（`video_layers` + `tracks` + `metadata.classic_project`）。Classic 运行时通过 `svf-storage-bridge` 拦截 `storageService.saveProject/loadAllMediaAssets`，经 `saveToSvf()` 写回 PATCH API。
 
-无法 1:1 映射的 Classic 字段（effects、masks、scenes 等）存入 `clip.metadata.classic` 与 `timeline.metadata.classic_project`。
+无法 1:1 映射的 Classic 字段（effects、masks、scenes 等）存入 `clip.metadata.classic` 与 `timeline.metadata.classic_project`。`source_refs` 与 `metadata.shot_offset_ms` 等在 SVF ↔ Classic 往返中保留，供 `apply_timeline_edits_to_shots` 回写镜内 Shot。
 
 ## 加载优化
 
 - 剪辑 Tab mount / hover「剪辑修改」时预加载 `SvfClassicEditor` chunk 与 `opencut-wasm`
 - Vite `manualChunks`：`opencut-core` / `opencut-wasm` / `transformers`（字幕 Tab 懒加载）
-- SVF 项目跳过 OPFS `ensureStorageMigrations`
+- **SVF 本地项目版本**：`CURRENT_PROJECT_VERSION = 31`（[`constants.ts`](../apps/web/src/editor/opencut/services/storage/constants.ts)）；不再运行 v0→v31 storage migrations，旧 OPFS 项目需清空站点数据后重建
 - Modal 传入 `initialTimeline` 避免重复 GET
 
 ## Agent 工具
 
 15 个 editing 工具见 `core/llm/tools/editing/opencut_handler.py`。WebSocket `edit_timeline_updated` 经 `agentBridge.reloadFromApi` → `classicAgentBridge.reloadClassicFromApi` 驱动 Classic EditorCore。
 
+## 音效素材（2026-07-12）
+
+剪辑助手左侧 **「音效」** Tab 经 SVF API 检索免费短音效并加入时间轴：
+
+| 能力 | 说明 |
+|------|------|
+| 内置目录 | [`core/sounds/builtin_catalog.py`](../core/sounds/builtin_catalog.py)：12 条 Mixkit 可商用短音效，**无需 API Key** |
+| 在线搜索 | 环境变量 `FREESOUND_API_KEY` → [Freesound API v2](https://freesound.org/docs/api/overview.html) |
+| 商用筛选 | `commercial_only=true`（默认）仅 CC0 / Attribution |
+| 预览代理 | `GET /api/sounds/preview/{id}` 绕过 CORS，供试听与时间轴 fetch |
+
+- `GET /api/sounds/search?q=&page=&page_size=&commercial_only=&sort=downloads`
+- `GET /api/sounds/preview/{sound_id}`（正 ID=Freesound，负 ID=内置）
+
+Key 申请：<https://freesound.org/apiv2/apply>
+
 ## 开发启动
 
 ```bat
-dev.bat        # Windows：API + 前端
+dev.bat        # Windows：API + 前端（先轮询 /health 再启前端，最多 60s）
 dev.bat --web  # 仅前端 http://localhost:5173
 ```
 

@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-export type AppRoute = "home" | "project" | "edit" | "settings" | "agents" | "logs";
+export type AppRoute =
+  | "home"
+  | "project"
+  | "edit"
+  | "settings"
+  | "agents"
+  | "logs"
+  | "edit_timeline_viz";
 
 export interface AppRouteState {
   route: AppRoute;
@@ -37,6 +44,16 @@ function parseHash(): AppRouteState {
   if (raw === "logs") {
     return { route: "logs", projectId: null, scriptId: null };
   }
+  if (raw === "viz/edit-timeline" || raw.startsWith("viz/edit-timeline?")) {
+    const queryIdx = raw.indexOf("?");
+    const query = queryIdx >= 0 ? raw.slice(queryIdx + 1) : "";
+    const params = new URLSearchParams(query);
+    return {
+      route: "edit_timeline_viz",
+      projectId: params.get("project") ? decodeURIComponent(params.get("project")!) : null,
+      scriptId: params.get("script") ? decodeURIComponent(params.get("script")!) : null,
+    };
+  }
   const editMatch = raw.match(/^project\/([^/]+)\/script\/([^/]+)\/edit$/);
   if (editMatch) {
     return {
@@ -65,6 +82,15 @@ function projectHash(projectId: string, scriptId?: string | null): string {
     return `#/project/${encodeURIComponent(projectId)}/script/${encodeURIComponent(scriptId)}`;
   }
   return `#/project/${encodeURIComponent(projectId)}`;
+}
+
+/** EditTimeline 可视化调试页 hash（含 query 便于书签）。 */
+function editTimelineVizHash(projectId?: string | null, scriptId?: string | null): string {
+  const params = new URLSearchParams();
+  if (projectId) params.set("project", projectId);
+  if (scriptId) params.set("script", scriptId);
+  const qs = params.toString();
+  return qs ? `#/viz/edit-timeline?${qs}` : "#/viz/edit-timeline";
 }
 
 export function useAppRoute() {
@@ -120,6 +146,13 @@ export function useAppRoute() {
     window.location.hash = editorHash(projectId, scriptId);
   }, []);
 
+  const navigateToEditTimelineViz = useCallback(
+    (projectId?: string | null, scriptId?: string | null) => {
+      window.location.hash = editTimelineVizHash(projectId, scriptId);
+    },
+    [],
+  );
+
   return {
     ...state,
     navigate,
@@ -127,5 +160,6 @@ export function useAppRoute() {
     navigateToProject,
     navigateToEditor,
     navigateToLogs,
+    navigateToEditTimelineViz,
   };
 }

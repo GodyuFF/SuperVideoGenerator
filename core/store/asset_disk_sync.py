@@ -15,7 +15,6 @@ from core.models.entities import (
     TextAsset,
     VideoPlan,
 )
-from core.models.image_text_asset import upgrade_text_asset_content
 from core.store.memory import MemoryStore
 from core.store.project_paths import script_dir
 
@@ -105,7 +104,7 @@ def _merge_bundle_into_store(store: MemoryStore, raw: dict[str, Any]) -> bool:
         if aid in store.text_assets:
             continue
         try:
-            store.text_assets[aid] = upgrade_text_asset_content(TextAsset.model_validate(item))
+            store.text_assets[aid] = TextAsset.model_validate(item)
             changed = True
         except (ValueError, TypeError):
             continue

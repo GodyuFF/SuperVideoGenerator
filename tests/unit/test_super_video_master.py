@@ -29,13 +29,13 @@ def harness():
 
     project = Project(title="测试项目")
     project.config.generation.mode = GenerationMode.AUTO
-    project.config.style.mode = VideoStyleMode.DYNAMIC_IMAGE
+    project.config.style.mode = VideoStyleMode.STORYBOOK
     store.add_project(project)
 
     script = Script(project_id=project.id, title="第一集", duration_sec=60)
     store.add_script(script)
 
-    inject_scripted_llm(master, VideoStyleMode.DYNAMIC_IMAGE)
+    inject_scripted_llm(master, VideoStyleMode.STORYBOOK)
     setup_auto_confirm(emitter, confirmation)
 
     return store, emitter, conversations, conversation_index, confirmation, master, project, script
@@ -48,7 +48,7 @@ async def test_run_from_message_completes_pipeline(harness):
     await master.run_from_message(project.id, script.id, "制作一段60秒都市短片")
     assert script.status == ScriptStatus.COMPLETED
     assert script.style_locked is True
-    assert script.style_mode == VideoStyleMode.DYNAMIC_IMAGE
+    assert script.style_mode == VideoStyleMode.STORYBOOK
     plan = store.get_plan(script.id)
     assert plan is not None
     assert plan.constraints.get("conversation_isolation") is True
@@ -74,7 +74,7 @@ async def test_conversation_isolation(harness):
 
 
 @pytest.mark.asyncio
-async def test_run_dynamic_image_no_video_step(harness):
+async def test_run_storybook_no_video_step(harness):
     """动态图片模式不应包含 video_gen 步骤。"""
     store, emitter, _, _, _, master, project, script = harness
     await master.run_from_message(project.id, script.id, "动态图片短片")
@@ -152,11 +152,11 @@ async def test_script_design_confirm_regenerate_redelegates():
 
     project = Project(title="确认测试")
     project.config.generation.mode = GenerationMode.AUTO
-    project.config.style.mode = VideoStyleMode.DYNAMIC_IMAGE
+    project.config.style.mode = VideoStyleMode.STORYBOOK
     store.add_project(project)
     script = Script(project_id=project.id, title="确认剧本", duration_sec=60)
     store.add_script(script)
-    inject_scripted_llm(master, VideoStyleMode.DYNAMIC_IMAGE)
+    inject_scripted_llm(master, VideoStyleMode.STORYBOOK)
 
     confirm_count = 0
     delegate_actions: list[str] = []
@@ -186,13 +186,17 @@ async def test_script_design_confirm_regenerate_redelegates():
                 )
         if (
             event.get("type") == "react_action"
-            and event.get("action") == "delegate_script_design"
+            and event.get("action") == "delegate_agent"
+            and (event.get("action_input") or {}).get("agent_id") == "script_agent"
         ):
             delegate_actions.append("yes")
 
     emitter.subscribe(capture)
     conv_id, _ = await master.run_from_message(
-        project.id, script.id, "需要两次剧本确认测试"
+        project.id,
+        script.id,
+        "需要两次剧本确认测试",
+        requested_hints={"target_duration": "60秒"},
     )
     assert delegate_actions.count("yes") >= 2
     master_msgs = conversations.list_messages(conv_id, "master")
@@ -237,11 +241,11 @@ async def test_script_structure_abort_stops_pipeline():
 
     project = Project(title="中止测试")
     project.config.generation.mode = GenerationMode.AUTO
-    project.config.style.mode = VideoStyleMode.DYNAMIC_IMAGE
+    project.config.style.mode = VideoStyleMode.STORYBOOK
     store.add_project(project)
     script = Script(project_id=project.id, title="中止剧本", duration_sec=60)
     store.add_script(script)
-    inject_scripted_llm(master, VideoStyleMode.DYNAMIC_IMAGE)
+    inject_scripted_llm(master, VideoStyleMode.STORYBOOK)
 
     delegate_after_script: list[str] = []
 
@@ -259,12 +263,18 @@ async def test_script_structure_abort_stops_pipeline():
             )
         if (
             event.get("type") == "react_action"
-            and event.get("action") == "delegate_storyboard"
+            and event.get("action") == "delegate_agent"
+            and (event.get("action_input") or {}).get("agent_id") == "storyboard_agent"
         ):
             delegate_after_script.append("yes")
 
     emitter.subscribe(capture)
-    await master.run_from_message(project.id, script.id, "确认后中止测试")
+    await master.run_from_message(
+        project.id,
+        script.id,
+        "确认后中止测试",
+        requested_hints={"target_duration": "60秒"},
+    )
 
     assert delegate_after_script == []
     plan = store.get_plan(script.id)
@@ -290,11 +300,11 @@ async def test_script_structure_waits_for_user_confirmation():
 
     project = Project(title="等待确认测试")
     project.config.generation.mode = GenerationMode.AUTO
-    project.config.style.mode = VideoStyleMode.DYNAMIC_IMAGE
+    project.config.style.mode = VideoStyleMode.STORYBOOK
     store.add_project(project)
     script = Script(project_id=project.id, title="等待剧本", duration_sec=60)
     store.add_script(script)
-    inject_scripted_llm(master, VideoStyleMode.DYNAMIC_IMAGE)
+    inject_scripted_llm(master, VideoStyleMode.STORYBOOK)
 
     delegate_after_script: list[str] = []
     confirm_seen = asyncio.Event()
@@ -315,13 +325,19 @@ async def test_script_structure_waits_for_user_confirmation():
             )
         if (
             event.get("type") == "react_action"
-            and event.get("action") == "delegate_storyboard"
+            and event.get("action") == "delegate_agent"
+            and (event.get("action_input") or {}).get("agent_id") == "storyboard_agent"
         ):
             delegate_after_script.append("yes")
 
     emitter.subscribe(capture)
     run_task = asyncio.create_task(
-        master.run_from_message(project.id, script.id, "等待用户确认测试")
+        master.run_from_message(
+            project.id,
+            script.id,
+            "等待用户确认测试",
+            requested_hints={"target_duration": "60秒"},
+        )
     )
     await asyncio.wait_for(confirm_seen.wait(), timeout=2.0)
     assert confirmation.has_pending()

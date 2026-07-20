@@ -1,5 +1,6 @@
 """Conversation SQLite 仓储测试。"""
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -86,3 +87,38 @@ def test_a2ui_request_and_resolve(sqlite_store: ConversationSqliteStore):
     records = sqlite_store.list_a2ui(conv_id)
     assert records[0].approved is True
     assert records[0].response_json is not None
+
+
+def test_backfill_messages_survives_concurrent_dict_growth(sqlite_store: ConversationSqliteStore):
+    """并发向 messages 字典新增 key 时 backfill 不应抛 RuntimeError。"""
+    conv_id = new_id("conv")
+    seed_msg = ConversationMessage(
+        id=new_id("msg"),
+        conversation_id=conv_id,
+        project_id="p1",
+        script_id="s1",
+        channel="master",
+        role=MessageRole.USER,
+        content="seed",
+        created_at="2026-01-01T00:00:00+00:00",
+    )
+    messages_dict: dict[str, list[ConversationMessage]] = {
+        f"{conv_id}:master": [seed_msg],
+    }
+    stop = threading.Event()
+
+    def grow_dict() -> None:
+        i = 0
+        while not stop.is_set():
+            messages_dict[f"{conv_id}:agent:worker_{i}"] = []
+            i += 1
+
+    worker = threading.Thread(target=grow_dict, daemon=True)
+    worker.start()
+    try:
+        imported = sqlite_store.backfill_messages(messages_dict)
+    finally:
+        stop.set()
+        worker.join(timeout=2)
+    assert imported >= 1
+    assert sqlite_store.message_count() >= 1

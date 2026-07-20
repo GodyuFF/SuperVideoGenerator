@@ -1,6 +1,6 @@
 # 剪辑渲染能力（与 core/edit/capabilities.json 同步）
 
-本表是 **Edit Studio / FFmpeg 导出** 已实现的能力；`plan_edit_timeline` 中字段须落在此范围内，否则 `validate_edit_assets` 会报错。
+本表是 **Edit Studio / 剪辑助手浏览器导出** 已实现的能力；`plan_edit_timeline` 中字段须落在此范围内，否则 `validate_edit_assets` 会报错。
 
 ## 运镜 preset（motion / motion_detail.type）
 
@@ -55,12 +55,26 @@
 ## 轨道
 
 - **video_layers**：最多 **5** 层（`max_video_layers=5`）；主画面 `z_index=0`，画中画/贴纸更高层
-- **同层 clip 时间不得重叠**（FFmpeg 合成 preflight 会拒绝）；多角色同时出现须各占一层
+- **同层 clip 时间不得重叠**（导出前校验会 warning）；多角色同时出现须各占一层
 - **video**：每段须可解析图片/视频（asset_ref 或 source_refs），须含 **transform**
 - **audio**：TTS media
-- **subtitle**：label 与 narration 对齐；后端可从 TTS subtitle_cues 自动生成
+- **subtitle**：label 与 narration 对齐；后端可从 TTS subtitle_cues 自动生成；**样式须遵循成片分辨率推荐**（见下节）
 
-## 合成
+## 字幕样式（按成片分辨率）
 
-`compose_final` 默认经 **FFmpeg**（`core/edit/ffmpeg_renderer.py`）导出 MP4；多层 clip 经 composite 叠加（transform 决定 overlay 位置/大小）。
-失败时 observation 含 clip/layer 上下文与完整 **【图层摘要】** JSON；Remotion 路径已 deprecated 且默认关闭。
+`load_edit_context` 返回 `subtitle_style_context`，含当前 `output_canvas` 与 `subtitle_style` 推荐值。规划 subtitle 轨时**必须**遵守：
+
+| 成片尺寸 | 方向 | 推荐字号 | 底边距 | 对齐 | 单行汉字上限 |
+|----------|------|----------|--------|------|--------------|
+| 1920×1080 | 横屏 | ≈42px（高 3.9%） | ≈8%（≈86px） | **底部居中** | 18 |
+| 1080×1920 | 竖屏 | ≈48px（高 4.4%） | ≈10%（≈108px） | **底部居中** | 14 |
+| 1280×720 | 横屏 | ≈28px（高 3.9%） | ≈8%（≈58px） | **底部居中** | 18 |
+
+**禁止**将字幕放在画面垂直正中（那是标题位，不是字幕位）。过长旁白按句拆成多条 subtitle clip，每条 `label` 不超过推荐字数。
+
+OpenCut 预览/导出使用 `subtitle_style.opencut`（`font_size_units`、`margin_vertical_ratio`、`vertical_align=bottom`）；遗留 FFmpeg 烧录使用 `subtitle_style.ass`（`alignment=2` 底中、`font_size_px`、`margin_v_px`）。单源公式：`core/edit/subtitle_style.py`。
+
+## 成片导出
+
+**最终 MP4 仅由用户在剪辑助手（OpenCut 编辑器）顶栏「导出」经浏览器渲染生成**；Agent 禁止调用 `compose_final` / `export_timeline`。
+服务端 FFmpeg 合成默认关闭（`SVG_EXPORT_ENABLED=1` 可恢复遗留路径）。多层 clip 在浏览器导出时按 transform 叠加（与预览一致）。

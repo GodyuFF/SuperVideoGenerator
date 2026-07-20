@@ -3,14 +3,23 @@
 import pytest
 
 from core.assets.user_crud import (
+    AssetDeleteBlockedError,
     assert_script_manually_editable,
     user_create_text_asset,
     user_delete_text_asset,
     user_patch_script,
 )
 from core.guards.reference import ScriptEditGuard, ScriptEditGuardError
-from core.llm.agent.script_assets import create_text_asset_for_action
-from core.models.entities import Project, Script, ScriptStatus
+from core.llm.agent.script_assets import create_text_asset_for_action, link_script_asset
+from core.models.entities import (
+    AssetScope,
+    Project,
+    Script,
+    ScriptStatus,
+    TextAsset,
+    TextAssetType,
+    VideoPlan,
+)
 from core.store.memory import MemoryStore
 
 
@@ -132,7 +141,7 @@ def test_patch_blocked_when_linked_script_executing(ctx):
             "accessories": "未指定",
         },
         observation="",
-    )
+    ).asset
     script = store.get_script(sid)
     assert script is not None
     script.status = ScriptStatus.EXECUTING
@@ -145,4 +154,64 @@ def test_patch_blocked_when_linked_script_executing(ctx):
             project_id=pid,
             asset_id=char.id,
             name="改名",
-        )
+        ).asset
+
+
+def test_user_delete_frame_when_unused(ctx):
+    """未绑定分镜的 frame 画面资产应可删除。"""
+    store, pid, sid = ctx
+    frame = TextAsset(
+        project_id=pid,
+        script_id=sid,
+        scope=AssetScope.SCRIPT_PRIVATE,
+        type=TextAssetType.FRAME,
+        name="测试画面",
+        content={"summary": "测试", "description": "未使用的画面资产描述" * 5},
+        source_script_id=sid,
+    )
+    store.add_text_asset(frame)
+    link_script_asset(store, sid, frame.id)
+
+    user_delete_text_asset(store, project_id=pid, script_id=sid, asset_id=frame.id)
+    assert store.get_text_asset(frame.id) is None
+
+
+def test_user_delete_frame_blocked_when_shot_linked(ctx):
+    """分镜子镜仍绑定 frame_asset_id 时应拒绝删除。"""
+    from core.models.entities import Shot, ShotSubShot, ShotSubShotImage
+
+    store, pid, sid = ctx
+    frame = TextAsset(
+        project_id=pid,
+        script_id=sid,
+        scope=AssetScope.SCRIPT_PRIVATE,
+        type=TextAssetType.FRAME,
+        name="绑定画面",
+        content={"summary": "绑定", "description": "绑定分镜的画面资产描述" * 5},
+        source_script_id=sid,
+    )
+    store.add_text_asset(frame)
+    link_script_asset(store, sid, frame.id)
+
+    plan = VideoPlan(
+        script_id=sid,
+        title="plan",
+        shots=[
+            Shot(
+                order=0,
+                duration_ms=3000,
+                sub_shots=[
+                    ShotSubShot(
+                        id="sub_1",
+                        start_ms=0,
+                        end_ms=3000,
+                        images=[ShotSubShotImage(frame_asset_id=frame.id)],
+                    )
+                ],
+            )
+        ],
+    )
+    store.set_video_plan(plan)
+
+    with pytest.raises(AssetDeleteBlockedError):
+        user_delete_text_asset(store, project_id=pid, script_id=sid, asset_id=frame.id)

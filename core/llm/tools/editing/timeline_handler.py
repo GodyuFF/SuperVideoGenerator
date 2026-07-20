@@ -70,6 +70,7 @@ def handle_load_edit_context(
         "linked_image_count": payload.get("linked_image_count", 0),
         "media": media_summary,
         "summary": summary,
+        "subtitle_style_context": payload.get("subtitle_style_context"),
     }
     if payload.get("message"):
         structured["message"] = payload["message"]
@@ -261,13 +262,20 @@ def handle_analyze_edit_timeline(
     if isinstance(layer_ids_raw, list):
         layer_ids = [str(lid) for lid in layer_ids_raw if str(lid).strip()]
 
+    include_analysis = bool(args.get("include_analysis", True))
+    include_hints = bool(args.get("include_hints", True)) if include_analysis else False
+    include_shot_alignment = (
+        bool(args.get("include_shot_alignment", True)) if include_analysis else False
+    )
+
     request = AnalyzeTimelineRequest(
         start_ms=int(args["start_ms"]) if args.get("start_ms") is not None else None,
         end_ms=int(args["end_ms"]) if args.get("end_ms") is not None else None,
         tracks=tracks,
         layer_ids=layer_ids,
-        include_hints=bool(args.get("include_hints", True)),
-        include_shot_alignment=bool(args.get("include_shot_alignment", True)),
+        include_hints=include_hints,
+        include_shot_alignment=include_shot_alignment,
+        include_analysis=include_analysis,
     )
     result = analyze_edit_timeline(store, timeline, request)
     structured = {

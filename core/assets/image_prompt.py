@@ -54,7 +54,7 @@ _CHROMA_GREEN_BG = (
 )
 
 _STYLE_MODE_LABEL = {
-    "dynamic_image": "cinematic still, suitable for Ken Burns motion",
+    "storybook": "cinematic still, suitable for Ken Burns motion",
     "ai_video": "photorealistic keyframe, video-ready composition",
 }
 
@@ -178,7 +178,12 @@ def compose_base_image_prompt(
 
     if project_style:
         parts.append(f"aspect ratio {project_style.aspect_ratio}")
-        mode_label = _STYLE_MODE_LABEL.get(project_style.mode.value, "")
+        mode_key = (
+            project_style.mode.value
+            if hasattr(project_style.mode, "value")
+            else str(project_style.mode)
+        )
+        mode_label = _STYLE_MODE_LABEL.get(mode_key, "")
         if mode_label:
             parts.append(mode_label)
 
@@ -199,7 +204,7 @@ def compose_frame_image_prompt(
     store: Any | None = None,
     project_style: StyleConfig | None = None,
 ) -> tuple[str, str]:
-    """画面（frame）多参考图合成 prompt。"""
+    """画面（frame）多参考图合成 prompt；主文案以 image_prompt 为准（notes 不参与）。"""
     parts: list[str] = [
         "composite cinematic frame, full scene composition",
         "preserve scene layout and background from first reference image",
@@ -207,52 +212,31 @@ def compose_frame_image_prompt(
     summary = str(content.get("summary", "")).strip()
     if summary:
         parts.append(f"summary: {summary}")
-    desc = str(content.get("description", "")).strip()
-    if desc:
-        parts.append(desc)
+    # 规范字段：image_prompt；旧数据可能仅有 description / composition_prompt
+    authored = str(content.get("image_prompt", "")).strip()
+    if not authored:
+        authored = str(content.get("description", "")).strip()
+    if authored:
+        parts.append(authored)
+    legacy_comp = str(content.get("composition_prompt", "")).strip()
+    if legacy_comp and legacy_comp not in authored:
+        parts.append(legacy_comp)
 
-    element_refs = content.get("element_refs") or {}
-    variant_refs = content.get("variant_refs") or {}
-    order = content.get("reference_order") or ["scene", "character", "prop"]
     if store is not None:
-        from core.store.memory import MemoryStore
+        from core.assets.linked_assets_prompt import build_linked_assets_aux_prompt
 
-        assert isinstance(store, MemoryStore)
-        from core.models.image_text_asset import find_variant, normalize_image_text_content
-
-        for bucket in order:
-            if not isinstance(bucket, str):
-                continue
-            ids = element_refs.get(bucket) or []
-            if not isinstance(ids, list):
-                ids = [ids]
-            for tid in ids:
-                text = store.get_text_asset(str(tid))
-                if not text:
-                    continue
-                tc = normalize_image_text_content(text.type, text.content)
-                td = str(tc.get("description", "")).strip()[:200]
-                vid = str(variant_refs.get(str(tid), "")).strip()
-                label = ""
-                if vid:
-                    v = find_variant(tc, vid)
-                    if v:
-                        label = str(v.label or v.variant_prompt).strip()
-                if bucket == "scene":
-                    parts.append(f"background plate: {text.name}" + (f", {td}" if td else ""))
-                elif bucket == "character":
-                    extra = f", expression/pose: {label}" if label else ""
-                    parts.append(f"place character {text.name}: {td}{extra}")
-                elif bucket == "prop":
-                    parts.append(f"place prop {text.name}: {td}")
-
-    comp = str(content.get("composition_prompt", "")).strip()
-    if comp:
-        parts.append(comp)
+        aux = build_linked_assets_aux_prompt(store, content)
+        if aux:
+            parts.append(aux)
 
     if project_style:
         parts.append(f"aspect ratio {project_style.aspect_ratio}")
-        mode_label = _STYLE_MODE_LABEL.get(project_style.mode.value, "")
+        mode_key = (
+            project_style.mode.value
+            if hasattr(project_style.mode, "value")
+            else str(project_style.mode)
+        )
+        mode_label = _STYLE_MODE_LABEL.get(mode_key, "")
         if mode_label:
             parts.append(mode_label)
 
@@ -311,6 +295,46 @@ def compose_variant_image_prompt(
 
     image_prompt = _join_parts(parts)
     return image_prompt, negative
+
+
+def recompose_variant_image_prompts(
+    asset_type: Any,
+    content: dict[str, Any],
+    *,
+    project_style: StyleConfig | None = None,
+    language: str = "zh",
+) -> dict[str, Any]:
+    """仅重算 image_variants 的 image_prompt，不改动资产级主 prompt。"""
+    out = dict(content)
+    variants = parse_image_variants(out)
+    if not variants:
+        return out
+    base = get_base_variant(out)
+    base_prompt, _ = compose_base_image_prompt(
+        asset_type, out, project_style=project_style, language=language
+    )
+    updated: list[ImageVariant] = []
+    for v in variants:
+        if v.prompt_locked:
+            updated.append(v)
+            continue
+        if v.kind == "base":
+            updated.append(v.model_copy(update={"image_prompt": base_prompt}))
+            continue
+        vp, _ = compose_variant_image_prompt(
+            asset_type, out, v, project_style=project_style, language=language
+        )
+        ref_id = v.reference_variant_id or (base.id if base else "")
+        updated.append(
+            v.model_copy(
+                update={
+                    "image_prompt": vp,
+                    "reference_variant_id": ref_id,
+                }
+            )
+        )
+    out["image_variants"] = variants_to_dicts(updated)
+    return out
 
 
 def apply_composed_prompts(

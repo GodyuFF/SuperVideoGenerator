@@ -17,7 +17,11 @@ ONE_TIME_COMPLETED_ACTIONS = frozenset(
         "report_missing_assets",
         "create_shots",
         "create_frames",
+        "create_video_clips",
         "persist_plan",
+        "sync_actual_assets",
+        "update_frames",
+        "persist_review",
         "compose_final",
         "synthesize",
     }
@@ -26,8 +30,8 @@ ONE_TIME_COMPLETED_ACTIONS = frozenset(
 
 def should_hide_when_completed(action: str) -> bool:
     """是否在完成一次后从 prompt available_actions 中移除。"""
-    if action.startswith("delegate_"):
-        return True
+    if action == "delegate_agent":
+        return False
     if action.startswith("tool_"):
         return False
     return action in ONE_TIME_COMPLETED_ACTIONS
@@ -46,9 +50,9 @@ class AgentToolSpec:
 
 def _load_agent_tools() -> dict[str, list[AgentToolSpec]]:
     """从 MCP 语义 ToolRegistry 加载（单源真相）。"""
-    from core.llm.tools.bootstrap import build_agent_tools_compat
+    from core.llm.tools.bootstrap import build_agent_tools
 
-    return build_agent_tools_compat()
+    return build_agent_tools()
 
 
 _AGENT_TOOLS_CACHE: dict[str, list[AgentToolSpec]] | None = None
@@ -62,7 +66,7 @@ def get_agent_tools() -> dict[str, list[AgentToolSpec]]:
 
 
 class _AgentToolsProxy:
-    """向后兼容：AGENT_TOOLS 延迟加载。"""
+    """AGENT_TOOLS 延迟加载代理。"""
 
     def get(self, key: str, default=None):
         return get_agent_tools().get(key, default)

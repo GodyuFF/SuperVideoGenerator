@@ -70,7 +70,12 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 	showCommercialOnly: true,
 
 	toggleCommercialFilter: () => {
-		set((state) => ({ showCommercialOnly: !state.showCommercialOnly }));
+		set((state) => ({
+			showCommercialOnly: !state.showCommercialOnly,
+			hasLoaded: false,
+			searchResults: [],
+			lastSearchQuery: "",
+		}));
 	},
 
 	searchQuery: "",

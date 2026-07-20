@@ -88,3 +88,37 @@ export function zoomToSlider({
 	const clampedZoom = Math.max(minZoom, Math.min(maxZoom, zoomLevel));
 	return Math.log(clampedZoom / minZoom) / Math.log(maxZoom / minZoom);
 }
+
+/** 字幕块目标平均显示宽度（像素）。 */
+const SUBTITLE_TARGET_WIDTH_PX = 28;
+
+/** 字幕密集时初始 zoom 上限（避免过度放大）。 */
+const SUBTITLE_INITIAL_ZOOM_CAP = 2;
+
+/**
+ * 根据字幕轨平均时长推算更易读的初始 zoom。
+ * 无字幕元素时回退到 max(minZoom, 1)。
+ */
+export function getSubtitleAwareInitialZoom({
+	minZoom,
+	textElementDurations,
+}: {
+	minZoom: number;
+	textElementDurations: number[];
+}): number {
+	if (textElementDurations.length === 0) {
+		return Math.max(minZoom, 1);
+	}
+
+	const totalDuration = textElementDurations.reduce((sum, duration) => sum + duration, 0);
+	const avgDurationSeconds =
+		totalDuration / textElementDurations.length / TICKS_PER_SECOND;
+	const suggestedZoom =
+		SUBTITLE_TARGET_WIDTH_PX /
+		(avgDurationSeconds * BASE_TIMELINE_PIXELS_PER_SECOND);
+
+	return Math.max(
+		minZoom,
+		Math.min(SUBTITLE_INITIAL_ZOOM_CAP, TIMELINE_ZOOM_MAX, suggestedZoom),
+	);
+}

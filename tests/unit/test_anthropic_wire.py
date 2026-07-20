@@ -5,6 +5,7 @@ from core.llm.model.chat_message import (
     canonical_to_anthropic_messages,
     chat_message,
     text_block,
+    thinking_block,
     tool_message,
     tool_result_block,
     tool_use_block,
@@ -17,7 +18,7 @@ def test_canonical_to_anthropic_assistant_tool_use_and_result():
         {
             "role": "assistant",
             "content": [
-                text_block("思考"),
+                thinking_block("思考"),
                 tool_use_block(tool_id="call_1", name="finish", input_data={}),
             ],
         },
@@ -34,7 +35,7 @@ def test_canonical_to_anthropic_assistant_tool_use_and_result():
     assert wire[1]["content"][0]["tool_use_id"] == "call_1"
 
 
-def test_orphan_tool_result_merges_into_user_message():
+def test_orphan_tool_result_becomes_observation_text():
     canonical = [
         {"role": "assistant", "content": [text_block("先写剧本")]},
         {
@@ -46,8 +47,9 @@ def test_orphan_tool_result_merges_into_user_message():
     ]
     wire = canonical_to_anthropic_messages(canonical)
     assert wire[0]["role"] == "assistant"
-    assert wire[1]["role"] == "user"
-    assert wire[1]["content"][0]["type"] == "tool_result"
+    assert wire[1]["role"] == "assistant"
+    assert wire[1]["content"][0]["type"] == "text"
+    assert "[观察]" in wire[1]["content"][0]["text"]
 
 
 def test_anthropic_to_canonical_roundtrip():
@@ -92,3 +94,6 @@ def test_adjacent_user_messages_merge():
     assert len(wire) == 1
     assert wire[0]["role"] == "user"
     assert len(wire[0]["content"]) == 2
+    assert wire[0]["content"][0]["type"] == "text"
+    assert wire[0]["content"][1]["type"] == "text"
+    assert "[观察]" in wire[0]["content"][1]["text"]

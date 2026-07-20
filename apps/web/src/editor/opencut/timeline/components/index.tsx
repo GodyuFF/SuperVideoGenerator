@@ -51,6 +51,7 @@ import {
 	getTimelineZoomMin,
 	getTimelinePaddingPx,
 } from "@opencut/timeline";
+import { getSubtitleAwareInitialZoom } from "@opencut/timeline/zoom-utils";
 import { timelineTimeToPixels } from "@opencut/timeline/pixel-utils";
 import {
 	getTrackHeight,
@@ -173,11 +174,29 @@ export function Timeline() {
 
 	const savedViewState = editor.project.getTimelineViewState();
 
+	const textElementDurations = useMemo(
+		() =>
+			tracks
+				.filter((track) => track.type === "text")
+				.flatMap((track) => track.elements.map((element) => element.duration)),
+		[tracks],
+	);
+
+	const resolvedInitialZoom = useMemo(() => {
+		if (savedViewState?.zoomLevel !== undefined) {
+			return savedViewState.zoomLevel;
+		}
+		return getSubtitleAwareInitialZoom({
+			minZoom: minZoomLevel,
+			textElementDurations,
+		});
+	}, [savedViewState?.zoomLevel, minZoomLevel, textElementDurations]);
+
 	const { zoomLevel, setZoomLevel, handleWheel, saveScrollPosition } =
 		useTimelineZoom({
 			containerRef: timelineRef,
 			minZoom: minZoomLevel,
-			initialZoom: savedViewState?.zoomLevel,
+			initialZoom: resolvedInitialZoom,
 			initialScrollLeft: savedViewState?.scrollLeft,
 			initialPlayheadTime: savedViewState?.playheadTime,
 			tracksScrollRef,

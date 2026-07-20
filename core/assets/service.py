@@ -46,13 +46,27 @@ def patch_text_asset(
         asset.primary_media_id = primary_media_id or None
 
     if content is not None:
+        from core.models.image_text_asset import merge_incoming_variants
+
         merged = dict(normalize_image_text_content(asset.type, asset.content))
-        merged.update(content)
+        patch_body = dict(content)
+        incoming_variants = patch_body.pop("image_variants", None)
+        merged.update(patch_body)
+        if isinstance(incoming_variants, list):
+            merged = merge_incoming_variants(merged, incoming_variants)
         if prompt_locked is not None:
             merged["prompt_locked"] = prompt_locked
         if force_recompose_prompt:
             merged["prompt_locked"] = False
             merged["image_prompt"] = ""
+        if asset.type == TextAssetType.CHARACTER:
+            merged = apply_character_tts_voice(merged)
+        from core.assets.element_refs import normalize_element_refs, validate_element_refs_for_owner
+
+        refs = normalize_element_refs(merged.get("element_refs"))
+        if refs:
+            validate_element_refs_for_owner(store, asset.id, refs)
+            merged["element_refs"] = refs
         merged = apply_composed_prompts(
             asset.type,
             merged,
@@ -60,11 +74,37 @@ def patch_text_asset(
             preserve_prompt_lock=not force_recompose_prompt,
             force_recompose=force_recompose_prompt,
         )
+        if isinstance(incoming_variants, list) and incoming_variants:
+            if bool(merged.get("prompt_locked")) and not force_recompose_prompt:
+                from core.assets.image_prompt import recompose_variant_image_prompts
+
+                merged = recompose_variant_image_prompts(
+                    asset.type,
+                    merged,
+                    project_style=style,
+                )
         asset.content = merged
         asset.user_edited = True
 
     store.update_text_asset(asset)
     return asset
+
+
+def apply_character_tts_voice(content: dict[str, Any]) -> dict[str, Any]:
+    """为角色 content 解析并写入符合当前 TTS 配置的 tts_voice。"""
+    from core.llm.tools.tts.settings import get_tts_manager
+    from core.tts.voices import resolve_character_tts_voice
+
+    out = dict(content)
+    settings = get_tts_manager().get_settings()
+    out["tts_voice"] = resolve_character_tts_voice(
+        out.get("tts_voice"),
+        gender=str(out.get("gender", "")),
+        provider=settings.provider,
+        locale=settings.default_language,
+        default_voice=settings.default_voice,
+    )
+    return out
 
 
 def finalize_text_asset_content_for_store(
@@ -92,6 +132,28 @@ def finalize_text_asset_content_for_store(
 
             content["prompt_version"] = PROMPT_VERSION
         return content
+    if asset.type == TextAssetType.VIDEO_CLIP:
+        from core.assets.video_prompt import compose_video_clip_prompt
+        from core.models.video_text_asset import normalize_video_clip_content
+
+        content = normalize_video_clip_content(raw_content)
+        locked = bool(content.get("prompt_locked")) and not force_recompose
+        if not locked:
+            content["video_prompt"] = compose_video_clip_prompt(
+                content, store=store, project_style=style
+            )
+            content["prompt_version"] = int(content.get("prompt_version") or 0) + 1
+        return content
+    if asset.type == TextAssetType.CHARACTER:
+        content = normalize_image_text_content(asset.type, raw_content)
+        content = apply_character_tts_voice(content)
+        return finalize_image_text_content(
+            asset.type,
+            content,
+            project_style=style,
+            preserve_prompt_lock=True,
+            force_recompose=force_recompose,
+        )
     return finalize_image_text_content(
         asset.type,
         raw_content,

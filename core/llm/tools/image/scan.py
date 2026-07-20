@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from core.edit.image_sync import needs_sync_from_image
+from core.guards.script_style import normalize_style_mode_id
 from core.llm.image_text_config import resolve_image_text_config
 from core.llm.prompt.config import IMAGE_PROMPT_SUMMARY_MAX
 from core.llm.tools.script.list import (
@@ -141,7 +142,7 @@ def build_scan_text_assets_payload(
         "title": script.title,
         "duration_sec": script.duration_sec,
         "status": script.status.value,
-        "style_mode": script.style_mode.value if script.style_mode else None,
+        "style_mode": normalize_style_mode_id(script.style_mode) if script.style_mode else None,
     }
 
     asset_items: list[dict[str, Any]] = []
@@ -245,7 +246,7 @@ def build_scan_text_assets_payload(
     if project:
         payload["project_title"] = project.title
     if payload["count"] == 0:
-        payload["message"] = "当前无待生图文字资产（人物/场景/道具/画面）。"
+        payload["message"] = "当前无待生图文字资产（人物/场景/道具/剧本画面）。"
     return payload
 
 

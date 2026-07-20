@@ -6,6 +6,8 @@ __pycache__/
 node_modules/
 apps/web/dist/
 apps/web/node_modules/
+apps/desktop/node_modules/
+apps/desktop/_einstall/
 apps/remotion/
 *.tsbuildinfo
 .venv/
@@ -22,3 +24,6 @@ fake_*.mp4
 # IDE / Cursor
 .idea/
 .cursor/
+.superpowers/
+
+.worktrees/

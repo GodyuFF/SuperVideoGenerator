@@ -3,7 +3,7 @@
 import json
 
 from core.llm.client.client import _tool_calls_response_log_body, _tool_calls_retry_request
-from core.llm.streaming import ToolCallAccumulator, parse_sse_line
+from core.llm.streaming import ToolCallAccumulator, extract_complete_stream_parts, extract_tool_call_stream_parts, parse_sse_line
 from core.llm.client.tool_calls import ToolCallResult
 from core.llm.prompt.chat_messages import build_llm_request
 from core.llm.protocol import parse_react_tool_calls
@@ -18,6 +18,27 @@ def test_parse_sse_line_collects_anthropic_usage_and_text():
     assert delta is None
     assert meta["finish_reason"] == "end_turn"
     assert meta["usage"]["output_tokens"] == 2
+
+
+def test_extract_complete_stream_parts_splits_text_and_thinking():
+    """complete/complete_json 应能分别聚合正文与 thinking 通道。"""
+    text, thinking = extract_complete_stream_parts(
+        {
+            "anthropic_thinking_delta": {"index": 0, "thinking": "推理"},
+            "content": "答案",
+        }
+    )
+    assert text == "答案"
+    assert thinking == "推理"
+
+
+def test_extract_complete_stream_parts_thinking_only():
+    """推理模型仅输出 thinking 时，thinking 片段可被 complete_json 兜底使用。"""
+    text, thinking = extract_complete_stream_parts(
+        {"anthropic_thinking_delta": {"index": 0, "thinking": '{"name":"小狗"}'}}
+    )
+    assert text == ""
+    assert thinking == '{"name":"小狗"}'
 
 
 def test_parse_sse_line_anthropic_thinking_delta():
@@ -38,6 +59,38 @@ def test_parse_sse_line_anthropic_text_delta():
     delta, meta = parse_sse_line(line)
     assert delta == {"content": "hi"}
     assert meta == {}
+
+
+def test_extract_tool_call_stream_parts_thinking_before_content():
+    """thinking 与 content 均保留（通用提取，不做去重）。"""
+    parts = extract_tool_call_stream_parts(
+        {
+            "anthropic_thinking_delta": {"index": 0, "thinking": "分析"},
+            "content": "对外",
+        }
+    )
+    assert parts == ["分析", "对外"]
+
+
+def test_thought_stream_extractor_skips_content_when_thinking_active():
+    """thinking 通道激活后忽略 content 镜像，避免流式重复打印。"""
+    from core.llm.streaming import ThoughtStreamExtractor
+
+    ext = ThoughtStreamExtractor()
+    assert ext.feed({"anthropic_thinking_delta": {"index": 0, "thinking": "剧"}}) == ["剧"]
+    assert ext.feed({"content": "剧", "anthropic_thinking_delta": {"index": 0, "thinking": "本"}}) == [
+        "本"
+    ]
+    assert ext.feed({"content": "本"}) == []
+
+
+def test_thought_stream_extractor_falls_back_to_content_without_thinking():
+    """无 thinking 块时仍从 content 流式输出（兼容非 extended thinking 模型）。"""
+    from core.llm.streaming import ThoughtStreamExtractor
+
+    ext = ThoughtStreamExtractor()
+    assert ext.feed({"content": "hello"}) == ["hello"]
+    assert ext.feed({"content": " world"}) == [" world"]
 
 
 def test_tool_call_accumulator_anthropic_thinking():
@@ -82,7 +135,7 @@ def test_tool_call_accumulator_anthropic_tool_use():
             "anthropic_tool_use_start": {
                 "index": 0,
                 "id": "toolu_1",
-                "name": "delegate_script_design",
+                "name": "delegate_agent",
                 "input": {},
             }
         }
@@ -97,7 +150,7 @@ def test_tool_call_accumulator_anthropic_tool_use():
     )
     result = acc.build()
     assert result.tool_calls
-    assert result.tool_calls[0]["function"]["name"] == "delegate_script_design"
+    assert result.tool_calls[0]["function"]["name"] == "delegate_agent"
     args = result.tool_calls[0]["function"]["arguments"]
     assert json.loads(args) == {"observation": "ok"}
     assert parse_react_tool_calls(result).action_input == {"observation": "ok"}

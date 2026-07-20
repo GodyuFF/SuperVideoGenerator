@@ -17,7 +17,7 @@ def test_build_delegate_task_brief_uses_session_task_brief():
         project_id="p1",
         script_id="s1",
         user_message="你好",
-        style_mode=VideoStyleMode.DYNAMIC_IMAGE,
+        style_mode=VideoStyleMode.STORYBOOK,
         generation_mode=GenerationMode.AUTO,
     )
     session = type(
@@ -27,8 +27,8 @@ def test_build_delegate_task_brief_uses_session_task_brief():
     )()
     decision = ReActDecision(
         thought="",
-        action="delegate_script_design",
-        action_input={},
+        action="delegate_agent",
+        action_input={"agent_id": "script_agent"},
     )
     brief = engine._build_delegate_task_brief(ctx, session, "script_design", decision)
     assert "用户补充" in brief

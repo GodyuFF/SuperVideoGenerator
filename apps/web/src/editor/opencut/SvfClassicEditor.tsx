@@ -6,7 +6,6 @@ import { ClassicEditorErrorBoundary } from "./ClassicEditorErrorBoundary";
 import { SvfClassicEditorShell } from "./SvfClassicEditorShell";
 import { svfProjectKey } from "../adapter/svfProjectAdapter";
 import {
-  getSvfBridgeCache,
   installSvfStorageBridge,
   registerSvfSaveHandler,
   acquireSvfEditorSession,
@@ -38,8 +37,12 @@ interface SvfClassicEditorProps {
   onSave: (timeline: EditTimelineData) => Promise<EditTimelineData | void>;
   onDone: () => void;
   onStageChange?: (stage: ClassicLoadStage) => void;
-  /** standalone：全屏工作室外层 chrome 已含导出/完成。 */
+  /** bridge 从 API 装填后同步 revision，避免 PATCH 409。 */
+  onRevisionSync?: (revision: number) => void;
+  /** standalone：外层 SVF chrome 已含导出/完成，隐藏内层顶栏。 */
   chromeMode?: "embedded" | "standalone";
+  /** 外层顶栏导出按钮挂载点（Portal）。 */
+  exportHost?: HTMLDivElement | null;
 }
 
 const STAGE_KEYS: Record<ClassicLoadStage, string> = {
@@ -59,7 +62,9 @@ export function SvfClassicEditor({
   onSave,
   onDone,
   onStageChange,
+  onRevisionSync,
   chromeMode = "standalone",
+  exportHost = null,
 }: SvfClassicEditorProps) {
   const { t } = useTranslation("editor");
   const [ready, setReady] = useState(false);
@@ -75,6 +80,9 @@ export function SvfClassicEditor({
 
   const onStageChangeRef = useRef(onStageChange);
   onStageChangeRef.current = onStageChange;
+
+  const onRevisionSyncRef = useRef(onRevisionSync);
+  onRevisionSyncRef.current = onRevisionSync;
 
   /** 弹窗打开时快照 timeline，避免保存后 prop 引用变化触发重复 bootstrap。 */
   const bootstrapTimelineRef = useRef<EditTimelineData | undefined>(initialTimeline);
@@ -101,13 +109,10 @@ export function SvfClassicEditor({
     void (async () => {
       try {
         reportStage("bridge");
-        const hasCache = Boolean(getSvfBridgeCache(compositeId));
-        const force = retryKey > 0;
-        await installSvfStorageBridge(projectId, scriptId, {
-          force,
-          initialTimeline:
-            force || !hasCache ? bootstrapTimelineRef.current : undefined,
+        const base = await installSvfStorageBridge(projectId, scriptId, {
+          force: true,
         });
+        onRevisionSyncRef.current?.(base.revision ?? 0);
         if (cancelled) return;
 
         reportStage("wasm");
@@ -186,12 +191,12 @@ export function SvfClassicEditor({
             key={`${compositeId}-${bootstrapId}-${retryKey}`}
             projectId={compositeId}
             embedded
-            skipStorageMigration
           >
             <SvfClassicEditorShell
               onDone={onDone}
               displayName={scriptId}
               chromeMode={chromeMode}
+              exportHost={exportHost}
             />
           </EditorProvider>
         </ClassicEditorErrorBoundary>

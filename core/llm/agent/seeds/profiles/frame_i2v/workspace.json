@@ -1,0 +1,15 @@
+{
+  "agent_roster": [
+    "super_video_master",
+    "script_agent",
+    "image_agent",
+    "storyboard_agent",
+    "storyboard_refine_agent",
+    "video_agent",
+    "tts_agent",
+    "editing_agent"
+  ],
+  "custom_agents": [],
+  "prompt_content": {},
+  "tool_overrides": {}
+}

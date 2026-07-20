@@ -136,6 +136,43 @@ def absolute_media_path(relative_url: str) -> Path | None:
     return path if path.is_file() else None
 
 
+def resolve_script_media_absolute_path(
+    project_id: str,
+    script_id: str,
+    filename: str,
+    *,
+    store: object | None = None,
+) -> Path | None:
+    """按 API 文件名或裸 media_id 解析剧本媒体本地路径。"""
+    safe = Path(filename).name
+    if safe != filename or ".." in filename:
+        return None
+
+    direct = absolute_media_path(relative_media_path(project_id, script_id, safe))
+    if direct is not None:
+        return direct
+
+    if "." in safe:
+        return None
+
+    if store is not None:
+        media = getattr(store, "media_assets", {}).get(safe)
+        media_url = getattr(media, "url", None) if media is not None else None
+        if isinstance(media_url, str) and media_url.strip():
+            via_store = absolute_media_path(media_url.replace("\\", "/").strip())
+            if via_store is not None:
+                return via_store
+
+    media_dir = script_media_dir(project_id, script_id)
+    if not media_dir.is_dir():
+        return None
+    matches = sorted(media_dir.glob(f"{safe}.*"))
+    for candidate in matches:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _guess_ext(media_type: str) -> str:
     mt = media_type.lower()
     if "video" in mt:

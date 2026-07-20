@@ -32,7 +32,8 @@ import { useEditor } from "@opencut/editor/use-editor";
 
 import {
   getSvfProjectMediaCache,
-  getVideoHydrationState,
+  getMediaHydrationIssues,
+  listMediaHydrationMessageKeys,
 } from "../adapter/SvfMediaBridge";
 
 import { useAppTranslation } from "../../i18n/useAppTranslation";
@@ -303,42 +304,26 @@ export function ClassicEditorLayout({ embedded = false }: ClassicEditorLayoutPro
 
 
 
-/** 视频媒体水合失败提示条。 */
-
+/** 视频/音频媒体水合失败提示条。 */
 export function MediaHydrationBanner() {
-
   const { t } = useAppTranslation("editor");
-
   const projectId = useEditor((editor) => editor.project.getActiveOrNull()?.metadata.id);
-
-  const hydrationState = useMemo(() => {
-
-    if (!projectId) return "none" as const;
-
-    return getVideoHydrationState(getSvfProjectMediaCache(projectId));
-
+  const messageKeys = useMemo(() => {
+    if (!projectId) return [];
+    const issues = getMediaHydrationIssues(getSvfProjectMediaCache(projectId));
+    return listMediaHydrationMessageKeys(issues);
   }, [projectId]);
-
-  if (hydrationState === "none") return null;
-
-  const message =
-
-    hydrationState === "all"
-
-      ? t("mediaHydrationFailedAll")
-
-      : t("mediaHydrationFailedPartial");
-
+  if (messageKeys.length === 0) return null;
   return (
-
-    <div className="svf-media-hydration-warn border-b px-3 py-2 text-sm">
-
-      {message}
-
+    <div
+      className="svf-media-hydration-warn border-b px-3 py-2 text-sm space-y-1"
+      role="alert"
+    >
+      {messageKeys.map((key) => (
+        <div key={key}>{t(key)}</div>
+      ))}
     </div>
-
   );
-
 }
 
 

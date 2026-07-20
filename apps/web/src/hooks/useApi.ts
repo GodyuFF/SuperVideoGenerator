@@ -2,8 +2,8 @@
  * API 与 WebSocket 钩子：项目/剧本初始化、切换与本地记录。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { WsEvent } from "../types";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
+import type { A2UIConfirmAck, WsEvent } from "../types";
 import {
   clearActiveSessionIfMatches,
   removeRecentProjectsByIds,
@@ -11,6 +11,7 @@ import {
   saveWorkspaceSession,
   type WorkspaceMode,
 } from "../lib/localProjects";
+import { apiFetch } from "../lib/apiFetch";
 
 const API = "/api";
 
@@ -80,12 +81,12 @@ async function createProjectAndScript(
 }
 
 async function validateProject(projectId: string): Promise<boolean> {
-  const r = await fetch(`${API}/projects/${projectId}`);
+  const r = await apiFetch(`${API}/projects/${projectId}`);
   return r.ok;
 }
 
 async function validateScript(projectId: string, scriptId: string): Promise<boolean> {
-  const r = await fetch(`${API}/projects/${projectId}/scripts/${scriptId}`);
+  const r = await apiFetch(`${API}/projects/${projectId}/scripts/${scriptId}`);
   return r.ok;
 }
 
@@ -104,11 +105,17 @@ export interface ProjectListItem {
   title: string;
   created_at?: string;
   script_count?: number;
-  scripts?: Array<{ id: string; title: string; status: string }>;
+  scripts?: Array<{
+    id: string;
+    title: string;
+    status: string;
+    script_index?: number;
+    created_at?: string;
+  }>;
 }
 
 export async function fetchProjectList(): Promise<ProjectListItem[]> {
-  const r = await fetch(`${API}/projects`);
+  const r = await apiFetch(`${API}/projects`);
   if (!r.ok) {
     const body = await r.json().catch(() => ({}));
     throw new Error(formatApiError(body, `加载项目列表失败 (${r.status})`));
@@ -284,18 +291,25 @@ export function useProject(options: UseProjectOptions = {}) {
   };
 }
 
-const WS_EVENT_RING_MAX = 200;
-
-/** 连接 WebSocket，收集事件并处理 A2UI 确认回传 */
+/** 连接 WebSocket，通过 ref 回调分发事件（避免 events state 驱动整页重渲染）。 */
 export function useWebSocket(
   projectId: string | null,
   scriptId: string | null,
-  enabled = true
+  enabled = true,
+  eventHandlerRef?: MutableRefObject<((event: WsEvent) => void) | null>
 ) {
-  const [events, setEvents] = useState<WsEvent[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shouldConnectRef = useRef(true);
   const ackResolvers = useRef<
-    Map<string, { resolve: (resolved: boolean) => void; reject: (err: Error) => void }>
+    Map<
+      string,
+      {
+        resolve: (ack: A2UIConfirmAck) => void;
+        reject: (err: Error) => void;
+      }
+    >
   >(new Map());
 
   const sendConfirmation = useCallback(
@@ -303,7 +317,7 @@ export function useWebSocket(
       confirmationId: string,
       approved: boolean,
       values: Record<string, unknown> = {}
-    ): Promise<boolean> => {
+    ): Promise<A2UIConfirmAck> => {
       return new Promise((resolve, reject) => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) {
           reject(new Error("WebSocket 未连接，无法提交"));
@@ -325,41 +339,76 @@ export function useWebSocket(
 
   useEffect(() => {
     if (!enabled || !projectId || !scriptId) {
-      setEvents([]);
       return;
     }
 
-    const ws = new WebSocket(
-      `ws://${window.location.host}/ws/projects/${projectId}/scripts/${scriptId}`
-    );
-    wsRef.current = ws;
+    shouldConnectRef.current = true;
 
-    ws.onmessage = (ev) => {
-      const data = JSON.parse(ev.data) as WsEvent;
-      setEvents((prev) => {
-        const next = [...prev, data];
-        if (next.length <= WS_EVENT_RING_MAX) return next;
-        return next.slice(next.length - WS_EVENT_RING_MAX);
-      });
-
-      if (data.type === "a2ui_confirmation_ack") {
-        const confirmationId = String(data.confirmation_id ?? "");
-        const pending = ackResolvers.current.get(confirmationId);
-        if (pending) {
-          ackResolvers.current.delete(confirmationId);
-          pending.resolve(Boolean(data.resolved));
-        }
-      }
+    const rejectPendingAcks = (message: string) => {
+      ackResolvers.current.forEach(({ reject }) => reject(new Error(message)));
+      ackResolvers.current.clear();
     };
+
+    const connect = () => {
+      if (!shouldConnectRef.current) return;
+
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(
+        `${protocol}//${window.location.host}/ws/projects/${projectId}/scripts/${scriptId}`
+      );
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        reconnectAttemptRef.current = 0;
+      };
+
+      ws.onmessage = (ev) => {
+        const data = JSON.parse(ev.data) as WsEvent;
+        eventHandlerRef?.current?.(data);
+
+        if (data.type === "a2ui_confirmation_ack") {
+          const confirmationId = String(data.confirmation_id ?? "");
+          const pending = ackResolvers.current.get(confirmationId);
+          if (pending) {
+            ackResolvers.current.delete(confirmationId);
+            const reasonRaw = data.reason;
+            pending.resolve({
+              resolved: Boolean(data.resolved),
+              reason:
+                typeof reasonRaw === "string" && reasonRaw
+                  ? reasonRaw
+                  : undefined,
+            });
+          }
+        }
+      };
+
+      ws.onclose = () => {
+        wsRef.current = null;
+        if (!shouldConnectRef.current) return;
+        const delay = Math.min(30_000, 500 * 2 ** reconnectAttemptRef.current);
+        reconnectAttemptRef.current += 1;
+        reconnectTimerRef.current = setTimeout(connect, delay);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    };
+
+    connect();
 
     return () => {
-      ackResolvers.current.forEach(({ reject }) =>
-        reject(new Error("WebSocket 已断开"))
-      );
-      ackResolvers.current.clear();
-      ws.close();
+      shouldConnectRef.current = false;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      rejectPendingAcks("WebSocket 已断开");
+      wsRef.current?.close();
+      wsRef.current = null;
     };
-  }, [enabled, projectId, scriptId]);
+  }, [enabled, projectId, scriptId, eventHandlerRef]);
 
-  return { events, sendConfirmation };
+  return { sendConfirmation };
 }

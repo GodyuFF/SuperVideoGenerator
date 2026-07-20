@@ -5,15 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from core.edit.asset_resolver import resolve_clip_media, shot_by_id_for_script
-from core.edit.timeline import ensure_video_layers, timeline_duration_ms
+from core.edit.timeline import flat_video_clips, timeline_duration_ms
 from core.edit.transform_interp import interpolate_transform, collect_timeline_boundaries
-from core.models.entities import EditClip, EditTimeline, MediaAssetType, VideoPlanShot, VideoStyleMode
+from core.guards.script_style import normalize_style_mode_id
+from core.models.entities import EditClip, EditTimeline, MediaAssetType, Shot, VideoStyleMode
 from core.store.memory import MemoryStore
 
 
 def _shot_by_id_for_timeline(
     store: MemoryStore, timeline: EditTimeline
-) -> dict[str, VideoPlanShot]:
+) -> dict[str, Shot]:
     return shot_by_id_for_script(store, timeline.script_id)
 
 
@@ -22,7 +23,7 @@ def _resolved_media_id(
     timeline: EditTimeline,
     clip: EditClip,
     *,
-    shot_by_id: dict[str, VideoPlanShot] | None = None,
+    shot_by_id: dict[str, Shot] | None = None,
 ) -> str | None:
     """与 validate_edit_timeline 一致：优先 clip.asset_ref，再 source_refs / shot。"""
     resolved = resolve_clip_media(
@@ -42,7 +43,6 @@ def gather_timeline_media(store: MemoryStore, timeline: EditTimeline) -> dict[st
     videos: list[dict[str, Any]] = []
     audios: list[dict[str, Any]] = []
     missing: list[str] = []
-    timeline = ensure_video_layers(timeline)
     shot_by_id = _shot_by_id_for_timeline(store, timeline)
 
     for layer in timeline.video_layers:
@@ -105,14 +105,28 @@ def compose_timeline_plan(
     style_mode: VideoStyleMode,
 ) -> dict[str, Any]:
     """
-    生成合成计划（dynamic_image → Ken Burns + 配音；ai_video → 视频轨拼接）。
+    生成合成计划（storybook → Ken Burns + 配音；ai_video → 视频轨拼接）。
     成片由 core/edit/ffmpeg_renderer.py 执行。
     """
-    timeline = ensure_video_layers(timeline)
     media = gather_timeline_media(store, timeline)
     duration = timeline_duration_ms(timeline)
-    mode = "ken_burns_compose" if style_mode != VideoStyleMode.AI_VIDEO else "video_concat"
+    mode = "ken_burns_compose" if style_mode == VideoStyleMode.STORYBOOK else "video_concat"
     shot_by_id = _shot_by_id_for_timeline(store, timeline)
+
+    def _clip_export_order_key(clip: EditClip) -> tuple[int, int, int]:
+        """主画面层导出顺序：shot_order 优先，否则 start_ms。"""
+        order = -1
+        refs = clip.source_refs
+        if refs and refs.video_plan_shot_order is not None:
+            order = int(refs.video_plan_shot_order)
+        else:
+            raw = (clip.metadata or {}).get("order")
+            if raw is not None:
+                try:
+                    order = int(raw)
+                except (TypeError, ValueError):
+                    order = -1
+        return (order if order >= 0 else 10_000, clip.start_ms, clip.end_ms)
 
     segments: list[dict[str, Any]] = []
     composite_slices: list[dict[str, Any]] = []
@@ -159,8 +173,11 @@ def compose_timeline_plan(
                 }
             )
 
-    for layer in timeline.video_layers:
-        for clip in layer.clips:
+    for layer in sorted(timeline.video_layers, key=lambda item: item.z_index):
+        layer_clips = list(layer.clips)
+        if layer.z_index == 0:
+            layer_clips.sort(key=_clip_export_order_key)
+        for clip in layer_clips:
             motion = clip.motion or "ken_burns_in"
             if clip.motion_detail and clip.motion_detail.type:
                 motion = clip.motion_detail.type
@@ -210,7 +227,7 @@ def compose_timeline_plan(
 
     return {
         "mode": mode,
-        "style_mode": style_mode.value,
+        "style_mode": normalize_style_mode_id(style_mode) or str(style_mode),
         "duration_ms": duration,
         "segments": segments,
         "composite_slices": composite_slices,

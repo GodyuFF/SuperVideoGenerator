@@ -24,3 +24,8 @@ def load_required(relative_path: str) -> str:
     if not text:
         raise FileNotFoundError(f"缺少提示词文件: {_PROMPT_ROOT / relative_path}")
     return text
+
+
+def clear_prompt_cache() -> None:
+    """清空提示词文件 LRU 缓存（配置保存后调用）。"""
+    load_text.cache_clear()

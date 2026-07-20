@@ -34,5 +34,5 @@
     "scale_range": [0.5, 3.0],
     "description": "Normalized focal points (0–1) and scale interpolation for Ken Burns"
   },
-  "style_modes": ["dynamic_image", "dynamic_comic"]
+  "style_modes": ["storybook"]
 }

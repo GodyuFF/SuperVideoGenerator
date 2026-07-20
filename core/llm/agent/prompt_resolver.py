@@ -1,80 +1,69 @@
-"""Agent 提示词解析：结合全局配置、项目覆盖与视频风格模式。"""
+"""按项目配置、全局模式与视频风格解析 Agent 提示词。"""
 
-from core.llm.agent.prompts import (
-    AGENT_PROMPT_PROFILES,
-    AgentPromptBundle,
-    PromptProfile,
-    default_role_prompt,
-)
+from __future__ import annotations
+
+from typing import Any
+
+from core.llm.prompt.profile_registry import PromptProfileRegistry
+from core.llm.prompt.registry import AgentPromptBundle, PromptProfile
+from core.llm.style.style_mode_registry import StyleModeRegistry
 from core.models.entities import Project, VideoStyleMode
-
-
-_STYLE_TO_PROFILE: dict[VideoStyleMode, PromptProfile] = {
-    VideoStyleMode.DYNAMIC_IMAGE: PromptProfile.DYNAMIC_IMAGE,
-    VideoStyleMode.DYNAMIC_COMIC: PromptProfile.DYNAMIC_COMIC,
-    VideoStyleMode.AI_VIDEO: PromptProfile.AI_VIDEO,
-}
 
 
 def resolve_prompt_profile(
     agent_name: str,
     *,
-    style_mode: VideoStyleMode | None = None,
-    global_profiles: dict[str, PromptProfile] | None = None,
+    style_mode: VideoStyleMode | str | None = None,
+    global_profiles: dict[str, str] | None = None,
     project: Project | None = None,
-) -> PromptProfile:
-    """解析最终使用的提示词模式。"""
-    if project:
-        override = project.config.agents.overrides.get(agent_name)
-        if override and override.prompt_profile:
-            try:
-                return PromptProfile(override.prompt_profile)
-            except ValueError:
-                pass
+    config: Any | None = None,
+) -> str:
+    """解析 Agent 当前应使用的 PromptProfile id。"""
+    if project and project.config.agents.overrides.get(agent_name):
+        override = project.config.agents.overrides[agent_name]
+        if override.prompt_profile:
+            return override.prompt_profile
 
     if global_profiles and agent_name in global_profiles:
         return global_profiles[agent_name]
 
-    if style_mode and style_mode in _STYLE_TO_PROFILE:
-        profile = _STYLE_TO_PROFILE[style_mode]
-        agent_profiles = AGENT_PROMPT_PROFILES.get(agent_name, {})
-        if profile in agent_profiles:
-            return profile
+    if style_mode is not None:
+        style_id = style_mode.value if isinstance(style_mode, VideoStyleMode) else str(style_mode)
+        return StyleModeRegistry.default_prompt_profile_for_style(style_id, config=config)
 
-    return PromptProfile.DEFAULT
+    return PromptProfile.DEFAULT.value
 
 
 def resolve_agent_prompts(
     agent_name: str,
     *,
-    style_mode: VideoStyleMode | None = None,
-    global_profiles: dict[str, PromptProfile] | None = None,
+    style_mode: VideoStyleMode | str | None = None,
+    global_profiles: dict[str, str] | None = None,
     project: Project | None = None,
+    config: Any | None = None,
 ) -> AgentPromptBundle:
-    """返回 role_prompt 与 action_hint；项目可覆盖 role_prompt。"""
-    profile = resolve_prompt_profile(
+    """解析 Agent 的 role_prompt 与 action_hint（含全局 prompt_content 覆盖）。"""
+    if project and project.config.agents.overrides.get(agent_name):
+        override = project.config.agents.overrides[agent_name]
+        if override.role_prompt:
+            profile_id = resolve_prompt_profile(
+                agent_name,
+                style_mode=style_mode,
+                global_profiles=global_profiles,
+                project=project,
+                config=config,
+            )
+            bundle = PromptProfileRegistry.get_bundle(agent_name, profile_id, config=config)
+            return AgentPromptBundle(
+                role_prompt=override.role_prompt,
+                action_hint=bundle.action_hint,
+            )
+
+    profile_id = resolve_prompt_profile(
         agent_name,
         style_mode=style_mode,
         global_profiles=global_profiles,
         project=project,
+        config=config,
     )
-
-    if project:
-        override = project.config.agents.overrides.get(agent_name)
-        if override and override.role_prompt:
-            base = _bundle_for(agent_name, profile)
-            return AgentPromptBundle(
-                role_prompt=override.role_prompt,
-                action_hint=base.action_hint,
-            )
-
-    return _bundle_for(agent_name, profile)
-
-
-def _bundle_for(agent_name: str, profile: PromptProfile) -> AgentPromptBundle:
-    profiles = AGENT_PROMPT_PROFILES.get(agent_name, {})
-    if profile in profiles:
-        return profiles[profile]
-    if PromptProfile.DEFAULT in profiles:
-        return profiles[PromptProfile.DEFAULT]
-    return AgentPromptBundle(role_prompt=default_role_prompt(agent_name))
+    return PromptProfileRegistry.get_bundle(agent_name, profile_id, config=config)

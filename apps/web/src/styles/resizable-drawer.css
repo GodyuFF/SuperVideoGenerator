@@ -1,0 +1,61 @@
+/**
+ * 右侧抽屉左缘拖拽调宽（分镜详情、技能/工具选择等）。
+ */
+
+.svf-drawer-resizing,
+.svf-drawer-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.svf-drawer-resize-edge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  margin-left: -5px;
+  z-index: 12;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.svf-drawer-resize-edge::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 12%;
+  bottom: 12%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--svf-frame, #2a3347) 88%, var(--svf-accent, #e0634a));
+  opacity: 0.55;
+  transition: opacity 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.svf-drawer-resize-edge:hover::before,
+.svf-drawer-resize-edge:focus-visible::before {
+  opacity: 1;
+  background: var(--svf-accent, #e0634a);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--svf-accent, #e0634a) 45%, transparent);
+}
+
+.shot-detail-drawer.is-resizable,
+.aw-tool-picker-drawer.is-resizable {
+  position: relative;
+  flex-shrink: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  .svf-drawer-resize-edge {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .svf-drawer-resize-edge::before {
+    transition: none;
+  }
+}

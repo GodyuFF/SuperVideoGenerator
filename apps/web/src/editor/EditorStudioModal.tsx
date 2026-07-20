@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { Toaster } from "@opencut/components/ui/sonner";
 import { EditorStudioContent } from "./EditorStudioContent";
 import type { EditTimelineApi } from "../edit/useEditTimeline";
 
@@ -28,7 +29,8 @@ export function EditorStudioModal({
 
   const overlay = (
     <div className="editor-studio-modal-overlay" role="dialog" aria-modal="true">
-      <div className="editor-studio-modal editor-studio-modal-wide">
+      <Toaster position="top-center" style={{ zIndex: 10002 }} />
+      <div className="editor-studio-modal editor-studio-modal-fullscreen">
         <EditorStudioContent
           projectId={projectId}
           scriptId={scriptId}

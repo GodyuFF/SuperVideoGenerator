@@ -30,13 +30,13 @@ def test_return_to_master_handler_raises_structured():
             {
                 "reason": "missing_upstream",
                 "observation": "缺少文字资产",
-                "suggested_delegates": ["delegate_script_design"],
-                "resume_hint": "剧本完成后重新 delegate_image_gen",
+                "suggested_agent_ids": ["script_agent"],
+                "resume_hint": "剧本完成后重新 delegate_agent(agent_id=image_agent)",
             },
         )
     err = exc.value
     assert err.reason == "missing_upstream"
-    assert "delegate_script_design" in err.structured.get("suggested_delegates", [])
+    assert "script_agent" in err.structured.get("suggested_agent_ids", [])
     assert "【return_to_master" in err.to_master_observation()
 
 

@@ -9,6 +9,7 @@ from typing import Any
 
 from core.llm.prompt.loader import prompt_root
 from core.llm.prompt.skills.models import SkillBundle, SkillMeta
+from core.extensions.protocol import SkillToolManifest
 
 _SKILLS_ROOT = prompt_root() / "skills"
 
@@ -59,11 +60,17 @@ def load_skill(skill_id: str) -> SkillBundle | None:
         aliases=aliases,
     )
     settings = _read_json(skill_dir / "settings.json")
+    tools_raw = meta_raw.get("tools")
+    if tools_raw is None:
+        tools_raw = _read_json(skill_dir / "tools.json")
+    tool_manifest = SkillToolManifest.from_dict(tools_raw if tools_raw else None)
     return SkillBundle(
         meta=meta,
         system_prompt=_read_text(skill_dir / "system.md"),
         settings=settings,
         agent_overlays=_load_agent_overlays(skill_dir),
+        tool_manifest=tool_manifest,
+        source="builtin",
     )
 
 

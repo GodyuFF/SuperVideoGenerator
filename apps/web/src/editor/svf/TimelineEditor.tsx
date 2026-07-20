@@ -49,10 +49,9 @@ export function TimelineEditor({
 }: TimelineEditorProps) {
   const durationMs = timeline.duration_ms || 1;
   const playheadPct = (playheadMs / durationMs) * 100;
-  const videoLayers: VideoLayer[] =
-    timeline.video_layers && timeline.video_layers.length > 0
-      ? [...timeline.video_layers].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0))
-      : [{ id: "legacy", name: "主画面", z_index: 0, clips: timeline.tracks.video ?? [] }];
+  const videoLayers: VideoLayer[] = [...(timeline.video_layers ?? [])].sort(
+    (a, b) => (a.z_index ?? 0) - (b.z_index ?? 0),
+  );
 
   return (
     <div className="edit-studio-timeline">

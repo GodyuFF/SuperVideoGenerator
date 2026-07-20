@@ -115,16 +115,58 @@ def submaker_cues_to_clips(
     return clips
 
 
-def subtitle_cues_from_submaker(sub_maker: SubMaker) -> list[dict[str, Any]]:
-    """将 SubMaker 序列化为可持久化的 cue 列表。"""
+def normalize_non_overlapping_cues(
+    cues: list[dict[str, Any]],
+    *,
+    min_duration_ms: int = 1,
+) -> list[dict[str, Any]]:
+    """按 start_ms 排序并截断重叠区间，保证同一时刻仅一条可读字幕。
+
+    策略：保留各条原有起点；若与后一条重叠，则将较早条目的 end_ms 截到后一条 start_ms。
+    截断后时长不足 ``min_duration_ms`` 的条目丢弃。
+    """
+    prepared: list[dict[str, Any]] = []
+    for cue in cues:
+        if not isinstance(cue, dict):
+            continue
+        text = str(cue.get("text") or cue.get("label") or "").strip()
+        if not text:
+            continue
+        try:
+            start_ms = int(cue.get("start_ms", 0))
+            end_ms = int(cue.get("end_ms", 0))
+        except (TypeError, ValueError):
+            continue
+        if end_ms <= start_ms:
+            continue
+        prepared.append({**cue, "text": text, "start_ms": start_ms, "end_ms": end_ms})
+
+    prepared.sort(key=lambda c: (int(c["start_ms"]), int(c["end_ms"])))
+    for i in range(len(prepared) - 1):
+        next_start = int(prepared[i + 1]["start_ms"])
+        if int(prepared[i]["end_ms"]) > next_start:
+            prepared[i]["end_ms"] = next_start
     return [
-        {
-            "start_ms": int(c["start_ms"]),
-            "end_ms": int(c["end_ms"]),
-            "text": str(c["label"]),
-        }
-        for c in submaker_cues_to_clips(sub_maker)
+        c
+        for c in prepared
+        if int(c["end_ms"]) - int(c["start_ms"]) >= min_duration_ms
     ]
+
+
+def subtitle_cues_from_submaker(sub_maker: SubMaker) -> list[dict[str, Any]]:
+    """将 SubMaker 序列化为可持久化的 cue 列表（保证条目时间不重叠）。"""
+    return normalize_non_overlapping_cues(
+        [
+            {
+                "start_ms": int(c["start_ms"]),
+                "end_ms": int(c["end_ms"]),
+                "text": str(c["label"]),
+                "character": "",
+                "color": "",
+            }
+            for c in submaker_cues_to_clips(sub_maker)
+        ]
+    )
 
 
 def subtitle_clips_from_cues(

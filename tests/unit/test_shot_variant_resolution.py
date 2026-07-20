@@ -9,7 +9,6 @@ from core.models.entities import (
     Script,
     TextAsset,
     TextAssetType,
-    VideoPlanShot,
 )
 from core.models.image_text_asset import (
     ensure_image_variants,
@@ -20,7 +19,9 @@ from core.models.image_text_asset import (
     update_variant_in_content,
 )
 from core.store.memory import MemoryStore
+from tests.support.frame_fixtures import ensure_shot_frame_image
 from tests.support.image_text_fixtures import character_content
+from tests.support.shot_fixtures import make_shot
 
 
 def test_resolve_shot_uses_frame_not_character_variant():
@@ -71,36 +72,15 @@ def test_resolve_shot_uses_frame_not_character_variant():
     char.primary_media_id = base_media.id
     store.update_text_asset(char)
 
-    frame = TextAsset(
+    shot = make_shot(order=0, text="镜头")
+    shot.sub_shots[0].element_refs = {"character": [char.id]}
+    _, frame_media = ensure_shot_frame_image(
+        store,
         project_id=project.id,
         script_id=script.id,
-        type=TextAssetType.FRAME,
-        scope=AssetScope.SCRIPT_PRIVATE,
-        name="画面",
-        content={
-            "description": "角色愤怒表情的中景",
-            "element_refs": {"character": [char.id]},
-            "shot_id": "shot_1",
-        },
-        source_script_id=script.id,
-    )
-    store.add_text_asset(frame)
-    frame_media = MediaAsset(
-        project_id=project.id,
-        script_id=script.id,
-        type=MediaAssetType.IMAGE,
-        name="frame",
-        url="https://images.test/frame.png",
-        source_asset_id=frame.id,
-    )
-    store.add_media_asset(frame_media)
-    frame.primary_media_id = frame_media.id
-    store.update_text_asset(frame)
-
-    shot = VideoPlanShot(
-        narration_text="镜头",
-        asset_refs={"frame": [frame.id], "character": [char.id]},
-        variant_refs={char.id: expr_v.id},
+        shot=shot,
+        element_refs={"character": [char.id]},
+        image_url="https://images.test/frame.png",
     )
     mid = resolve_shot_image_ref(store, shot)
     assert mid == frame_media.id

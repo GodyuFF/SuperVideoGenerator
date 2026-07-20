@@ -4,19 +4,25 @@
 OBSERVATION_WINDOW_SIZE = 8
 
 # observation 总字符预算
-OBSERVATION_MAX_CHARS = 6000
+OBSERVATION_MAX_CHARS = 8000
 
 # 会话历史（thought/action/observation）条数上限
-HISTORY_WINDOW_SIZE = 16
+HISTORY_WINDOW_SIZE = 12
 
 # LLM 压缩时保留最近 N 条对话消息（超 context_window 时）
 HISTORY_KEEP_MESSAGES = 10
 
 # 会话历史字符预算
-HISTORY_MAX_CHARS = 5000
+HISTORY_MAX_CHARS = 10000
 
-# 被压缩条目的摘要长度（每条）
-COMPRESSION_SNIPPET_CHARS = 100
+# 被压缩条目的摘要长度（每条，默认 user/通用）
+COMPRESSION_SNIPPET_CHARS = 200
+
+# assistant 行动摘要字符上限
+COMPRESSION_SNIPPET_ASSISTANT_CHARS = 150
+
+# tool 观察摘要字符上限
+COMPRESSION_SNIPPET_TOOL_CHARS = 300
 
 # 剧本正文注入上下文的字符上限
 SCRIPT_MD_CONTEXT_MAX = 2000

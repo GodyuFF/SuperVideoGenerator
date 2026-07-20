@@ -3,6 +3,7 @@
  */
 
 import type { PlanStep, TextAsset, VideoPlan, VideoPlanShot } from "../types";
+import { shotCameraMotion, shotVoiceText } from "../utils/shotTrackUtils";
 import type { MediaAsset } from "../types/agents";
 import { MediaPreview } from "./MediaPreview";
 import {
@@ -178,24 +179,28 @@ function MediaOutputList({
 
 function ShotList({ shots }: { shots: VideoPlanShot[] }) {
   if (shots.length === 0) return null;
-  const sorted = [...shots].sort((a, b) => a.order - b.order);
+  const sorted = [...shots].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   return (
     <section className="content-section storyboard-section">
       <h3>分镜计划（{sorted.length} 镜）</h3>
       <ol className="shot-list">
-        {sorted.map((shot, index) => (
+        {sorted.map((shot, index) => {
+          const narr = shotVoiceText(shot);
+          const motion = shotCameraMotion(shot);
+          return (
           <li key={shot.id} className="shot-item">
             <div className="shot-header">
               <span className="shot-order">镜 {index + 1}</span>
               <span className="shot-meta">
-                {shot.duration_ms / 1000}s · {shot.camera_motion}
+                {(shot.duration_ms ?? 0) / 1000}s · {motion}
               </span>
             </div>
-            {shot.narration_text && (
-              <p className="shot-narration">{shot.narration_text}</p>
-            )}
+            {narr ? (
+              <p className="shot-narration">{narr}</p>
+            ) : null}
           </li>
-        ))}
+          );
+        })}
       </ol>
     </section>
   );
@@ -326,9 +331,9 @@ export function GeneratedContent({
         </section>
       )}
 
-      {videoPlan && videoPlan.shots.length > 0 && (
+      {videoPlan?.shots && videoPlan.shots.length > 0 ? (
         <ShotList shots={videoPlan.shots} />
-      )}
+      ) : null}
 
       <AssetCards assets={assets} />
 

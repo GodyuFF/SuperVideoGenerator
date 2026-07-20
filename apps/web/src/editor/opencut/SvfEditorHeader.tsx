@@ -50,7 +50,7 @@ export function SvfEditorHeader({
                 {tDialogs("menu")}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="z-[100] w-44">
+            <DropdownMenuContent align="start" className="svf-editor-overlay-content z-[10001] w-44">
               <DropdownMenuItem
                 onClick={() => setShortcutsOpen(true)}
                 icon={<HugeiconsIcon icon={CommandIcon} />}
@@ -67,13 +67,11 @@ export function SvfEditorHeader({
         <nav className="flex items-center gap-2">
           <ThemeToggle />
           <LocaleSwitcher className="locale-switcher locale-switcher--compact" />
+          <ExportButton />
           {chromeMode !== "standalone" && (
-            <>
-              <ExportButton />
-              <Button type="button" size="sm" variant="secondary" onClick={onDone}>
-                {tDialogs("done")}
-              </Button>
-            </>
+            <Button type="button" size="sm" variant="secondary" onClick={onDone}>
+              {tDialogs("done")}
+            </Button>
           )}
         </nav>
       </header>

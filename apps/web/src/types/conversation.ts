@@ -3,7 +3,11 @@
 import type { A2UIConfirmationRequest } from "../types";
 import type { ActionKind, SubAgentIteration } from "./chat";
 
-export type A2UIHistoryStatus = "pending" | "submitted" | "cancelled";
+export type A2UIHistoryStatus =
+  | "pending"
+  | "submitted"
+  | "cancelled"
+  | "expired";
 
 export interface TimelineUserItem {
   type: "user";
@@ -17,12 +21,20 @@ export interface TimelineAssistantItem {
   created_at: string;
 }
 
+export interface TimelineReactActionItem {
+  action: string;
+  action_input?: Record<string, unknown>;
+  observation?: string;
+}
+
 export interface TimelineReactTurnItem {
   type: "react_turn";
   iteration: number;
   thought?: string;
   action?: string;
   action_input?: Record<string, unknown>;
+  /** 同轮多 tool 并行时的明细 */
+  actions?: TimelineReactActionItem[];
   observation?: string;
   created_at: string;
 }
@@ -55,13 +67,9 @@ export type ConversationTimelineItem =
 export interface ConversationTimelineResponse {
   conversation_id: string;
   timeline: ConversationTimelineItem[];
-}
-
-/** 兼容旧 API 的用户可见消息 */
-export interface ConversationMessageRecord {
-  role: "user" | "assistant";
-  content: string;
-  created_at: string;
+  has_more?: boolean;
+  /** 本页 raw 消息窗口最早时间，供 before 游标前进。 */
+  oldest_created_at?: string | null;
 }
 
 /** 对话摘要列表项 */

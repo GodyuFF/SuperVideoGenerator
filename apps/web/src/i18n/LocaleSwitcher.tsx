@@ -1,7 +1,8 @@
-/** 全局中/英语言切换控件。 */
+/** 全局中/英语言切换控件（同步后端 prefs + TTS 默认语言）。 */
 
 import { useTranslation } from "react-i18next";
 import type { AppLocale } from "./config";
+import { applyAppLocale } from "./localeSync";
 
 interface LocaleSwitcherProps {
   className?: string;
@@ -13,9 +14,13 @@ export function LocaleSwitcher({ className = "locale-switcher" }: LocaleSwitcher
 
   const current = (i18n.language === "en" ? "en" : "zh-CN") as AppLocale;
 
-  /** 切换到指定语言。 */
+  /** 切换到指定语言并写入本机单源配置。 */
   const setLocale = (locale: AppLocale) => {
-    if (locale !== current) void i18n.changeLanguage(locale);
+    if (locale === current) return;
+    void (async () => {
+      await i18n.changeLanguage(locale);
+      await applyAppLocale(locale, { persistRemote: true, syncTts: true });
+    })();
   };
 
   return (

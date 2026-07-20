@@ -1,4 +1,4 @@
-"""统一 AI 配置：LLM / 图片 / 视频 / TTS / 剪辑导出。"""
+"""统一 AI 配置：LLM / 图片 / 视频 / TTS / 剪辑导出 / Embedding。"""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from core.llm.tools.image.settings import ImageGenConfigManager, get_image_gen_m
 from core.llm.tools.tts.settings import TtsConfigManager, get_tts_manager
 from core.llm.tools.video.settings import VideoGenConfigManager, get_video_gen_manager
 from core.models.entities import ImageSourceMode
+from core.rag.settings import EmbeddingConfigManager, get_embedding_manager
 
 
 class AiConfigManager:
@@ -30,6 +31,7 @@ class AiConfigManager:
         video: VideoGenConfigManager | None = None,
         tts: TtsConfigManager | None = None,
         export: ExportConfigManager | None = None,
+        embedding: EmbeddingConfigManager | None = None,
         *,
         path: Path | None = None,
     ) -> None:
@@ -39,16 +41,28 @@ class AiConfigManager:
         self._video = video or get_video_gen_manager()
         self._tts = tts or get_tts_manager()
         self._export = export or get_export_manager()
+        self._embedding = embedding or get_embedding_manager()
         persisted = load_ai_config(self._path)
         if persisted:
             apply_persisted_config(
-                self._llm, self._image, self._video, self._tts, self._export, persisted
+                self._llm,
+                self._image,
+                self._video,
+                self._tts,
+                self._export,
+                persisted,
+                embedding=self._embedding,
             )
 
     def _persist(self) -> None:
         save_ai_config(
             collect_persisted_config(
-                self._llm, self._image, self._video, self._tts, self._export
+                self._llm,
+                self._image,
+                self._video,
+                self._tts,
+                self._export,
+                embedding=self._embedding,
             ),
             self._path,
         )
@@ -73,6 +87,10 @@ class AiConfigManager:
     def export(self) -> ExportConfigManager:
         return self._export
 
+    @property
+    def embedding(self) -> EmbeddingConfigManager:
+        return self._embedding
+
     def get_public_config(self) -> dict[str, Any]:
         llm_public = self._llm.get_public_config()
         llm_section = {
@@ -89,6 +107,7 @@ class AiConfigManager:
             "video": self._video.get_public_config(),
             "tts": self._tts.get_public_config(),
             "export": self._export.get_public_config(),
+            "embedding": self._embedding.get_public_config(),
         }
 
     def update(
@@ -99,6 +118,7 @@ class AiConfigManager:
         video: dict[str, Any] | None = None,
         tts: dict[str, Any] | None = None,
         export: dict[str, Any] | None = None,
+        embedding: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if llm:
             self._llm.update(
@@ -153,6 +173,10 @@ class AiConfigManager:
                 max_duration_sec=video.get("max_duration_sec"),
                 resolution=video.get("resolution"),
                 timeout_sec=video.get("timeout_sec"),
+                poll_interval_sec=video.get("poll_interval_sec"),
+                create_min_interval_sec=video.get("create_min_interval_sec"),
+                create_max_attempts=video.get("create_max_attempts"),
+                max_concurrency=video.get("max_concurrency"),
             )
         if tts:
             self._tts.update(
@@ -188,34 +212,12 @@ class AiConfigManager:
                 height=export.get("height"),
                 crf=export.get("crf"),
             )
+        if embedding:
+            self._embedding.update(
+                enabled=embedding.get("enabled"),
+                api_key=embedding.get("api_key"),
+                base_url=embedding.get("base_url"),
+                model=embedding.get("model"),
+            )
         self._persist()
         return self.get_public_config()
-
-    def get_llm_legacy_config(self) -> dict[str, Any]:
-        """兼容旧版 GET /api/llm/config（扁平结构）。"""
-        public = self.get_public_config()
-        llm = dict(public["llm"])
-        llm["image_text_defaults"] = public["image"]["pipeline"]
-        return llm
-
-    def patch_llm_legacy(self, **kwargs: Any) -> dict[str, Any]:
-        """兼容旧版 PATCH /api/llm/config。"""
-        source_mode = kwargs.pop("image_source_default", None)
-        if source_mode is not None and not isinstance(source_mode, ImageSourceMode):
-            source_mode = ImageSourceMode(source_mode)
-        self._llm.update(
-            provider=kwargs.get("provider"),
-            model=kwargs.get("model"),
-            api_key=kwargs.get("api_key"),
-            base_url=kwargs.get("base_url"),
-            use_llm_react=kwargs.get("use_llm_react"),
-            temperature=kwargs.get("temperature"),
-            max_tokens=kwargs.get("max_tokens"),
-            image_source_default=source_mode,
-            image_text_preset=kwargs.get("image_text_preset"),
-            comic_preset=kwargs.get("comic_preset"),
-            image_batch_pending_assets=kwargs.get("image_batch_pending_assets"),
-            image_allow_search_fallback=kwargs.get("image_allow_search_fallback"),
-        )
-        self._persist()
-        return self.get_llm_legacy_config()
