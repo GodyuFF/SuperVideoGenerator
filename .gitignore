@@ -23,6 +23,11 @@ MoneyPrinterTurbo/
 # 本机文档摘录（不入库）
 docs/LOCAL-README-EXTRA.md
 
+# 内部开发资料（不对外暴露；可本地保留）
+/scripts/
+/tests/
+/docs/superpowers/
+
 # 构建/测试产物
 *.egg-info/
 fake_*.mp4

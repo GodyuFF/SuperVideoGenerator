@@ -27,12 +27,6 @@ dependencies = [
     "whisperx>=3.1.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.23",
-]
-
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["core*", "apps*"]
@@ -43,13 +37,3 @@ web_search = "core.extensions.builtin.web_search:register_tools"
 [project.entry-points."svg.skills"]
 
 [project.entry-points."svg.mcp_servers"]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-pythonpath = ["."]
-addopts = "-m 'not live and not integration'"
-markers = [
-    "live: 需要真实 LLM API Key 与网络（默认不跑）",
-    "integration: 需要 Node/Remotion 等完整环境（默认不跑）",
-]

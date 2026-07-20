@@ -56,14 +56,10 @@ cd apps/web && npm run dev
 维护者本地打 Windows 包：
 
 ```powershell
-.\scripts\packaging\build-desktop.ps1
+.\apps\desktop\packaging\build-desktop.ps1
 ```
 
-## 测试
-
-```bash
-pytest tests/ -v
-```
+更多说明见 [apps/desktop/README.md](../apps/desktop/README.md)。
 
 ## 本地数据（勿提交）
 

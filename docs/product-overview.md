@@ -1,7 +1,6 @@
 # 产品概览
 
-> 更新日期：2026-07-20  
-> 完整手册见 [product-plan.md](superpowers/reference/product-plan.md)
+> 更新日期：2026-07-20
 
 **SuperVideoGenerator** 是基于多 Agent 协作的 AI 视频生成产品。用户用自然语言描述创意，主 Agent（超级视频大师）以 **ReAct** 编排剧本、分镜、生图、配音、剪辑等子 Agent，完成从创意到成片的生产。
 
@@ -32,4 +31,4 @@
 ## 下一步
 
 - 上手：[快速开始](getting-started.md)
-- 细节：[产品计划手册](superpowers/reference/product-plan.md) · [代码设计](superpowers/reference/code-design-plan.md)
+- 桌面：[apps/desktop/README.md](../apps/desktop/README.md)

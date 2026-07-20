@@ -48,8 +48,8 @@ launch-desktop.vbs
 ## Desktop
 
 - 开发壳：`launch-desktop.vbs` / `launch-desktop.bat`，或 `cd apps/desktop && npm start`
-- 安装包：[GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases)（未签名说明见 [桌面打包](docs/superpowers/reference/desktop-packaging.md)）
-- 本地打 Windows 包：`.\scripts\packaging\build-desktop.ps1`
+- 安装包：[GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases)
+- 本地打 Windows 包：`.\apps\desktop\packaging\build-desktop.ps1`（说明见 [apps/desktop/README.md](apps/desktop/README.md)）
 
 ## Documentation
 
@@ -58,18 +58,6 @@ launch-desktop.vbs
 | [文档索引](docs/README.md) | 入门与手册导航 |
 | [产品概览](docs/product-overview.md) | 定位与原则摘要 |
 | [快速开始](docs/getting-started.md) | 安装与启动 |
-| [产品计划](docs/superpowers/reference/product-plan.md) | 完整产品手册 |
-| [代码设计](docs/superpowers/reference/code-design-plan.md) | 仓库与 API |
-| [设计规格](docs/superpowers/specs/) | 功能 design |
-| [实施计划](docs/superpowers/plans/) | 分步 plans |
-
-## Development
-
-```bash
-pytest tests/ -v
-```
-
-核心编排无 HTTP 依赖，可在 `tests/` 独立验证。
 
 ## License
 

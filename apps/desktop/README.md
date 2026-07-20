@@ -9,8 +9,6 @@
 | **开发壳** | 仓库贡献者 | 本机需 Python venv + Node；加载 Vite 开发服务器 |
 | **完整安装包** | 终端用户 | 从 [GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) 安装；内置嵌入式 Python + 生产前端 |
 
-发版、未签名分发与本地打包见 [`docs/superpowers/reference/desktop-packaging.md`](../../docs/superpowers/reference/desktop-packaging.md)。
-
 ---
 
 ## 开发壳：像 exe 一样启动（推荐）
@@ -20,15 +18,9 @@
 - `launch-desktop.vbs` — 静默启动（推荐，无黑框）
 - `launch-desktop.bat` — 带日志的控制台启动
 
-可选：生成桌面快捷方式（猫头鹰图标）：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\update_desktop_shortcut.ps1
-```
-
 之后：
 
-1. 双击桌面图标或 `launch-desktop.vbs`
+1. 双击 `launch-desktop.vbs`
 2. Electron 自动拉起 API + Vite（若未在运行）
 3. 打开应用窗口；关闭窗口即退出（并结束本进程拉起的后台服务）
 
@@ -58,12 +50,14 @@ npm start
 
 ```powershell
 # 仓库根目录
-.\scripts\packaging\build-desktop.ps1
+.\apps\desktop\packaging\build-desktop.ps1
 ```
 
 产物：`apps/desktop/dist/SuperVideoGenerator-Setup-{version}-x64.exe`
 
 正式发布：`git tag vX.Y.Z && git push origin vX.Y.Z`（触发 CI 构建 Win + Mac 并上传 Release）。
+
+未签名安装包在部分环境可能被 SmartScreen / Gatekeeper 拦截，属预期行为；可从发布页下载后按系统提示允许运行。
 
 ---
 
@@ -87,11 +81,3 @@ npm start
 cd apps\desktop
 npm run test:paths
 ```
-
----
-
-## 设计文档
-
-- [`docs/superpowers/specs/2026-07-17-desktop-installer-design.md`](../../docs/superpowers/specs/2026-07-17-desktop-installer-design.md) — 完整安装包
-- [`docs/superpowers/specs/2026-07-15-electron-desktop-shell-design.md`](../../docs/superpowers/specs/2026-07-15-electron-desktop-shell-design.md) — 开发壳
-- [`docs/superpowers/reference/desktop-packaging.md`](../../docs/superpowers/reference/desktop-packaging.md) — 发版与用户安装说明

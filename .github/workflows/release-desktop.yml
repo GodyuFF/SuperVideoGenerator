@@ -44,7 +44,7 @@ jobs:
         with:
           path: |
             ~\AppData\Local\pip\Cache
-          key: pip-win-${{ hashFiles('requirements-desktop.txt', 'scripts/packaging/python-version.txt') }}
+          key: pip-win-${{ hashFiles('requirements-desktop.txt', 'apps/desktop/packaging/python-version.txt') }}
           restore-keys: |
             pip-win-
 
@@ -64,7 +64,7 @@ jobs:
 
       - name: Prepare runtime
         shell: pwsh
-        run: ./scripts/packaging/prepare-runtime.ps1
+        run: ./apps/desktop/packaging/prepare-runtime.ps1
 
       - name: Build installer
         working-directory: apps/desktop
@@ -111,7 +111,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: pip-macos-${{ hashFiles('requirements-desktop.txt', 'scripts/packaging/python-version.txt') }}
+          key: pip-macos-${{ hashFiles('requirements-desktop.txt', 'apps/desktop/packaging/python-version.txt') }}
           restore-keys: |
             pip-macos-
 
@@ -130,13 +130,13 @@ jobs:
             desktop-nm-
 
       - name: Ensure packaging scripts executable
-        run: chmod +x scripts/packaging/*.sh
+        run: chmod +x apps/desktop/packaging/*.sh
 
       - name: Export macOS icon
-        run: ./scripts/packaging/export-icns.sh
+        run: ./apps/desktop/packaging/export-icns.sh
 
       - name: Prepare runtime
-        run: ./scripts/packaging/prepare-runtime.sh
+        run: ./apps/desktop/packaging/prepare-runtime.sh
 
       - name: Build installer
         working-directory: apps/desktop
@@ -180,7 +180,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: pip-macos-${{ hashFiles('requirements-desktop.txt', 'scripts/packaging/python-version.txt') }}
+          key: pip-macos-${{ hashFiles('requirements-desktop.txt', 'apps/desktop/packaging/python-version.txt') }}
           restore-keys: |
             pip-macos-
 
@@ -199,13 +199,13 @@ jobs:
             desktop-nm-
 
       - name: Ensure packaging scripts executable
-        run: chmod +x scripts/packaging/*.sh
+        run: chmod +x apps/desktop/packaging/*.sh
 
       - name: Export macOS icon
-        run: ./scripts/packaging/export-icns.sh
+        run: ./apps/desktop/packaging/export-icns.sh
 
       - name: Prepare runtime
-        run: ./scripts/packaging/prepare-runtime.sh
+        run: ./apps/desktop/packaging/prepare-runtime.sh
 
       - name: Build installer
         working-directory: apps/desktop
