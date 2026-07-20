@@ -16,7 +16,7 @@
 - TTS / audio 二次生成**不入队**，保持现有 `regenerate_asset` 直跑。
 - 队列仅内存；进程重启清空。
 - 禁止在 `core/` / `apps/` 写 mock；测试 mock 仅在 `tests/`。
-- 新类/函数中文 docstring / JSDoc；完成后同步 `docs/code-design-plan.md`、`docs/product-plan.md`、`docs/frontend-style-guide.md`（若有抽屉段落）。
+- 新类/函数中文 docstring / JSDoc；完成后同步 `docs/superpowers/reference/code-design-plan.md`、`docs/superpowers/reference/product-plan.md`、`docs/superpowers/reference/frontend-style-guide.md`（若有抽屉段落）。
 - 保留 `image_gen_progress` / `assets_changed`；侧栏以 snapshot 为准。
 - Agnes `create_min_interval_sec` 仍生效，与队列串行叠加为预期行为。
 
@@ -756,9 +756,9 @@ export async function waitForGenerationJobs(
 ### Task 9: 文档同步 + 全量测试
 
 **Files:**
-- Modify: `docs/code-design-plan.md` — §2 仓库结构增加 `core/generation/`；§API 增加 generation-queue 端点；注明 regenerate image/video 入队
-- Modify: `docs/product-plan.md` — 工作台「生成队列」侧栏一句
-- Modify: `docs/frontend-style-guide.md` 或 `.cursor/rules/frontend-style.mdc` 提及抽屉 — 若已有 Batch 抽屉描述则并列
+- Modify: `docs/superpowers/reference/code-design-plan.md` — §2 仓库结构增加 `core/generation/`；§API 增加 generation-queue 端点；注明 regenerate image/video 入队
+- Modify: `docs/superpowers/reference/product-plan.md` — 工作台「生成队列」侧栏一句
+- Modify: `docs/superpowers/reference/frontend-style-guide.md` 或 `.cursor/rules/frontend-style.mdc` 提及抽屉 — 若已有 Batch 抽屉描述则并列
 - Modify: `docs/superpowers/specs/2026-07-16-generation-queue-design.md` — 状态改为「已实现」或「实现中」
 - Modify: `README.md` — 仅当用户可见能力列表需要时加一行
 

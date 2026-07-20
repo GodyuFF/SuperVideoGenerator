@@ -1,10 +1,10 @@
 # SuperVideoGenerator 代码设计计划
 
-> 版本：v0.1 | 对应产品手册 v0.1 | 更新：2026-07-20（仓库清理：根目录仅 launch-desktop；video_clip 看板 preview/preview_url 分离；RAG async_bridge；桌面安装包打包与发版）
+> 版本：v0.1 | 对应产品手册 v0.1 | 更新：2026-07-20（docs 整理：手册迁入 superpowers/reference；根目录仅 launch-desktop；video_clip preview 分离；RAG async_bridge；桌面安装包）
 
 ## 1. 目标
 
-在 `docs/product-plan.md` 基础上落地可运行代码骨架，具备：
+在 `docs/superpowers/reference/product-plan.md` 基础上落地可运行代码骨架，具备：
 
 - ReAct 主编排（超级视频大师 + 子 Agent）
 - 分阶段结构化日志
@@ -48,7 +48,7 @@ SuperVideoGenerator/
 ├── apps/
 │   ├── api/                    # FastAPI + WebSocket（生产桌面模式挂载静态前端）
 │   ├── web/                    # Vite + React + A2UI 组件
-│   │   └── src/i18n/           # i18next 配置与 locales（见 docs/i18n.md）
+│   │   └── src/i18n/           # i18next 配置与 locales（见 docs/superpowers/reference/i18n.md）
 │   └── desktop/                # Electron 壳：开发快捷启动 + 打包安装包（猫头鹰品牌标；launch-desktop.vbs）
 │       ├── main.cjs / preload.cjs
 │       ├── devServers.cjs      # 开发：拉起本机 API + Vite
@@ -64,7 +64,13 @@ SuperVideoGenerator/
 │   ├── unit/                   # 核心逻辑（含 test_desktop_static.py）
 │   └── api/                    # HTTP/WebSocket
 ├── docs/
-│   └── desktop-packaging.md    # 发版、未签名分发、本地构建说明
+│   ├── README.md               # 文档导航（入门）
+│   ├── product-overview.md     # 产品概览
+│   ├── getting-started.md      # 快速开始
+│   └── superpowers/
+│       ├── reference/          # 产品/代码/提示词等长文手册
+│       ├── specs/              # 功能设计规格
+│       └── plans/              # 分步实施计划
 ├── requirements-desktop.txt    # 生产 pip 依赖（无 pytest；含 torch/WhisperX）
 ├── pyproject.toml
 └── requirements.txt
@@ -93,11 +99,11 @@ SuperVideoGenerator/
 - **SVF Hook**：`useAppTranslation.ts`；页面使用 `useTranslation('nav')` 等
 - **OpenCut Hook**：`editor/opencut/i18n/useOpencutT.ts`；注册表通过 `labelKey` + `translateRegistryLabel.ts`
 - **文案文件**：`locales/{zh-CN,en}/` 下 JSON；OpenCut 独立子目录 `opencut/`
-- **详细约定与验收**：[`docs/i18n.md`](i18n.md)
+- **详细约定与验收**：[`docs/superpowers/reference/i18n.md`](i18n.md)
 
 ### 2.3 桌面安装包（`apps/desktop` + `scripts/packaging`）
 
-- **开发壳**：根目录 `launch-desktop.vbs` / `launch-desktop.bat`，或 `apps/desktop` 的 `npm start`；复用本机 venv 与 Vite，见 [`apps/desktop/README.md`](../apps/desktop/README.md)。
+- **开发壳**：根目录 `launch-desktop.vbs` / `launch-desktop.bat`，或 `apps/desktop` 的 `npm start`；复用本机 venv 与 Vite，见 [`apps/desktop/README.md`](../../../apps/desktop/README.md)。
 - **生产包**：`prepare-runtime.*` 组装 `apps/desktop/runtime/`（嵌入式 Python、`apps/web/dist`、`api_boot.py`）；`electron-builder` 产出未签名 NSIS / DMG。
 - **发版**：`git tag vX.Y.Z && git push origin vX.Y.Z` 触发 `release-desktop.yml`；用户文档见 [`desktop-packaging.md`](desktop-packaging.md)。
 - **自动更新**：`electron-updater` + GitHub Releases；设置页「检查更新」（仅打包版）。
@@ -292,12 +298,12 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 - **Provider**：`deepseek`（`https://api.deepseek.com/anthropic`）、`anthropic`（`https://api.anthropic.com`）；旧 provider 配置自动回退 `deepseek`
 - **认证**：`x-api-key` + `anthropic-version: 2023-06-01`；端点 `POST /v1/messages`
 - **日志层**：`request_body` 分列 `{system, tools, messages, model, ...}`；`llm_response.response_body` 含完整 assistant 回复（content、tool_calls、finish_reason、usage）
-- **ReAct tool_calls**：默认每轮 1 个 tool；同轮多 tool 由 `validate_tool_call_batch` / `resolve_batch_execution_mode` 分流：`finish` / `ask_user_question` / `delegate_agent` **独占不可混用**；**无依赖**白名单（子 Agent：`create_*` / `update_*` / `delete_*` / `list_*` / `get_*`；主编排：`tool_*`）→ **并行**（`asyncio.gather`）；其余合法组合 → **按返回顺序串行**；上限 `SVG_REACT_MAX_PARALLEL_TOOLS`；`ReActDecision.batch_mode` 为 `parallel`|`sequential`；解析见 `parse_react_tool_calls_batch` + `core/llm/tool_call_batch.py`；若模型仅返回 content 无 tool_calls，自动追加纠错 user 消息重试一次；若返回 `$TOOL_NAME`/`$PARAMETER_NAME` 等占位符 tool_call（`core/llm/tool_call_guard.py`），同样纠正重试一次；**思考流式 UI** 在 Anthropic SSE 循环内经 `extract_tool_call_stream_parts` 实时推送 thinking/content → WS `llm_stream_delta`（kind=`react_thought`）
+- **ReAct tool_calls**：默认每轮 1 个 tool；同轮多 tool 由 `validate_tool_call_batch` / `resolve_batch_execution_mode` 分流：`finish` / `ask_user_question` / `delegate_agent` **独占不可混用**（`ExclusiveToolBatchError`；主编排写回 observation 后继续下一轮纠正，非致命中止）；**无依赖**白名单（子 Agent：`create_*` / `update_*` / `delete_*` / `list_*` / `get_*`；主编排：`tool_*`）→ **并行**（`asyncio.gather`）；其余合法组合 → **按返回顺序串行**；上限 `SVG_REACT_MAX_PARALLEL_TOOLS`；`ReActDecision.batch_mode` 为 `parallel`|`sequential`；解析见 `parse_react_tool_calls_batch` + `core/llm/tool_call_batch.py`；若模型仅返回 content 无 tool_calls，自动追加纠错 user 消息重试一次；若返回 `$TOOL_NAME`/`$PARAMETER_NAME` 等占位符 tool_call（`core/llm/tool_call_guard.py`），同样纠正重试一次；**思考流式 UI** 在 Anthropic SSE 循环内经 `extract_tool_call_stream_parts` 实时推送 thinking/content → WS `llm_stream_delta`（kind=`react_thought`）
 - **Thinking 模型 tool_choice**：`core/llm/client/tool_choice.py` 检测 `deepseek-reasoner` / `deepseek-v4-*` 等，将 `any`/`tool` 降为 `auto`（`SVG_LLM_THINKING_MODE` 或 `thinking_mode` 可覆盖）
 
 ### 5.1.1 Plan 模式（始终开启）
 
-- 模块：[`core/llm/plan_context.py`](../core/llm/plan_context.py)（`build_plan_snapshot`、`build_plan_slice_for_step`、`extract_plan_update`）
+- 模块：[`core/llm/plan_context.py`](../../../core/llm/plan_context.py)（`build_plan_snapshot`、`build_plan_slice_for_step`、`extract_plan_update`）
 - 主编排每轮末条 user 状态 JSON 含 `execution_plan`、`plan_status_history`、`last_remaining_plan`（**pinned**，不受 observation 滑窗压缩）、`pipeline_progress`（Store 推断已完成步骤）、`user_resume_target`（用户续跑意图）、`sub_agents` / `available_sub_agents` / `delegate_readiness`（组装细节见 [orchestration-state.md](orchestration-state.md)）
 - 子 Agent 动态区含 `plan_slice`（当前步骤 + 已完成步骤摘要）
 - LLM 每轮 tool_calls 必填 `plan_status` / `remaining_plan`；回写合并至 `PlanDocument.runtime_summary` 并 emit `plan_updated`
@@ -312,11 +318,11 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 6. `MasterReActEngine.run`（`decide_master_session` 循环）  
 7. LLM 生成用户可见摘要；更新 `Conversation.last_summary`  
 
-持久化（完整结构与关联关系见 [`docs/data-storage.md`](data-storage.md)）：
+持久化（完整结构与关联关系见 [`docs/superpowers/reference/data-storage.md`](data-storage.md)）：
 - **MemoryStore 聚合索引**：`data/dev_store.json`（项目/剧本/资产 JSON）
-- **AI 配置**：`data/ai_config.json`（[`core/llm/ai_config_store.py`](../core/llm/ai_config_store.py)；LLM/生图/生视频/TTS/Embedding 含 API Key；TTS 默认 Edge 无需 Key；`GET /api/ai/tts/voices`、`POST /api/ai/tts/preview` 试听）
-- **Agent 提示词**：`data/agents/` 分目录持久化（`registry.json` + `profiles/{profile_id}/workspace.json`；环境变量 `SVG_AGENTS_ROOT` 或旧版 `SVG_AGENT_CONFIG_PATH` 可覆盖根目录；旧版单文件 `data/agent_config.json` / `data/agents/agent_config.json` 首次启动自动迁移）（[`core/llm/agent/config_manager.py`](../core/llm/agent/config_manager.py)）— `registry.json` 存 `prompt_profiles`、`custom_profiles`、`style_modes`、全局 `tool_overrides`；**自定义视频风格与 PromptProfile 1:1**（`style_mode.id === default_prompt_profile === profile_id`，由 [`style_profile_sync.py`](../core/llm/agent/style_profile_sync.py) 在 load/PATCH 时强制同步）；各 Profile 工作区存 `agent_roster`（有序 Agent id 列表，含 `super_video_master` 与内置/自定义子 Agent）、`prompt_content`、`tool_overrides`（按 agent）、`custom_agents`；`default` Profile 不可删/不可改，磁盘工作区保持空基线（运行时 roster 回退全量内置）；新建自定义 Profile 从 `default` 复制并在 `agent_roster` 为空时初始化为全量内置；**内置三风格**（`storybook`/`ai_video`/`frame_i2v`）出厂 seed 见 [`core/llm/agent/seeds/profiles/`](../core/llm/agent/seeds/profiles/)，支持 `POST /api/agents/profiles/{id}/restore` 与 `POST /api/agents/config/restore-builtin-profiles` 一键恢复，且不可删除；主编排 `delegate_agent`、`agents_catalog.md` 注入、`build_master_sub_agents` 均按当前 Profile roster 过滤；自定义 Agent 可通过 `based_on` 替代 canonical 子 Agent 并以 custom `agent_id` 委派；服务启动与用户 PATCH 后通过 `AppState.reload_agent_config()` 重载；API：`GET/PATCH /api/agents/config`、`GET /api/agents?profile=`、`GET /api/agents/{agent}/prompt`、`POST /api/agents/profiles/{id}/restore`、`POST /api/agents/config/restore-builtin-profiles`、`GET /api/style-modes`、`GET /api/tools`
-- **项目目录双写**：`data/projects/{project_id}/project.json`、`data/projects/{project_id}/scripts/{script_id}/script.json` 及 `assets/media/`、`assets/exports/`；RAG 向量索引 `data/projects/{project_id}/rag/embeddings.sqlite`（[`core/rag/store.py`](../core/rag/store.py)）
+- **AI 配置**：`data/ai_config.json`（[`core/llm/ai_config_store.py`](../../../core/llm/ai_config_store.py)；LLM/生图/生视频/TTS/Embedding 含 API Key；TTS 默认 Edge 无需 Key；`GET /api/ai/tts/voices`、`POST /api/ai/tts/preview` 试听）
+- **Agent 提示词**：`data/agents/` 分目录持久化（`registry.json` + `profiles/{profile_id}/workspace.json`；环境变量 `SVG_AGENTS_ROOT` 或旧版 `SVG_AGENT_CONFIG_PATH` 可覆盖根目录；旧版单文件 `data/agent_config.json` / `data/agents/agent_config.json` 首次启动自动迁移）（[`core/llm/agent/config_manager.py`](../../../core/llm/agent/config_manager.py)）— `registry.json` 存 `prompt_profiles`、`custom_profiles`、`style_modes`、全局 `tool_overrides`；**自定义视频风格与 PromptProfile 1:1**（`style_mode.id === default_prompt_profile === profile_id`，由 [`style_profile_sync.py`](../../../core/llm/agent/style_profile_sync.py) 在 load/PATCH 时强制同步）；各 Profile 工作区存 `agent_roster`（有序 Agent id 列表，含 `super_video_master` 与内置/自定义子 Agent）、`prompt_content`、`tool_overrides`（按 agent）、`custom_agents`；`default` Profile 不可删/不可改，磁盘工作区保持空基线（运行时 roster 回退全量内置）；新建自定义 Profile 从 `default` 复制并在 `agent_roster` 为空时初始化为全量内置；**内置三风格**（`storybook`/`ai_video`/`frame_i2v`）出厂 seed 见 [`core/llm/agent/seeds/profiles/`](../../../core/llm/agent/seeds/profiles/)，支持 `POST /api/agents/profiles/{id}/restore` 与 `POST /api/agents/config/restore-builtin-profiles` 一键恢复，且不可删除；主编排 `delegate_agent`、`agents_catalog.md` 注入、`build_master_sub_agents` 均按当前 Profile roster 过滤；自定义 Agent 可通过 `based_on` 替代 canonical 子 Agent 并以 custom `agent_id` 委派；服务启动与用户 PATCH 后通过 `AppState.reload_agent_config()` 重载；API：`GET/PATCH /api/agents/config`、`GET /api/agents?profile=`、`GET /api/agents/{agent}/prompt`、`POST /api/agents/profiles/{id}/restore`、`POST /api/agents/config/restore-builtin-profiles`、`GET /api/style-modes`、`GET /api/tools`
+- **项目目录双写**：`data/projects/{project_id}/project.json`、`data/projects/{project_id}/scripts/{script_id}/script.json` 及 `assets/media/`、`assets/exports/`；RAG 向量索引 `data/projects/{project_id}/rag/embeddings.sqlite`（[`core/rag/store.py`](../../../core/rag/store.py)）
 - **启动扫描**：`load_store` 在读取 `dev_store.json` 后调用 `discover_projects_from_disk`、`sync_scripts_from_disk`（合并磁盘 `script.json` 较新 meta）与 **`merge_script_bundles_from_disk`**（从 `store_bundle.json` 恢复缺失资产），并回写 `dev_store.json`
 - **剧本资产双写**：`save_store` 同步写入 `data/projects/{pid}/scripts/{sid}/store_bundle.json`（文字/媒体/分镜/剪辑计划）；`schedule_save` 防抖改为可推迟、关键 mutation 立即落盘
 - **项目生命周期**：`POST /api/projects` **不再**调用 `reset_history()`，支持多项目并存；`DELETE /api/projects/{id}`、`DELETE .../scripts/{sid}`、`POST /api/projects/batch-delete` 级联清理 MemoryStore、`dev_store.json`、`conversations.db` 与 **`data/projects/{id}/` 目录树**（含媒体；**保留** `interaction_logs.db` / JSONL）；路径经 `resolve_data_root()` 解析为仓库绝对路径
@@ -358,8 +364,8 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 | `script/handler.py` + `script/schemas.py` | script_agent CRUD + `list_text_assets` |
 | `image/` … `editing/` | 各域 handler；`image/scan.py`、`image/generate.py`（Agnes 生图）、`image/search_sync.py`；`core/edit/` 剪辑时间轴、`shot_timing.py`（分镜镜级/句级时间）、`shot_detail_sync.py`（TTS 后详设同步）、`timeline_analysis.py`（时间段分析）与 `asset_resolver.py` 素材校验 |
 | `shared/agent_tools.py` | `AGENT_TOOLS` 懒加载 Registry 代理 |
-| [`docs/tools-reference.md`](tools-reference.md) | 全 Agent action 用途与 handler 路径总览 |
-| `web_search/` | DuckDuckGo / Tavily；经 `svg.tools` entry_point 注册（[`core/extensions/builtin/web_search.py`](../core/extensions/builtin/web_search.py)） |
+| [`docs/superpowers/reference/tools-reference.md`](tools-reference.md) | 全 Agent action 用途与 handler 路径总览 |
+| `web_search/` | DuckDuckGo / Tavily；经 `svg.tools` entry_point 注册（[`core/extensions/builtin/web_search.py`](../../../core/extensions/builtin/web_search.py)） |
 | `core/extensions/` | pip entry_points 发现；MCP 桥接；Skill tool_manifest 过滤 |
 | `web_fetch/` | `read_webpage`：浏览器 UA + Cookie 预热 + 正文区域提取 + 可选 Jina Reader 回退；拒绝 localhost/内网与内部 API 路径；仅注入 script_agent |
 
@@ -405,26 +411,26 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 
 ### 5.3.3 统一 AI 配置 API
 
-- 模块：[`core/llm/ai_config.py`](../core/llm/ai_config.py) 聚合 `LLMConfigManager`、`ImageGenConfigManager`、`VideoGenConfigManager`、`TtsConfigManager`、`ExportConfigManager`、`EmbeddingConfigManager`
+- 模块：[`core/llm/ai_config.py`](../../../core/llm/ai_config.py) 聚合 `LLMConfigManager`、`ImageGenConfigManager`、`VideoGenConfigManager`、`TtsConfigManager`、`ExportConfigManager`、`EmbeddingConfigManager`
 - `GET/PATCH /api/ai/config` 返回/更新 `{ llm, image, video, tts, export, embedding }` 六区；`export` 含 fps/width/height；TTS 含 `default_voice`、`voice_rate`、多引擎 Key；`embedding` 为 RAG 向量检索独立配置（无 Key 时共享资产按名称精确匹配回退）；`llm.show_react_details` 控制工作台 ReAct 展示（默认 `true` 完整思考/观察，`false` 仅工具名称）
 - `GET /api/ai/tts/voices?locale=`、`POST /api/ai/tts/preview`（短文本试听 mp3；**不依赖** `tts.enabled`，请求体可覆盖 provider/音色/Key 以验证未保存的表单配置）
 - 前端：`AiSettingsPage` TTS Tab（短文本试听）；合成 mp3 试听：`MediaPreview` + `resolveMediaPlayUrl()`，用于计划面板、分镜/媒体/剪辑看板
 
 ### 5.3.4 剪辑成片（FFmpeg + Edit Studio）
 
-- **默认导出**：[`core/edit/ffmpeg_renderer.py`](../core/edit/ffmpeg_renderer.py) + [`core/edit/export_settings.py`](../core/edit/export_settings.py)；多层同时段走 `composite_slices` + FFmpeg `overlay`；[`core/tts/ffmpeg_util.py`](../core/tts/ffmpeg_util.py) 统一路径探测（系统 PATH → Windows 常见路径 → **imageio-ffmpeg 内置**）与 `is_ffmpeg_available`
-- **NLE 工程导出**：[`core/edit/nle_export/`](../core/edit/nle_export/) 将 `EditTimeline` 转为 FCP7 XMEML v5 + 素材 ZIP（`nle_premiere_*.zip`）；`POST .../export-nle` 异步 job；**不依赖 FFmpeg**；`GET /api/edit/capabilities` 返回 `nle_export_enabled` / `nle_export_formats: ["premiere"]`
-- **Edit Studio（OpenCut Classic 融合，2026-07-12）**：[`svfProjectAdapter.ts`](../apps/web/src/editor/adapter/svfProjectAdapter.ts) + [`svfShotProjection.ts`](../apps/web/src/editor/adapter/svfShotProjection.ts) 往返保留 `source_refs` 与投影 metadata；PATCH 后 `patch_timeline` 调用 `apply_timeline_edits_to_shots` 回写 VideoPlan；主层 `vly_z0`
-- **中止执行**：`POST .../chat/abort` + [`core/execution/cancel.py`](../core/execution/cancel.py)（`check_cancelled` / `wait_or_cancel` / `gather_with_cancel`）；取消标记在 **主编排 ReAct 循环头、LLM SSE 流、子 Agent decide/act、批量生图/TTS、FFmpeg 分段导出** 等多点协作检查；前端 `execution_abort_requested` 即时进入「中止中…」，收到 `execution_aborted` 后恢复 idle
-- **preview_url**：`timeline_board_items` 遍历 `video_layers` 经 `resolve_clip_media` 填充；见 [`docs/edit-studio-plan.md`](edit-studio-plan.md)
-- **能力单源**：[`core/edit/capabilities.json`](../core/edit/capabilities.json)；`GET /api/edit/capabilities` 合并 `ffmpeg_available` / `export_enabled` / `nle_export_enabled` / `max_video_layers`
-- **剪辑音效**：[`core/sounds/`](../core/sounds/) 内置 Mixkit 目录 + 可选 `FREESOUND_API_KEY` 在线检索；`GET /api/sounds/search`、`GET /api/sounds/preview/{id}`（OpenCut 音效 Tab）
-- **Agent merge**：`plan_edit_timeline` 输出 `video_layers` + `transform`；`merge_agent_timeline` 按层/clip `edited_by` 保护（[`core/edit/timeline.py`](../core/edit/timeline.py)）
-- **transform 插值**：[`core/edit/transform_interp.py`](../core/edit/transform_interp.py)（`collect_timeline_boundaries`、`build_scaled_video_filter`、`snap_even_dim`）；`build_scaled_video_filter` 对 pad 目标使用**偶数尺寸** + `force_divisible_by=2`，避免 Ken Burns 中间 scale 产生奇数高宽导致 FFmpeg pad 失败；`motion=static` 时忽略 `motion_detail` 的 scale 插值；前端预览与导出均经 OpenCut `buildScene` / opencut-wasm 对齐。
-- **媒体路径**：[`core/edit/media_paths.py`](../core/edit/media_paths.py)、[`core/edit/export_paths.py`](../core/edit/export_paths.py)、[`core/edit/edit_capabilities.py`](../core/edit/edit_capabilities.py)
-- 规格：[`docs/edit-studio-plan.md`](edit-studio-plan.md)
+- **默认导出**：[`core/edit/ffmpeg_renderer.py`](../../../core/edit/ffmpeg_renderer.py) + [`core/edit/export_settings.py`](../../../core/edit/export_settings.py)；多层同时段走 `composite_slices` + FFmpeg `overlay`；[`core/tts/ffmpeg_util.py`](../../../core/tts/ffmpeg_util.py) 统一路径探测（系统 PATH → Windows 常见路径 → **imageio-ffmpeg 内置**）与 `is_ffmpeg_available`
+- **NLE 工程导出**：[`core/edit/nle_export/`](../../../core/edit/nle_export/) 将 `EditTimeline` 转为 FCP7 XMEML v5 + 素材 ZIP（`nle_premiere_*.zip`）；`POST .../export-nle` 异步 job；**不依赖 FFmpeg**；`GET /api/edit/capabilities` 返回 `nle_export_enabled` / `nle_export_formats: ["premiere"]`
+- **Edit Studio（OpenCut Classic 融合，2026-07-12）**：[`svfProjectAdapter.ts`](../../../apps/web/src/editor/adapter/svfProjectAdapter.ts) + [`svfShotProjection.ts`](../../../apps/web/src/editor/adapter/svfShotProjection.ts) 往返保留 `source_refs` 与投影 metadata；PATCH 后 `patch_timeline` 调用 `apply_timeline_edits_to_shots` 回写 VideoPlan；主层 `vly_z0`
+- **中止执行**：`POST .../chat/abort` + [`core/execution/cancel.py`](../../../core/execution/cancel.py)（`check_cancelled` / `wait_or_cancel` / `gather_with_cancel`）；取消标记在 **主编排 ReAct 循环头、LLM SSE 流、子 Agent decide/act、批量生图/TTS、FFmpeg 分段导出** 等多点协作检查；前端 `execution_abort_requested` 即时进入「中止中…」，收到 `execution_aborted` 后恢复 idle
+- **preview_url**：`timeline_board_items` 遍历 `video_layers` 经 `resolve_clip_media` 填充；见 [`docs/superpowers/reference/edit-studio-plan.md`](edit-studio-plan.md)
+- **能力单源**：[`core/edit/capabilities.json`](../../../core/edit/capabilities.json)；`GET /api/edit/capabilities` 合并 `ffmpeg_available` / `export_enabled` / `nle_export_enabled` / `max_video_layers`
+- **剪辑音效**：[`core/sounds/`](../../../core/sounds/) 内置 Mixkit 目录 + 可选 `FREESOUND_API_KEY` 在线检索；`GET /api/sounds/search`、`GET /api/sounds/preview/{id}`（OpenCut 音效 Tab）
+- **Agent merge**：`plan_edit_timeline` 输出 `video_layers` + `transform`；`merge_agent_timeline` 按层/clip `edited_by` 保护（[`core/edit/timeline.py`](../../../core/edit/timeline.py)）
+- **transform 插值**：[`core/edit/transform_interp.py`](../../../core/edit/transform_interp.py)（`collect_timeline_boundaries`、`build_scaled_video_filter`、`snap_even_dim`）；`build_scaled_video_filter` 对 pad 目标使用**偶数尺寸** + `force_divisible_by=2`，避免 Ken Burns 中间 scale 产生奇数高宽导致 FFmpeg pad 失败；`motion=static` 时忽略 `motion_detail` 的 scale 插值；前端预览与导出均经 OpenCut `buildScene` / opencut-wasm 对齐。
+- **媒体路径**：[`core/edit/media_paths.py`](../../../core/edit/media_paths.py)、[`core/edit/export_paths.py`](../../../core/edit/export_paths.py)、[`core/edit/edit_capabilities.py`](../../../core/edit/edit_capabilities.py)
+- 规格：[`docs/superpowers/reference/edit-studio-plan.md`](edit-studio-plan.md)
 
-**EditTimeline / EditClip**（[`core/models/entities.py`](../core/models/entities.py)）：
+**EditTimeline / EditClip**（[`core/models/entities.py`](../../../core/models/entities.py)）：
 
 | 字段 | 说明 |
 |------|------|
@@ -435,7 +441,7 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 | `background` | `EditClipBackground`：solid/image/blur + color/asset_ref |
 | `motion_detail` | `EditClipMotionDetail`：Ken Burns 起止焦点与 scale |
 | `source_refs` | 关联 shot_id、text_asset_ids、media_ids |
-| 校验 | [`core/edit/asset_resolver.py`](../core/edit/asset_resolver.py)：`validate_edit_timeline` → `MissingItem.suggested_upstream`；**导出前强制校验**，缺素材时 `FfmpegExportError`（composite 路径不再静默黑屏） |
+| 校验 | [`core/edit/asset_resolver.py`](../../../core/edit/asset_resolver.py)：`validate_edit_timeline` → `MissingItem.suggested_upstream`；**导出前强制校验**，缺素材时 `FfmpegExportError`（composite 路径不再静默黑屏） |
 
 **editing_agent 流水线**（分镜复核之后，复核为剪辑前最后一步）：`load_edit_context`（shots 含复核字段）→ `plan_edit_timeline` → …。AI 视频须先 `video_gen` 再 TTS/复核；`storyboard_refine_agent` 写入复核态；`compile_timeline_from_shots` 优先 `camera_motion_refined`。storyboard 仅产出 VideoPlan 初稿。
 
@@ -466,7 +472,7 @@ tools/schemas ──► build_*_tools ──► core/llm/tools/registry.py (call
 | `apps/web/.../AssetRegenerateButton.tsx` | 详情页二次生成按钮（图文/媒体/分镜抽屉） |
 | `apps/web/.../AssetRegeneratePanel.tsx` | 分镜抽屉二次生成三卡片面板 |
 | `apps/web/.../assetDetail/*` | 详情 Modal 共享壳层（Shell / Header / Section） |
-| `apps/web/src/styles/asset-detail.css` | 详情页与二次生成样式（见 `docs/frontend-style-guide.md`） |
+| `apps/web/src/styles/asset-detail.css` | 详情页与二次生成样式（见 `docs/superpowers/reference/frontend-style-guide.md`） |
 | `apps/web/.../manual/*` | 人工增删改：创建对话框、剧情编辑、执行中禁用横幅 |
 | `apps/web/.../Workbench.tsx` | `manualEditEnabled`：AI 执行中禁用看板人工操作 |
 
@@ -557,9 +563,9 @@ cd apps/web && npm install && npm run dev
 
 1. **会话级隔离**：将 `DATA_ROOT`、`PROJECTS_ROOT`、`dev_store.json` 绑定到 pytest 临时目录，并清空内存 `AppState`，避免 API 集成测试写入真实 `data/`。
 2. **差量清理**：会话结束时对比真实 `data/` 的项目 ID 快照；若有泄漏的新项目，调用 `delete_project` 删除（不触碰历史已有项目）。
-3. **`@pytest.mark.live`**：跳过隔离；[`tests/api/test_chat_live.py`](../tests/api/test_chat_live.py) 在 `finally` 中删除自建 `Live 测试` 项目。
+3. **`@pytest.mark.live`**：跳过隔离；[`tests/api/test_chat_live.py`](../../../tests/api/test_chat_live.py) 在 `finally` 中删除自建 `Live 测试` 项目。
 
-实现见 [`tests/support/data_isolation.py`](../tests/support/data_isolation.py) 与 [`tests/conftest.py`](../tests/conftest.py) 的 `isolate_test_data_session` fixture。
+实现见 [`tests/support/data_isolation.py`](../../../tests/support/data_isolation.py) 与 [`tests/conftest.py`](../../../tests/conftest.py) 的 `isolate_test_data_session` fixture。
 
 ## 10. 前端性能约束（2026-07-09，2026-07-11 请求 pending 根治；2026-07-12 对话阶段专项）
 

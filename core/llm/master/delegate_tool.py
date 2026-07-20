@@ -163,7 +163,9 @@ def build_delegate_agent_description(
     eligible = set(eligible_agent_ids or [])
     by_agent = {str(r["agent_id"]): r for r in readiness if r.get("agent_id")}
     lines = [
-        "委派子 Agent 执行专项任务。传入 agent_id 选择目标（须为当前可委派 id）：",
+        "委派子 Agent 执行专项任务。传入 agent_id 选择目标（须为当前可委派 id）。",
+        "硬性约束：本 tool 必须单独成轮，禁止与 tool_* / finish / ask_user_question 或其他 function 同轮并行。",
+        "可选 agent_id：",
     ]
     for item in candidates:
         row = by_agent.get(item.agent_id) or {}

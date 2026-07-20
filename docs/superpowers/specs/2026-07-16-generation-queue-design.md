@@ -164,9 +164,9 @@ POST /api/projects/{pid}/scripts/{sid}/generation-queue/enqueue
 
 实现完成后更新：
 
-- `docs/code-design-plan.md`（生成队列模块 + API）
-- `docs/product-plan.md`（工作台侧栏能力一句）
-- `docs/frontend-style-guide.md`（抽屉模式）
+- `docs/superpowers/reference/code-design-plan.md`（生成队列模块 + API）
+- `docs/superpowers/reference/product-plan.md`（工作台侧栏能力一句）
+- `docs/superpowers/reference/frontend-style-guide.md`（抽屉模式）
 - `.env.example`（若有队列相关开关；MVP 可不加）
 
 ---

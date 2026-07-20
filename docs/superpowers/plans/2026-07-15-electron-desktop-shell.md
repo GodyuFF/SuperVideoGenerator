@@ -49,8 +49,8 @@
 
 **Files:**
 - Create: `dev-desktop.bat`
-- Modify: `docs/code-design-plan.md` §2
-- Modify: `docs/product-plan.md` / `README.md` brief
+- Modify: `docs/superpowers/reference/code-design-plan.md` §2
+- Modify: `docs/superpowers/reference/product-plan.md` / `README.md` brief
 - Modify: `CLAUDE.md` commands if needed
 
 - [ ] Step 1: Batch that starts API + web + electron

@@ -91,6 +91,7 @@ def test_delegate_tool_description_lists_current_eligible():
     )
     assert "当前可委派 agent_id：script_agent" in desc
     assert "【本轮可委派】" in desc
+    assert "必须单独成轮" in desc
 
 
 def test_master_state_json_includes_available_sub_agents():

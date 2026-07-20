@@ -3,6 +3,7 @@
 import pytest
 
 from core.llm.tool_call_batch import (
+    ExclusiveToolBatchError,
     merge_batch_observations,
     resolve_batch_execution_mode,
     validate_tool_call_batch,
@@ -19,13 +20,15 @@ def test_validate_sub_agent_parallel_create_actions():
 
 
 def test_validate_rejects_delegate_with_other_actions():
-    """独占 action 不可与其他 tool 同轮混用。"""
-    with pytest.raises(ValueError, match="不可与其他 tool 同轮调用"):
+    """独占 action 不可与其他 tool 同轮混用，并给出纠正指引。"""
+    with pytest.raises(ExclusiveToolBatchError, match="不可与其他 tool 同轮调用") as ei:
         validate_tool_call_batch(
             ["delegate_agent", "tool_list_assets"],
             channel="master",
         )
-
+    msg = str(ei.value)
+    assert "tool_list_assets" in msg
+    assert "下一轮只能单独调用「delegate_agent」" in msg
 
 def test_validate_master_tool_prefix_parallel():
     """主编排多个 tool_* 同轮并行。"""

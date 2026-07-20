@@ -1,0 +1,35 @@
+# 产品概览
+
+> 更新日期：2026-07-20  
+> 完整手册见 [product-plan.md](superpowers/reference/product-plan.md)
+
+**SuperVideoGenerator** 是基于多 Agent 协作的 AI 视频生成产品。用户用自然语言描述创意，主 Agent（超级视频大师）以 **ReAct** 编排剧本、分镜、生图、配音、剪辑等子 Agent，完成从创意到成片的生产。
+
+## 定位
+
+| 维度 | 说明 |
+|------|------|
+| 核心能力 | 剧本驱动 · 资产化管理 · 共享池 RAG · 可视化看板 |
+| 交互 | 左侧对话驱动 AI，右侧剧本页手工精修 |
+| 编排 | Plan 可见可审，再按步骤执行；可选 Goal 自主模式 |
+| 形态 | 浏览器开发模式 + Electron 桌面安装包 |
+
+## 核心原则（摘要）
+
+1. 一切实体带全局唯一 `asset_id`
+2. 文字资产与数字资产分离，媒体可追溯来源
+3. 有引用则不可删，UI 展示引用链
+4. 仅人物 / 道具 / 场景跨剧本共享
+5. 未执行态全量 CRUD，执行后只读
+
+## 用户价值
+
+- RAG 复用人物、场景、道具，降低系列剧重复劳动
+- Plan / A2UI 确认，避免黑盒一键生成
+- Edit Studio 多轨时间轴可预览、可写回
+- 数据默认留在本机 `data/`，不入 Git
+
+## 下一步
+
+- 上手：[快速开始](getting-started.md)
+- 细节：[产品计划手册](superpowers/reference/product-plan.md) · [代码设计](superpowers/reference/code-design-plan.md)

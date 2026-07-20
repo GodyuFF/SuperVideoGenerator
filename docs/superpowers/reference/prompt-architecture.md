@@ -1,6 +1,6 @@
 # 提示词架构（core/llm/prompt）
 
-> 更新日期：2026-07-20（create_frames/create_video_clips：`sub_shot_id` 全局反查；observation 回传 links；source_frame 自动绑）
+> 更新日期：2026-07-20（delegate_agent 独占混用：报错回写 observation 可恢复；提示词强化）
 
 本文档描述 SuperVideoGenerator 中 Agent 提示词的 **固定区 / 动态区** 分层设计，参考 Claude Code 的 system prompt 组装模式。主编排末条 user 的 `## 当前编排状态` JSON **字段级组装逻辑**见 [orchestration-state.md](orchestration-state.md)。
 
@@ -48,7 +48,7 @@
 | `tool` | `tool_call_id` + `content: str` | ReAct 观察结果 |
 | `system` | — | 枚举保留；system prompt 仍在 `LlmRequest.system` |
 
-**ReAct 一轮写入**：单 tool 时 `ConversationStore.add_react_turn` → `assistant`（`[{thinking}, {tool_use}]`）+ `tool`（observation）；**同轮多 tool**（并行或顺序，见 `batch_mode`）时 `add_react_turn_batch` → `assistant`（`[{thinking}, {tool_use}×N]`）+ `N` 条 `tool`（各自 `tool_call_id` 配对）。独占 `finish` / `ask_user_question` / `delegate_agent` 不可与其他 tool 同轮混用。孤立观察（决策失败）→ `assistant` 纯文本 `[观察] …`。
+**ReAct 一轮写入**：单 tool 时 `ConversationStore.add_react_turn` → `assistant`（`[{thinking}, {tool_use}]`）+ `tool`（observation）；**同轮多 tool**（并行或顺序，见 `batch_mode`）时 `add_react_turn_batch` → `assistant`（`[{thinking}, {tool_use}×N]`）+ `N` 条 `tool`（各自 `tool_call_id` 配对）。独占 `finish` / `ask_user_question` / `delegate_agent` 不可与其他 tool 同轮混用；违反时抛 `ExclusiveToolBatchError`，主编排将报错写入孤立 observation（`[观察] 主编排决策失败：…`）并**继续下一轮**供模型纠正，不因此直接 FAILED。其他决策失败仍中止。
 
 **存储层 → canonical 映射**（`conversation_messages_to_chat_blocks`，近透传）：
 
@@ -100,7 +100,7 @@ ReAct 一轮 canonical / wire：assistant（thinking + tool_use）→ `role: too
 }
 ```
 
-组装入口：`build_llm_request_ordered(...)` / `build_llm_request(...)`（[`chat_messages.py`](../core/llm/prompt/chat_messages.py)）。子 Agent：`decide_sub_agent` 将 `ctx.task_brief` 作为 `anchor_user`；行动执行将任务简报与 `action_context.txt` 动态槽位分离。行动参数字段见各 tool 的 `input_schema`（`core/llm/prompt/tools/schemas.py`），不再拼入 system。
+组装入口：`build_llm_request_ordered(...)` / `build_llm_request(...)`（[`chat_messages.py`](../../../core/llm/prompt/chat_messages.py)）。子 Agent：`decide_sub_agent` 将 `ctx.task_brief` 作为 `anchor_user`；行动执行将任务简报与 `action_context.txt` 动态槽位分离。行动参数字段见各 tool 的 `input_schema`（`core/llm/prompt/tools/schemas.py`），不再拼入 system。
 
 ## 2. 目录结构
 
@@ -217,7 +217,7 @@ LLMClient.complete_tool_calls(request)
 
 **editing_agent `layer_summary`**：每层 `id/name/z_index/clip_count/clips[]`（含 `start_ms/end_ms/asset_ref/transform/overlap_with_prev`）、`same_layer_overlaps[]`、`warnings`（全量）、`max_video_layers=5`。`compose_final` 失败时 observation 附加 `【图层摘要】` JSON；FFmpeg stderr 提取有效错误行（非 version 头）。首条 user 为任务简报锚点（或主编排真实用户输入）+ ReAct 多轮 thought/action/observation 历史；**末条 user** 注入 `## 当前编排状态` JSON 或 `## 当前行动上下文`（`turn_user`）。Token 压缩估算时将 static system + turn_user 合并计入。
 
-**历史压缩与 tool 配对**（[`chat_messages.py`](../core/llm/prompt/chat_messages.py) / [`history_compress.py`](../core/llm/prompt/history_compress.py)）：
+**历史压缩与 tool 配对**（[`chat_messages.py`](../../../core/llm/prompt/chat_messages.py) / [`history_compress.py`](../../../core/llm/prompt/history_compress.py)）：
 
 - **压缩触发**：`estimate_request_over_window` 仅比较 `prompt_estimated_tokens`（system + tools + messages）与 `context_window_tokens`（默认 1M）；未超窗时 `prepare_react_chat_history` 保留完整历史。
 - **超窗路径**：`maybe_compress_chat_history` 对较早消息 LLM 摘要；失败回退 `fit_chat_history` snippet 滑窗。
@@ -233,7 +233,7 @@ LLMClient.complete_tool_calls(request)
 
 ### 4.1 `plan_edit_timeline` 输出字段（editing_agent）
 
-Schema 单源：[`core/llm/tools/editing/schemas.py`](../core/llm/tools/editing/schemas.py)、clip 子结构 [`edit_timeline_schema.py`](../core/llm/tools/shared/edit_timeline_schema.py)。
+Schema 单源：[`core/llm/tools/editing/schemas.py`](../../../core/llm/tools/editing/schemas.py)、clip 子结构 [`edit_timeline_schema.py`](../../../core/llm/tools/shared/edit_timeline_schema.py)。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -246,7 +246,7 @@ Schema 单源：[`core/llm/tools/editing/schemas.py`](../core/llm/tools/editing/
 
 ### 4.2 `load_edit_context` 输出字段（editing_agent）
 
-Schema：[`output_schemas.py`](../core/llm/tools/output_schemas.py) `load_edit_context_output_schema()`；载荷构建：[`editing/context.py`](../core/llm/tools/editing/context.py)。
+Schema：[`output_schemas.py`](../../../core/llm/tools/output_schemas.py) `load_edit_context_output_schema()`；载荷构建：[`editing/context.py`](../../../core/llm/tools/editing/context.py)。
 
 | 字段 | 说明 |
 |------|------|
@@ -257,7 +257,7 @@ Schema：[`output_schemas.py`](../core/llm/tools/output_schemas.py) `load_edit_c
 | `plots` | plot/narration 剧情段落 |
 | `script.content_md` | 剧本正文摘要（截断） |
 | `edit_timeline` | 已有剪辑时间轴 revision、user_edited、shot_gaps |
-| `subtitle_style_context` | `output_canvas` + `subtitle_style`（按分辨率推荐字号/底边距/底中对齐）+ `common_presets`；见 [`subtitle_style.py`](../core/edit/subtitle_style.py) |
+| `subtitle_style_context` | `output_canvas` + `subtitle_style`（按分辨率推荐字号/底边距/底中对齐）+ `common_presets`；见 [`subtitle_style.py`](../../../core/edit/subtitle_style.py) |
 
 ### 4.3 空镜（scene）三层约束
 
@@ -273,7 +273,7 @@ Schema：[`output_schemas.py`](../core/llm/tools/output_schemas.py) `load_edit_c
 
 ### 4.4 分镜子镜 schema（storyboard Agent）
 
-Schema 单源：[`schema_builders.py`](../core/llm/prompt/tools/schema_builders.py) `build_sub_shot_schema()` / `build_sub_shot_image_schema()`；解析与缺省回填：[`sub_shot_produce.py`](../core/edit/sub_shot_produce.py)。
+Schema 单源：[`schema_builders.py`](../../../core/llm/prompt/tools/schema_builders.py) `build_sub_shot_schema()` / `build_sub_shot_image_schema()`；解析与缺省回填：[`sub_shot_produce.py`](../../../core/edit/sub_shot_produce.py)。
 
 | 字段 | 写入方 | 说明 |
 |------|--------|------|
@@ -298,11 +298,11 @@ Schema 单源：[`schema_builders.py`](../core/llm/prompt/tools/schema_builders.
 
 **自定义 Profile**：`registry.json` → `custom_profiles[]`（`id`、`label`、`based_on`）合并进 `PromptProfileRegistry.list_all_profiles()`；新建时从 `default` 工作区复制；`default` **不可编辑、不可删除**（仅使用磁盘 `fixed/*.md` 基线）；自定义 Profile 可编辑/删除；磁盘读取按 `based_on` 回退链。
 
-**风格 ↔ Profile 1:1**：自定义 `style_modes[].id` 必须等于 `default_prompt_profile` 与同名 `custom_profiles[].id`；`config_manager._load()` 与 PATCH 前经 [`style_profile_sync.py`](../core/llm/agent/style_profile_sync.py) 自动补齐/修正，并移除已下线风格（`dynamic_comic`、`marketing_video`、`marketing`）；`list_all_profiles()` 显示名优先取自 `StyleModeRegistry`。
+**风格 ↔ Profile 1:1**：自定义 `style_modes[].id` 必须等于 `default_prompt_profile` 与同名 `custom_profiles[].id`；`config_manager._load()` 与 PATCH 前经 [`style_profile_sync.py`](../../../core/llm/agent/style_profile_sync.py) 自动补齐/修正，并移除已下线风格（`dynamic_comic`、`marketing_video`、`marketing`）；`list_all_profiles()` 显示名优先取自 `StyleModeRegistry`。
 
-**内置风格 seed / 恢复**：三种内置视频风格（`storybook` / `ai_video` / `frame_i2v`）出厂配置固化于 [`core/llm/agent/seeds/profiles/`](../core/llm/agent/seeds/profiles/)（全量 8 Agent roster、空 `prompt_content`/`tool_overrides`）；`POST /api/agents/profiles/{profile_id}/restore` 与 `POST /api/agents/config/restore-builtin-profiles` 用 seed 覆盖工作区并清理聚合覆盖；内置风格 Profile **不可删除**、**可恢复**；自定义风格仅可删除、不可 restore。
+**内置风格 seed / 恢复**：三种内置视频风格（`storybook` / `ai_video` / `frame_i2v`）出厂配置固化于 [`core/llm/agent/seeds/profiles/`](../../../core/llm/agent/seeds/profiles/)（全量 8 Agent roster、空 `prompt_content`/`tool_overrides`）；`POST /api/agents/profiles/{profile_id}/restore` 与 `POST /api/agents/config/restore-builtin-profiles` 用 seed 覆盖工作区并清理聚合覆盖；内置风格 Profile **不可删除**、**可恢复**；自定义风格仅可删除、不可 restore。
 
-**画面图生视频（frame_i2v）**：分镜同时 `create_frames` + `create_video_clips`；`video_agent` 经 [`frame_i2v_spec.py`](../core/llm/tools/video/frame_i2v_spec.py) 以子镜 frame 为唯一 I2V 图生源（2+ frame → keyframes；1 frame → img2video；无 frame → text2video）；`video_clip` 仅提供 motion prompt，禁止以其 content 内嵌参考图作 I2V 输入。
+**画面图生视频（frame_i2v）**：分镜同时 `create_frames` + `create_video_clips`；`video_agent` 经 [`frame_i2v_spec.py`](../../../core/llm/tools/video/frame_i2v_spec.py) 以子镜 frame 为唯一 I2V 图生源（2+ frame → keyframes；1 frame → img2video；无 frame → text2video）；`video_clip` 仅提供 motion prompt，禁止以其 content 内嵌参考图作 I2V 输入。
 
 **工具过滤**：`tool_overrides[agent].exclude` 或 `include_only`（exclude 优先）；子 Agent 在 Skill filter 之后、`ReActAgent.decide` 内生效；主编排仅过滤 `tool_*`（`apply_master_tool_overrides`）。始终保留 `finish`、`ask_user_question`、`return_to_master`。
 
@@ -318,21 +318,21 @@ Schema 单源：[`schema_builders.py`](../core/llm/prompt/tools/schema_builders.
 
 | 模块 | 职责 |
 |------|------|
-| [`core/llm/model/chat_message.py`](../core/llm/model/chat_message.py) | Content block 模型、Anthropic wire 适配 |
-| [`core/llm/model/llm_request.py`](../core/llm/model/llm_request.py) | `LlmRequest` / `ToolDefinition` |
-| [`core/llm/client/wire.py`](../core/llm/client/wire.py) | canonical ↔ Anthropic wire ↔ 日志 body |
-| [`core/llm/tools/schemas.py`](../core/llm/tools/schemas.py) | 聚合各域 `*_SCHEMAS` + `action_input_schema` |
-| [`core/llm/prompt/tools/schemas.py`](../core/llm/prompt/tools/schemas.py) | re-export（prompt 层兼容） |
-| [`core/llm/tools/`](../core/llm/tools/) | MCP 语义 Tool Registry：`list_tools` / `call_tool` / `output_schema` 校验 |
-| [`core/llm/prompt/builder.py`](../core/llm/prompt/builder.py) | 固定/动态组装 |
-| [`core/llm/prompt/chat_messages.py`](../core/llm/prompt/chat_messages.py) | 多轮 Chat 历史构建 |
-| [`core/llm/prompt/context_manager.py`](../core/llm/prompt/context_manager.py) | 动态槽位 |
-| [`core/llm/agent/base.py`](../core/llm/agent/base.py) | 子 Agent ReAct / action 入口 |
-| [`core/llm/react_decide.py`](../core/llm/react_decide.py) | 统一 tool_calls ReAct 决策（主编排 + 子 Agent） |
-| [`core/llm/protocol.py`](../core/llm/protocol.py) | `parse_react_tool_calls` / `parse_react_tool_calls_batch` |
-| [`core/llm/tool_call_batch.py`](../core/llm/tool_call_batch.py) | 同轮多 tool 独占校验、并行/顺序分流、上限、`merge_batch_observations` |
-| [`core/llm/master/`](../core/llm/master/) | 主编排 ReActSession、actions、tools、`MasterReActEngine` |
-| [`core/conversation/`](../core/conversation/) | 主/子 Agent 消息隔离 |
+| [`core/llm/model/chat_message.py`](../../../core/llm/model/chat_message.py) | Content block 模型、Anthropic wire 适配 |
+| [`core/llm/model/llm_request.py`](../../../core/llm/model/llm_request.py) | `LlmRequest` / `ToolDefinition` |
+| [`core/llm/client/wire.py`](../../../core/llm/client/wire.py) | canonical ↔ Anthropic wire ↔ 日志 body |
+| [`core/llm/tools/schemas.py`](../../../core/llm/tools/schemas.py) | 聚合各域 `*_SCHEMAS` + `action_input_schema` |
+| [`core/llm/prompt/tools/schemas.py`](../../../core/llm/prompt/tools/schemas.py) | re-export（prompt 层兼容） |
+| [`core/llm/tools/`](../../../core/llm/tools/) | MCP 语义 Tool Registry：`list_tools` / `call_tool` / `output_schema` 校验 |
+| [`core/llm/prompt/builder.py`](../../../core/llm/prompt/builder.py) | 固定/动态组装 |
+| [`core/llm/prompt/chat_messages.py`](../../../core/llm/prompt/chat_messages.py) | 多轮 Chat 历史构建 |
+| [`core/llm/prompt/context_manager.py`](../../../core/llm/prompt/context_manager.py) | 动态槽位 |
+| [`core/llm/agent/base.py`](../../../core/llm/agent/base.py) | 子 Agent ReAct / action 入口 |
+| [`core/llm/react_decide.py`](../../../core/llm/react_decide.py) | 统一 tool_calls ReAct 决策（主编排 + 子 Agent） |
+| [`core/llm/protocol.py`](../../../core/llm/protocol.py) | `parse_react_tool_calls` / `parse_react_tool_calls_batch` |
+| [`core/llm/tool_call_batch.py`](../../../core/llm/tool_call_batch.py) | 同轮多 tool 独占校验、并行/顺序分流、上限、`merge_batch_observations` |
+| [`core/llm/master/`](../../../core/llm/master/) | 主编排 ReActSession、actions、tools、`MasterReActEngine` |
+| [`core/conversation/`](../../../core/conversation/) | 主/子 Agent 消息隔离 |
 
 ## 8. 变更记录
 
@@ -382,6 +382,7 @@ Schema 单源：[`schema_builders.py`](../core/llm/prompt/tools/schema_builders.
 | 2026-07-06 | **编排状态末轮注入**：`## 当前编排状态` / 行动上下文迁至 messages 末条 user（`turn_user`）；system 仅静态协议+角色；`extract_react_state_json` 优先解析末条 user |
 | 2026-07-12 | **子镜 Agent/Tools 升级**：`visuals` → `sub_shots`；`build_sub_shot_schema`（`images[]`/`videos[]`）；`create_frames.sub_shot_id` 必填；persist 校验每子镜 frame；`get_shot_details` 输出 `image_gap_sub_shots` |
 | 2026-07-13 | **单镜复核 + 384K 输出**：新增 `review_shot`（镜维度增量 patch）；`max_tokens` 上限 393216；`storyboard_refine_agent` 流水线改为逐镜 `review_shot`；跨镜仍用 `review_and_restructure` |
+| 2026-07-20 | **delegate_agent 独占混用可恢复**：`ExclusiveToolBatchError`；主编排将「不可与其他 tool 同轮调用」写回 observation 并继续；`react_tools.md` / master role / `MASTER_STATE_INSTRUCTIONS` / `delegate_agent` description 强化独占约束 |
 | 2026-07-20 | **画面图生视频（frame_i2v）**：第三种内置风格；`role.frame_i2v.md` / `hint.frame_i2v.md`；分镜 create_frames + create_video_clips；`frame_i2v_spec.py` I2V 只认 frame |
 | 2026-07-20 | **分镜子镜定位修复**：`create_frames`/`create_video_clips` 支持仅用 `sub_shot_id` 全局反查；空槽 upsert；observation 回传 `frame_links`/`video_clip_links`；`create_video_clips` 自动绑 `source_frame_asset_id`；`get_plan`/`serialize_shots_for_agent` 暴露资产映射 |
 | 2026-07-13 | **下线动态漫画/营销视频 AI**：保留 `storybook` / `ai_video` / `frame_i2v` 内置风格；`style_profile_sync` 移除 `dynamic_comic`/`marketing_*`；历史 id 迁移为 `storybook` |

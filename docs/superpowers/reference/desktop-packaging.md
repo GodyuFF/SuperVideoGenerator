@@ -53,7 +53,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-推送 `v*.*.*` 标签后，[`.github/workflows/release-desktop.yml`](../.github/workflows/release-desktop.yml) 会：
+推送 `v*.*.*` 标签后，[`.github/workflows/release-desktop.yml`](../../../.github/workflows/release-desktop.yml) 会：
 
 1. 在 Windows / macOS（x64 + arm64）并行构建未签名安装包；
 2. 汇总产物并创建 GitHub Release（含 `latest.yml` / `latest-mac.yml` 供 `electron-updater` 使用）。
@@ -98,7 +98,7 @@ chmod +x scripts/packaging/*.sh
 | **开发壳** | 仓库贡献者 | `launch-desktop.vbs` / `launch-desktop.bat`，或 `cd apps/desktop && npm start`；可选 `scripts/update_desktop_shortcut.ps1`；依赖本机 Python venv + Node，加载 Vite `:5173` |
 | **完整安装包** | 终端用户 | 从 Releases 安装；内置嵌入式 Python + 生产前端，API 与 UI 同源 `http://127.0.0.1:8000` |
 
-详见 [`apps/desktop/README.md`](../apps/desktop/README.md)。
+详见 [`apps/desktop/README.md`](../../../apps/desktop/README.md)。
 
 ---
 

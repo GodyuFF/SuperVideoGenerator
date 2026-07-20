@@ -10,6 +10,11 @@ from core.llm.tools.shared.agent_tools import ASK_USER_QUESTION_ACTION
 ReactChannel = Literal["master", "sub_agent"]
 BatchExecutionMode = Literal["parallel", "sequential"]
 
+
+class ExclusiveToolBatchError(ValueError):
+    """独占 action（finish / ask_user_question / delegate_agent）与其他 tool 同轮混用。"""
+
+
 # 同轮只能单独出现的 action
 EXCLUSIVE_ACTIONS = frozenset(
     {
@@ -97,8 +102,13 @@ def validate_tool_call_batch(
 
     exclusive = [a for a in actions if a in EXCLUSIVE_ACTIONS]
     if exclusive and len(actions) > 1:
-        raise ValueError(
-            f"action「{exclusive[0]}」不可与其他 tool 同轮调用"
+        exclusive_name = exclusive[0]
+        others = [a for a in actions if a != exclusive_name]
+        raise ExclusiveToolBatchError(
+            f"action「{exclusive_name}」不可与其他 tool 同轮调用"
+            f"（本轮同时返回了：{', '.join(actions)}）。"
+            f"下一轮只能单独调用「{exclusive_name}」；"
+            f"若需先查询，请先单独调用 {', '.join(others)}，完成后再单独委派/结束。"
         )
 
     return resolve_batch_execution_mode(actions, channel=channel)

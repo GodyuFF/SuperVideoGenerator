@@ -144,9 +144,9 @@ type VideoSourceRef = {
 
 实现后更新：
 
-- `docs/product-plan.md`（分镜二次生成视频参考、video_clip 五块关联）
-- `docs/code-design-plan.md`（video 工具 / regenerate options）
-- `docs/data-storage.md`（video_clip content 字段）
+- `docs/superpowers/reference/product-plan.md`（分镜二次生成视频参考、video_clip 五块关联）
+- `docs/superpowers/reference/code-design-plan.md`（video 工具 / regenerate options）
+- `docs/superpowers/reference/data-storage.md`（video_clip content 字段）
 - 本 spec 状态 → 已实现
 
 ---

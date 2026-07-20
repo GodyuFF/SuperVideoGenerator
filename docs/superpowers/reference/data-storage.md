@@ -257,7 +257,7 @@ Shot
 └── subtitles[]        # 镜内字幕（text / start_ms / end_ms / character / color）
 ```
 
-时段与意图解析/校验：[`core/edit/sub_shot_produce.py`](../core/edit/sub_shot_produce.py)（画面 `0+0` 回填子镜区间；缺 `produce_mode` 时按 `videos`/`images[].kind=video` 推断 `img2video`；历史 `still_edit`/`ai_video`/`hybrid` 读入规范为三值）。
+时段与意图解析/校验：[`core/edit/sub_shot_produce.py`](../../../core/edit/sub_shot_produce.py)（画面 `0+0` 回填子镜区间；缺 `produce_mode` 时按 `videos`/`images[].kind=video` 推断 `img2video`；历史 `still_edit`/`ai_video`/`hybrid` 读入规范为三值）。
 
 挂接边界见 [`product-plan.md`](product-plan.md)「分镜挂接与角色边界」：子镜槽位仅 `frame` / `video_clip`；角色仅配音幕 `character_ref`。
 

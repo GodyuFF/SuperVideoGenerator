@@ -48,7 +48,7 @@
 | `apps/web/src/desktop/types.ts` / `svfDesktop.ts` | 更新相关类型与 helper |
 | `tests/unit/test_desktop_static.py` | 静态挂载与 SPA |
 | `apps/desktop/prodServers.test.cjs` / `userDataPaths.test.cjs` | Node 单测 |
-| `docs/desktop-packaging.md` | 发版与首次打开说明 |
+| `docs/superpowers/reference/desktop-packaging.md` | 发版与首次打开说明 |
 
 ---
 
@@ -796,7 +796,7 @@ onUpdateAvailable: (cb) => { /* ipcRenderer.on 一次性订阅 */ },
 - 按钮「检查更新」
 - 文案：仅从 GitHub Releases 更新
 
-- [ ] **Step 4: 双版本升级手工验收清单写入 `docs/desktop-packaging.md`（Task 8 可合并）**
+- [ ] **Step 4: 双版本升级手工验收清单写入 `docs/superpowers/reference/desktop-packaging.md`（Task 8 可合并）**
 
 - [ ] **Step 5: Commit**
 
@@ -815,14 +815,14 @@ EOF
 ### Task 8: 文档同步与发版说明
 
 **Files:**
-- Create: `docs/desktop-packaging.md`
-- Modify: `docs/code-design-plan.md`（§2 仓库结构）
-- Modify: `docs/product-plan.md`（桌面分发一小段）
+- Create: `docs/superpowers/reference/desktop-packaging.md`
+- Modify: `docs/superpowers/reference/code-design-plan.md`（§2 仓库结构）
+- Modify: `docs/superpowers/reference/product-plan.md`（桌面分发一小段）
 - Modify: `apps/desktop/README.md`
 - Modify: `README.md`、`CLAUDE.md`
 - Modify: `docs/superpowers/specs/2026-07-17-desktop-installer-design.md`（状态保持已确认；链到本 plan）
 
-- [ ] **Step 1: 写 `docs/desktop-packaging.md`**
+- [ ] **Step 1: 写 `docs/superpowers/reference/desktop-packaging.md`**
 
 必须包含：
 1. 如何打 tag 发版（`git tag v0.1.0 && git push origin v0.1.0`）

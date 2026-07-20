@@ -9,7 +9,7 @@
 | **开发壳** | 仓库贡献者 | 本机需 Python venv + Node；加载 Vite 开发服务器 |
 | **完整安装包** | 终端用户 | 从 [GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) 安装；内置嵌入式 Python + 生产前端 |
 
-发版、未签名分发与本地打包见 [`docs/desktop-packaging.md`](../../docs/desktop-packaging.md)。
+发版、未签名分发与本地打包见 [`docs/superpowers/reference/desktop-packaging.md`](../../docs/superpowers/reference/desktop-packaging.md)。
 
 ---
 
@@ -94,4 +94,4 @@ npm run test:paths
 
 - [`docs/superpowers/specs/2026-07-17-desktop-installer-design.md`](../../docs/superpowers/specs/2026-07-17-desktop-installer-design.md) — 完整安装包
 - [`docs/superpowers/specs/2026-07-15-electron-desktop-shell-design.md`](../../docs/superpowers/specs/2026-07-15-electron-desktop-shell-design.md) — 开发壳
-- [`docs/desktop-packaging.md`](../../docs/desktop-packaging.md) — 发版与用户安装说明
+- [`docs/superpowers/reference/desktop-packaging.md`](../../docs/superpowers/reference/desktop-packaging.md) — 发版与用户安装说明

@@ -2,7 +2,7 @@
 
 > 日期：2026-07-14  
 > 用途：供产品/设计方审阅并回复「需要调整的部分」  
-> 代码依据：`core/models/entities.py`、`core/edit/shot_validate.py`、`core/edit/sub_shot_produce.py`、`docs/product-plan.md` §8  
+> 代码依据：`core/models/entities.py`、`core/edit/shot_validate.py`、`core/edit/sub_shot_produce.py`、`docs/superpowers/reference/product-plan.md` §8  
 > 状态：**待你回复调整点**  
 > 补充：2026-07-14 术语澄清（挂接视频=拼接片段≠成片；配音幕可转字幕）+ 剪辑一致性与展示编辑思考（§11）
 
@@ -271,7 +271,7 @@ editing_agent / 导出
 请按下面模板回复（可直接改写）：
 
 ```text
-【分镜结构】我看完 docs/shot-structure-and-logic.md
+【分镜结构】我看完 docs/superpowers/reference/shot-structure-and-logic.md
 
 1. 15s 上限：……
 2. 同轨重叠：……
@@ -302,7 +302,7 @@ editing_agent / 导出
 | 结构校验 | `core/edit/shot_validate.py` |
 | 画面时段 / produce_mode | `core/edit/sub_shot_produce.py` |
 | 从子镜派生视频轨 | `core/llm/agent/llm_action.py` → `_derive_video_tracks_from_sub_shots` |
-| 产品说明 | `docs/product-plan.md` §8 Shot 结构 |
+| 产品说明 | `docs/superpowers/reference/product-plan.md` §8 Shot 结构 |
 | produce_mode 专项 | `docs/superpowers/specs/2026-07-14-subshot-image-timing-produce-mode-design.md` |
 | 全片投影 | `core/edit/shot_flatten.py` → `EditTimeline` |
 

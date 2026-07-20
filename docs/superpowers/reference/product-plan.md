@@ -2,7 +2,7 @@
 
 > 版本：v0.1  
 > 更新：2026-07-17 — 剧本 `title` 以 Script 实体为准；创建/设计确认后锁定，对话不得改写；顶栏与看板展示读 `Script.title`（用户 PATCH 可改）；桌面完整离线安装包分发。  
-> 更新日期：2026-07-20（仓库清理：根目录仅 `launch-desktop.vbs`/`.bat`；分镜「剪辑轴」改为 EditTimeline 全片摘要；create_frames 支持仅 sub_shot_id；source_frame 自动绑）
+> 更新日期：2026-07-20（文档目录整理：手册迁入 `superpowers/reference`；仓库清理：根目录仅 `launch-desktop.vbs`/`.bat`；分镜「剪辑轴」改为 EditTimeline 全片摘要；create_frames 支持仅 sub_shot_id；source_frame 自动绑）
 > 状态：规划阶段
 
 ---
@@ -50,7 +50,7 @@
 
 ### 1.3 桌面分发（2026-07-17）
 
-除浏览器 + 本地 API 开发模式外，提供 **Electron 完整离线安装包**（Windows NSIS、macOS DMG），用户无需预装 Python/Node。个人开源默认**未签名**分发；用户从 [GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) 下载，并按 [`docs/desktop-packaging.md`](desktop-packaging.md) 绕过 SmartScreen / Gatekeeper。打包版通过 `electron-updater` 检查官方 Release 更新；项目数据与 API Key 保存在用户目录，升级保留。
+除浏览器 + 本地 API 开发模式外，提供 **Electron 完整离线安装包**（Windows NSIS、macOS DMG），用户无需预装 Python/Node。个人开源默认**未签名**分发；用户从 [GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) 下载，并按 [`docs/superpowers/reference/desktop-packaging.md`](desktop-packaging.md) 绕过 SmartScreen / Gatekeeper。打包版通过 `electron-updater` 检查官方 Release 更新；项目数据与 API Key 保存在用户目录，升级保留。
 
 ---
 
@@ -99,7 +99,7 @@
 - **持久化**：`localStorage` 键 `svg.locale`，刷新后保持选择
 - **覆盖范围**：全站按钮、Tab、下拉/右键菜单、工具栏 tooltip；含完整 OpenCut 嵌入层
 - **不在范围**：LLM 对话正文、用户项目名、API 下发的 A2UI 动态字段
-- **技术细节**：见 [`docs/i18n.md`](i18n.md)
+- **技术细节**：见 [`docs/superpowers/reference/i18n.md`](i18n.md)
 
 ### 3.1 主工作台布局（两阶段）
 
@@ -183,8 +183,8 @@
 ## 4. 领域模型与资产体系
 
 > **数据存储与关联关系完整说明**：
-> - 表结构设计与 ER 图：[`docs/data-storage-schema.md`](data-storage-schema.md)
-> - 持久化流程与目录：[`docs/data-storage.md`](data-storage.md)
+> - 表结构设计与 ER 图：[`docs/superpowers/reference/data-storage-schema.md`](data-storage-schema.md)
+> - 持久化流程与目录：[`docs/superpowers/reference/data-storage.md`](data-storage.md)
 
 ### 4.1 层级结构
 
@@ -310,7 +310,7 @@ interface TextAsset {
 
 ### 4.5 引用关系与资产谱系
 
-运行时引用仍存于 `MemoryStore.references`（JSON dict，非独立 SQL 表）；统一查询层 [`core/assets/lineage.py`](../core/assets/lineage.py) 合并以下多源边：
+运行时引用仍存于 `MemoryStore.references`（JSON dict，非独立 SQL 表）；统一查询层 [`core/assets/lineage.py`](../../../core/assets/lineage.py) 合并以下多源边：
 
 | 来源 | relation 示例 |
 |------|----------------|
@@ -364,11 +364,11 @@ interface TextAsset {
 - `POST .../scripts/{sid}/assets/{asset_id}/regenerate`（body 可选 `variant_id`）
 - `POST .../scripts/{sid}/shots/{shot_id}/regenerate`（body `{ "kinds": ["tts","frame","video"], "video": { "sub_shot_idx": 0, "source_frame_asset_ids": [], "source_media_ids": [], "source_element_refs": { "character": [] }, "video_mode": "img2video|keyframes" } }`；`video` 可选，未传则按子镜已有画面推断）
 
-实现：[`core/assets/regenerate.py`](../core/assets/regenerate.py)、[`AssetRegenerateButton.tsx`](../apps/web/src/components/AssetRegenerateButton.tsx)
+实现：[`core/assets/regenerate.py`](../../../core/assets/regenerate.py)、[`AssetRegenerateButton.tsx`](../../../apps/web/src/components/AssetRegenerateButton.tsx)
 
-**生成队列（2026-07-16）**：剧本工作台右侧可调宽抽屉，展示当前剧本维度的图片/视频生成任务（排队中 / 执行中 / 最近完成）；顶栏入口带角标，状态经 WebSocket `generation_queue_snapshot` 实时刷新；二次生成、资源列表批量与 Agent 批生图/视频均经后端全局串行队列，同时仅 1 条 running。实现：[`GenerationQueueDrawer.tsx`](../apps/web/src/components/GenerationQueueDrawer.tsx)、[`GenerationQueueContext.tsx`](../apps/web/src/context/GenerationQueueContext.tsx)。
+**生成队列（2026-07-16）**：剧本工作台右侧可调宽抽屉，展示当前剧本维度的图片/视频生成任务（排队中 / 执行中 / 最近完成）；顶栏入口带角标，状态经 WebSocket `generation_queue_snapshot` 实时刷新；二次生成、资源列表批量与 Agent 批生图/视频均经后端全局串行队列，同时仅 1 条 running。实现：[`GenerationQueueDrawer.tsx`](../../../apps/web/src/components/GenerationQueueDrawer.tsx)、[`GenerationQueueContext.tsx`](../../../apps/web/src/context/GenerationQueueContext.tsx)。
 
-**资源列表（原资源印样台，2026-07-15 更名）**：剧本工作台右侧可调宽抽屉，整表总览 `character` / `scene` / `prop` / `frame` / `video_clip` 媒体齐备度；支持类型/缺媒体筛选、勾选，以及底栏 **生成缺失** / **重新生成所选**（逐条调用 `assets/{id}/regenerate` 入队，由统一队列串行执行）。入口：看板 Tab 旁「资源列表」+ 各资产 Tab 工具栏。实现：[`BatchAssetStudioDrawer.tsx`](../apps/web/src/components/board/BatchAssetStudioDrawer.tsx)、[`batchAssetStudio.ts`](../apps/web/src/utils/batchAssetStudio.ts)。
+**资源列表（原资源印样台，2026-07-15 更名）**：剧本工作台右侧可调宽抽屉，整表总览 `character` / `scene` / `prop` / `frame` / `video_clip` 媒体齐备度；支持类型/缺媒体筛选、勾选，以及底栏 **生成缺失** / **重新生成所选**（逐条调用 `assets/{id}/regenerate` 入队，由统一队列串行执行）。入口：看板 Tab 旁「资源列表」+ 各资产 Tab 工具栏。实现：[`BatchAssetStudioDrawer.tsx`](../../../apps/web/src/components/board/BatchAssetStudioDrawer.tsx)、[`batchAssetStudio.ts`](../../../apps/web/src/utils/batchAssetStudio.ts)。
 
 **关系图 UI（2026-07-10 落地）**：看板 Tab 使用 `@xyflow/react` + `@dagrejs/dagre` **LR（左→右）** 分层布局；`smoothstep` 平滑连线；内置缩放/平移/MiniMap；单击节点打开图内右侧预览侧栏（入边/出边、复制 ID），「打开详情」跳转现有资产 Modal/Drawer。样式令牌 `--svf-graph-*` 定义于 `design-system.css`，随页面 **light/dark** 主题切换。实现：`apps/web/src/components/board/GraphBoard.tsx` 及 `graph/` 子模块。
 
@@ -494,7 +494,7 @@ interface ProjectConfig {
 | 剪辑看板 | 看板 Tab `edit`：只读多轨时间轴（含 `edit_description`、转场、背景、source_refs 摘要） |
 | 成片 | **storybook/comic**：`EditTimeline` → FFmpeg `compose_final`（运镜/转场/背景/字幕/配音）；**ai_video**：`video_agent.generate_from_timeline` → `editing_agent` 混流 |
 
-实体：`EditTimeline` / `EditClip`（[`core/models/entities.py`](../core/models/entities.py)），持久化 `dev_store.json` → `edit_timelines`。
+实体：`EditTimeline` / `EditClip`（[`core/models/entities.py`](../../../core/models/entities.py)），持久化 `dev_store.json` → `edit_timelines`。
 
 ---
 
@@ -570,7 +570,7 @@ interface PlanStep {
 
 ## 8. 子 Agent 设计
 
-> **提示词**：各 Agent 的固定角色说明与行动约束存放在 [`core/llm/prompt/agents/*/fixed/`](../core/llm/prompt/agents/)，动态上下文由 `PromptBuilder` + `AgentContextManager` 按轮次注入。详见 [提示词架构](prompt-architecture.md)。
+> **提示词**：各 Agent 的固定角色说明与行动约束存放在 [`core/llm/prompt/agents/*/fixed/`](../../../core/llm/prompt/agents/)，动态上下文由 `PromptBuilder` + `AgentContextManager` 按轮次注入。详见 [提示词架构](prompt-architecture.md)。
 
 ### 8.1 剧本 Agent（Script Agent）
 
@@ -721,7 +721,7 @@ POST  .../video-plan/ops               # 结构 ops（含 reorder）
 | 音画协调 | 按镜 `sync_policy`（narration_master / visual_master / balanced）；`analyze_av_sync` 分层自动修复；详见 [av-sync-plan.md](av-sync-plan.md) |
 | 版本 | `VideoPlan.detail_revision` 独立于 `EditTimeline.revision` |
 
-投影层：[`core/edit/shot_flatten.py`](../core/edit/shot_flatten.py)（Shot → EditTimeline）、[`core/edit/shot_detail_sync.py`](../core/edit/shot_detail_sync.py)（TTS 绑定与懒同步）、[`core/edit/shot_media_bind.py`](../core/edit/shot_media_bind.py)（生图/生视频回填 clip `media_id`）。
+投影层：[`core/edit/shot_flatten.py`](../../../core/edit/shot_flatten.py)（Shot → EditTimeline）、[`core/edit/shot_detail_sync.py`](../../../core/edit/shot_detail_sync.py)（TTS 绑定与懒同步）、[`core/edit/shot_media_bind.py`](../../../core/edit/shot_media_bind.py)（生图/生视频回填 clip `media_id`）。
 
 **TTS 时长来源**：metadata 与本地探测取可靠值；看板/剪辑 `GET edit-timeline` 路径上的 `refresh_shot_tts_durations_if_drifted` 在偏差 >200ms 时重绑定。主 voice clip 须相对镜起点（`start_ms=0`）；非零起点视为相对坐标损坏并强制归零收敛，避免每次打开重复重绑。本地探测结果按文件 mtime/size 进程内缓存。
 
@@ -783,7 +783,7 @@ load_edit_context → plan_edit_timeline → validate_edit_assets
 
 ## 9. RAG 资产复用
 
-> **更新 2026-07-20**：`resolve_shared_text_asset_sync` / 索引 embed 经 [`core/rag/async_bridge.py`](../core/rag/async_bridge.py) 在已有 asyncio 事件循环（FastAPI / ReAct）内也可安全调用，不再抛「不可在运行中的事件循环内同步调用」。
+> **更新 2026-07-20**：`resolve_shared_text_asset_sync` / 索引 embed 经 [`core/rag/async_bridge.py`](../../../core/rag/async_bridge.py) 在已有 asyncio 事件循环（FastAPI / ReAct）内也可安全调用，不再抛「不可在运行中的事件循环内同步调用」。
 > **更新 2026-07-16**：`core/rag/` 已落地；`create_character` / `create_scene` / `create_prop` 自动 RAG 解析。审计 UI / WebSocket 事件仍为后续 Phase。
 
 ### 9.1 适用范围
@@ -894,15 +894,15 @@ interface ReuseDecision {
 - **来源**：仅 `source_script_id` 匹配所选剧本
 - 展示：响应式卡片网格（与剧本内角色 Tab 一致），按类型分区；卡片 meta 行显示引用/来源剧本
 - 筛选偏好：`localStorage` 键 `svg.knowledge.filters`
-- 组件：[`KnowledgeBoard.tsx`](../apps/web/src/components/board/KnowledgeBoard.tsx)、[`knowledgeBoardFilters.ts`](../apps/web/src/components/board/knowledgeBoardFilters.ts)
+- 组件：[`KnowledgeBoard.tsx`](../../../apps/web/src/components/board/KnowledgeBoard.tsx)、[`knowledgeBoardFilters.ts`](../../../apps/web/src/components/board/knowledgeBoardFilters.ts)
 | **剧本级** | `script_details` 单剧本详情（正文预览 + 弹窗编辑 + 剧情段落） | `character` / `scene` / `prop` / `frame` / `storyboard` / `edit` / `media` / `pipeline` |
 
 **剧本详情 Tab（`script_details`）**（2026-07-12）：
 
 - 移除独立「剧本」二级 Tab；正文与剧情段落统一在详情页管理
-- 顶部：标题、状态、风格、目标时长与统计行；**编辑剧本** 打开 [`ScriptEditorModal`](../apps/web/src/components/board/ScriptEditorModal.tsx)（标题 / 目标时长 / Markdown 正文）
+- 顶部：标题、状态、风格、目标时长与统计行；**编辑剧本** 打开 [`ScriptEditorModal`](../../../apps/web/src/components/board/ScriptEditorModal.tsx)（标题 / 目标时长 / Markdown 正文）
 - 正文区：预览摘录（超 480 字可「查看全文并编辑」）；剧情段落列表支持新建 / 编辑 / 删除（`plot` 资产）
-- 组件：[`ScriptDetailsBoard.tsx`](../apps/web/src/components/board/ScriptDetailsBoard.tsx)、[`ScriptEditorModal.tsx`](../apps/web/src/components/board/ScriptEditorModal.tsx)
+- 组件：[`ScriptDetailsBoard.tsx`](../../../apps/web/src/components/board/ScriptDetailsBoard.tsx)、[`ScriptEditorModal.tsx`](../../../apps/web/src/components/board/ScriptEditorModal.tsx)
 
 **分镜 Tab（`storyboard`）**（2026-07-10 UI，2026-07-11 TTS 时长对齐，2026-07-12 镜内多轨抽屉）：
 
@@ -919,15 +919,15 @@ interface ReuseDecision {
   - 分镜 Tab 胶片条随右侧 `script-panel-scroll` 纵向滚动（执行计划 + 看板内容一体滚动）
 - TTS 试听 URL 统一为 `/api/.../assets/media/`（绝对本地路径自动映射）；打开分镜/剪辑 Tab 时自动刷新 TTS 时长（**不写**剪辑时间轴）
 - 视图偏好持久化：`localStorage` 键 `svg.storyboard.view`
-- 组件：[`StoryboardBoard.tsx`](../apps/web/src/components/board/StoryboardBoard.tsx)、[`StoryboardShotCard.tsx`](../apps/web/src/components/board/StoryboardShotCard.tsx)、[`ShotDetailDrawer.tsx`](../apps/web/src/components/board/ShotDetailDrawer.tsx)、[`ShotMiniTimeline.tsx`](../apps/web/src/components/board/ShotMiniTimeline.tsx)、[`ShotVoiceActCard.tsx`](../apps/web/src/components/board/ShotVoiceActCard.tsx)、[`ShotSubShotCard.tsx`](../apps/web/src/components/board/ShotSubShotCard.tsx)、[`ShotSegmentEditor.tsx`](../apps/web/src/components/board/ShotSegmentEditor.tsx)、[`shotSegmentUtils.ts`](../apps/web/src/utils/shotSegmentUtils.ts)
+- 组件：[`StoryboardBoard.tsx`](../../../apps/web/src/components/board/StoryboardBoard.tsx)、[`StoryboardShotCard.tsx`](../../../apps/web/src/components/board/StoryboardShotCard.tsx)、[`ShotDetailDrawer.tsx`](../../../apps/web/src/components/board/ShotDetailDrawer.tsx)、[`ShotMiniTimeline.tsx`](../../../apps/web/src/components/board/ShotMiniTimeline.tsx)、[`ShotVoiceActCard.tsx`](../../../apps/web/src/components/board/ShotVoiceActCard.tsx)、[`ShotSubShotCard.tsx`](../../../apps/web/src/components/board/ShotSubShotCard.tsx)、[`ShotSegmentEditor.tsx`](../../../apps/web/src/components/board/ShotSegmentEditor.tsx)、[`shotSegmentUtils.ts`](../../../apps/web/src/utils/shotSegmentUtils.ts)
 
 ### 10.5 剪辑工作室（edit）
 
 - 看板 API：`GET /api/projects/{id}/board/edit?script_id=…`
 - **Edit Studio**：`GET/PATCH .../edit-timeline`（revision 乐观锁）；`POST .../export` FFmpeg 异步导出
-- 前端剪辑 Tab：[`EditTabSimpleView.tsx`](../apps/web/src/editor/EditTabSimpleView.tsx) 简易预览 + 三种打开方式：
-  - **剪辑修改**：全屏弹窗 [`EditorStudioModal`](../apps/web/src/editor/EditorStudioModal.tsx)
-  - **单独页面**：哈希 `#/project/{id}/script/{scriptId}/edit` → [`EditorStudioPage`](../apps/web/src/pages/EditorStudioPage.tsx)
+- 前端剪辑 Tab：[`EditTabSimpleView.tsx`](../../../apps/web/src/editor/EditTabSimpleView.tsx) 简易预览 + 三种打开方式：
+  - **剪辑修改**：全屏弹窗 [`EditorStudioModal`](../../../apps/web/src/editor/EditorStudioModal.tsx)
+  - **单独页面**：哈希 `#/project/{id}/script/{scriptId}/edit` → [`EditorStudioPage`](../../../apps/web/src/pages/EditorStudioPage.tsx)
   - **新窗口打开**：系统浏览器新标签（`window.open`），保存后通过 `svg:edit-timeline-reloaded` 事件通知工作台刷新
 - OpenCut Classic 规格：[`opencut-integration.md`](opencut-integration.md)、[`edit-studio-plan.md`](edit-studio-plan.md)
 

@@ -15,7 +15,7 @@ globs: **/*.{py,ts,tsx,md}
 **BAD 示例**：修改了 `core/llm/master_react.py` 的 ReAct 逻辑，未更新 prompt-architecture.md 中的动态槽位表。
 
 **GOOD 示例**：
-- 修改后立即编辑 docs/prompt-architecture.md，更新“4. 动态槽位”表格与日期。
+- 修改后立即编辑 docs/superpowers/reference/prompt-architecture.md，更新“4. 动态槽位”表格与日期。
 - 提交前运行 grep 确认 docs/ 提及新 action。
 
 所有 PR/变更必须包含文档更新。

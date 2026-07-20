@@ -1,6 +1,6 @@
 # Tools 参考手册
 
-> 更新日期：2026-07-20（`sub_shot_id` 全局反查；observation 回传 frame/video_clip links；source_frame 自动绑）
+> 更新日期：2026-07-20（delegate_agent 独占成轮；混用报错回写 observation）
 
 本文档描述 SuperVideoGenerator 中 **MCP 语义 Tool Registry**（`core/llm/tools/`）与各 Agent 可调用的 action。主编排 ReAct 的 `delegate_agent` / `tool_*` 见文末「主编排专用」。
 
@@ -8,8 +8,8 @@
 
 - **API**：`GET /api/tools` 返回 `governance`（治理规则）、`agents`（按 Agent 分组）、`catalog`（扁平目录）。
 - **字段**：除 `scopes` / `operations` 外，每项含 `asset_layer`（资产层级）、`affected_data_read` / `affected_data_write`（影响数据，中文）、`boundary_note`、`may_write_edit_timeline`。
-- **实现**：[`tool_data_scope.py`](../core/llm/tools/tool_data_scope.py)、[`tool_taxonomy.py`](../core/llm/tools/tool_taxonomy.py)、[`apps/api/routes/tools.py`](../apps/api/routes/tools.py)。
-- **UI**：Agent 工作台「可选工具」列表与添加弹窗展示上述标签（[`AgentSettingsPage.tsx`](../apps/web/src/pages/AgentSettingsPage.tsx)）；添加弹窗每行右侧 **详情** 可展开入参/出参 JSON Schema（`input_schema` / `output_schema`，来自 Registry）。
+- **实现**：[`tool_data_scope.py`](../../../core/llm/tools/tool_data_scope.py)、[`tool_taxonomy.py`](../../../core/llm/tools/tool_taxonomy.py)、[`apps/api/routes/tools.py`](../../../apps/api/routes/tools.py)。
+- **UI**：Agent 工作台「可选工具」列表与添加弹窗展示上述标签（[`AgentSettingsPage.tsx`](../../../apps/web/src/pages/AgentSettingsPage.tsx)）；添加弹窗每行右侧 **详情** 可展开入参/出参 JSON Schema（`input_schema` / `output_schema`，来自 Registry）。
 
 ## 数据边界治理（强制）
 
@@ -74,15 +74,15 @@
 
 **工作台可选工具 UI**：展示当前 Agent 已生效的非 system 工具列表（含 `scopes` / `operations` / `description`）；支持删除与从全局 Registry（`GET /api/tools` 扁平化）跨 Agent 添加；首次编辑时由当前 effective 集初始化 `include_only`。
 
-**Profile Agent roster 与工具**：各 Profile 工作区 `agent_roster` 决定侧栏可见 Agent 与主编排 `delegate_agent` 的 `agent_id` enum / `agents_catalog.md` 注入范围；`super_video_master` 不可删；`default` Profile 只读且磁盘工作区保持空基线（运行时 roster 回退全量内置）。实现：[`agent_registry.py`](../core/llm/agent/agent_registry.py)、[`delegate_tool.py`](../core/llm/master/delegate_tool.py)、[`agent_tool_config.py`](../core/llm/tools/agent_tool_config.py) 中 `list_global_configurable_tools` / `resolve_effective_configurable_tools`。
+**Profile Agent roster 与工具**：各 Profile 工作区 `agent_roster` 决定侧栏可见 Agent 与主编排 `delegate_agent` 的 `agent_id` enum / `agents_catalog.md` 注入范围；`super_video_master` 不可删；`default` Profile 只读且磁盘工作区保持空基线（运行时 roster 回退全量内置）。实现：[`agent_registry.py`](../../../core/llm/agent/agent_registry.py)、[`delegate_tool.py`](../../../core/llm/master/delegate_tool.py)、[`agent_tool_config.py`](../../../core/llm/tools/agent_tool_config.py) 中 `list_global_configurable_tools` / `resolve_effective_configurable_tools`。
 
-**工具分类（工作台展示）**：每个 action 附带多标签 `scopes`（作用范围，如 script/plot/character）与 `operations`（操作意义，如 read/create/generate）；**跨范围只读**工具（`multi_scope_read=true`，一次查询 ≥2 类持久化实体）在工作台**单独置顶分区**，描述中含「查询：…」数据范围说明。实现见 [`tool_taxonomy.py`](../core/llm/tools/tool_taxonomy.py)、[`tool_data_scope.py`](../core/llm/tools/tool_data_scope.py)。
+**工具分类（工作台展示）**：每个 action 附带多标签 `scopes`（作用范围，如 script/plot/character）与 `operations`（操作意义，如 read/create/generate）；**跨范围只读**工具（`multi_scope_read=true`，一次查询 ≥2 类持久化实体）在工作台**单独置顶分区**，描述中含「查询：…」数据范围说明。实现见 [`tool_taxonomy.py`](../../../core/llm/tools/tool_taxonomy.py)、[`tool_data_scope.py`](../../../core/llm/tools/tool_data_scope.py)。
 
 主编排 `super_video_master` 的 override **仅作用于 `tool_*`**，不影响 `delegate_agent`。实现：`core/llm/tools/agent_tool_config.py`。
 
-**单源注册**：各域 [`register.py`](../core/llm/tools/bootstrap.py) → [`ToolRegistry`](../core/llm/tools/registry.py)。`read_only=true` 表示只读查询；其余 action 可能产生 store 或会话上下文写副作用。Registry 内部 `ToolKind`（`write_pipeline` / `write_ad_hoc`）仅用于 ReAct 编排分桶，**不在工作台 UI 展示**。
+**单源注册**：各域 [`register.py`](../../../core/llm/tools/bootstrap.py) → [`ToolRegistry`](../../../core/llm/tools/registry.py)。`read_only=true` 表示只读查询；其余 action 可能产生 store 或会话上下文写副作用。Registry 内部 `ToolKind`（`write_pipeline` / `write_ad_hoc`）仅用于 ReAct 编排分桶，**不在工作台 UI 展示**。
 
-**工作台专用工具（不注册 Registry）**：`generate_text_asset_draft`（[`core/llm/tools/workbench/generate_text_asset_draft.py`](../core/llm/tools/workbench/generate_text_asset_draft.py)）供剧本看板「新建角色/空镜/物品/画面」弹窗一键 AI 补全字段；经 `POST .../assets/generate-draft` 调用配置 LLM，返回 `{name, content}` JSON；**不出现在** Agent 可选工具列表与 `GET /api/tools` 分组。
+**工作台专用工具（不注册 Registry）**：`generate_text_asset_draft`（[`core/llm/tools/workbench/generate_text_asset_draft.py`](../../../core/llm/tools/workbench/generate_text_asset_draft.py)）供剧本看板「新建角色/空镜/物品/画面」弹窗一键 AI 补全字段；经 `POST .../assets/generate-draft` 调用配置 LLM，返回 `{name, content}` JSON；**不出现在** Agent 可选工具列表与 `GET /api/tools` 分组。
 
 **plan tracking**：所有 Registry action（含只读 list/get）的 `input_schema` 均声明 `plan_status` / `remaining_plan`（见 `core/llm/tools/shared/input_common.py` 的 `merge_plan_tracking`），与 ReAct 规则一致。
 
@@ -152,7 +152,7 @@
 
 **流水线**：`get_shot_details` → `get_shot_asset_timing` → `sync_actual_assets` → **逐镜 `review_shot`** → `update_frames` → `persist_review`（跨镜 split/merge 时用 `review_and_restructure`）
 
-**与用户 REST 共用**：`review_and_restructure` 的 `restructure_ops` 与 `POST .../video-plan/ops` 均调用 [`apply_restructure_ops`](../core/edit/storyboard_restructure.py)（含 `reorder`）；单镜字段 PATCH 走 [`video_plan_service.patch_shot_plan_fields`](../core/edit/video_plan_service.py)。
+**与用户 REST 共用**：`review_and_restructure` 的 `restructure_ops` 与 `POST .../video-plan/ops` 均调用 [`apply_restructure_ops`](../../../core/edit/storyboard_restructure.py)（含 `reorder`）；单镜字段 PATCH 走 [`video_plan_service.patch_shot_plan_fields`](../../../core/edit/video_plan_service.py)。
 
 ### 输入 schema（全部含 `plan_tracking`）
 
@@ -240,7 +240,7 @@
 | `read_webpage` | common.read_webpage | 只读 | 读取指定 URL 网页正文（http/https，只读） | `web_fetch/tool.py` |
 | `ask_user_question` | common.ask_user_question | ad_hoc | 向用户询问缺失信息（A2UI 弹窗，非 Registry 写操作） | `react_core` + A2UI |
 
-`read_webpage` 由 [`register_common_tools`](../core/llm/tools/common/register.py) 注册。**注入范围**：默认挂载 `script_agent`；**不注入** `storyboard_agent`、`storyboard_refine_agent`、`tts_agent`、`editing_agent`、`image_agent`、`video_agent`（见 [`bootstrap.py`](../core/llm/tools/bootstrap.py) `_exclude_common`）。主编排使用 `tool_read_webpage`。
+`read_webpage` 由 [`register_common_tools`](../../../core/llm/tools/common/register.py) 注册。**注入范围**：默认挂载 `script_agent`；**不注入** `storyboard_agent`、`storyboard_refine_agent`、`tts_agent`、`editing_agent`、`image_agent`、`video_agent`（见 [`bootstrap.py`](../../../core/llm/tools/bootstrap.py) `_exclude_common`）。主编排使用 `tool_read_webpage`。
 
 **URL 限制**：拒绝 `localhost`/内网地址及含 `/api/projects/` 的内部 API 路径；失败 observation 引导使用 `list_text_assets` / `list_audio` / `gather_media` 等内置工具。
 
@@ -248,11 +248,11 @@
 
 | action | logical_name | 读写 | 说明 | 注册 |
 |--------|--------------|------|------|------|
-| `web_search` | utility.web_search | 只读 | 联网搜索（DuckDuckGo / Tavily） | [`core/extensions/builtin/web_search.py`](../core/extensions/builtin/web_search.py) |
+| `web_search` | utility.web_search | 只读 | 联网搜索（DuckDuckGo / Tavily） | [`core/extensions/builtin/web_search.py`](../../../core/extensions/builtin/web_search.py) |
 
-**输入（ReAct）**：`query`（必填）、`observation`、`plan_status`、`remaining_plan`，可选 `max_results`（1–20）。Handler 与 `ToolSpec.input_schema` 共用 [`web_search_react_input_schema`](../core/llm/tools/web_search/schemas.py)，避免 Registry 与 handler 双重校验 schema 不一致。
+**输入（ReAct）**：`query`（必填）、`observation`、`plan_status`、`remaining_plan`，可选 `max_results`（1–20）。Handler 与 `ToolSpec.input_schema` 共用 [`web_search_react_input_schema`](../../../core/llm/tools/web_search/schemas.py)，避免 Registry 与 handler 双重校验 schema 不一致。
 
-**执行**：[`search_web`](../core/llm/tools/web_search/service.py) → 默认 DuckDuckGo HTML；若 `SVG_WEB_SEARCH_PROVIDER=tavily` 且配置 API Key 则走 Tavily。
+**执行**：[`search_web`](../../../core/llm/tools/web_search/service.py) → 默认 DuckDuckGo HTML；若 `SVG_WEB_SEARCH_PROVIDER=tavily` 且配置 API Key 则走 Tavily。
 
 默认**不**自动注入各 Agent；Skill `tools.enable` / `tools.agents` 或 pip 扩展包挂载。详见 [extensions.md](extensions.md)。
 
@@ -264,13 +264,13 @@ Registry 名格式 `mcp.{server_id}.{tool_name}`，`source=mcp`。配置见 `dat
 
 ## 主编排专用（super_video_master）
 
-以下 action **不在** MCP Registry，由 [`core/llm/master/tools.py`](../core/llm/master/tools.py) 与 [`core/llm/master/actions.py`](../core/llm/master/actions.py) 定义，经 `build_master_react_tools` 暴露给主编排 ReAct。
+以下 action **不在** MCP Registry，由 [`core/llm/master/tools.py`](../../../core/llm/master/tools.py) 与 [`core/llm/master/actions.py`](../../../core/llm/master/actions.py) 定义，经 `build_master_react_tools` 暴露给主编排 ReAct。
 
 ### 委派（delegate_agent）
 
 | 参数 / 字段 | 说明 |
 |-------------|------|
-| `delegate_agent` | 统一委派工具；`kind: agent` |
+| `delegate_agent` | 统一委派工具；`kind: agent`；**必须单独成轮**，禁止与 `tool_*` / `finish` / `ask_user_question` 同轮并行（违反 → `ExclusiveToolBatchError`，observation 回写后可纠正） |
 | `agent_id` | Profile roster 中的子 Agent 编码（如 `script_agent`、`copywriter`）；enum 由 `build_delegate_agent_input_schema` 按当前 Profile + 风格动态生成 |
 | `step_type`（内部） | 由 `resolve_step_for_roster_agent(agent_id)` 反向解析，用于完成态追踪（`completed_step_types`） |
 
@@ -292,7 +292,7 @@ Registry 名格式 `mcp.{server_id}.{tool_name}`，`source=mcp`。配置见 `dat
 
 ### return_to_master 协议
 
-子 Agent 在缺上游素材、需用户确认或外部阻塞时调用 `return_to_master`（**非** `finish`）。该工具以 `COMMON_AGENT` 注册，经 [`bootstrap.py`](../core/llm/tools/bootstrap.py) 自动合并进各子 Agent 的 `ad_hoc_actions`；**勿**在 `decide_sub_agent` 中重复追加，否则 LLM API 会报 `Tool names must be unique`。主编排收到后步骤标记 `PAUSED`，清空该子 Agent 会话；补数据后带 `resume_context` 重委派。`report_missing_assets` 为剪辑专用别名，内部同样抛出 `ReturnToMasterError`。
+子 Agent 在缺上游素材、需用户确认或外部阻塞时调用 `return_to_master`（**非** `finish`）。该工具以 `COMMON_AGENT` 注册，经 [`bootstrap.py`](../../../core/llm/tools/bootstrap.py) 自动合并进各子 Agent 的 `ad_hoc_actions`；**勿**在 `decide_sub_agent` 中重复追加，否则 LLM API 会报 `Tool names must be unique`。主编排收到后步骤标记 `PAUSED`，清空该子 Agent 会话；补数据后带 `resume_context` 重委派。`report_missing_assets` 为剪辑专用别名，内部同样抛出 `ReturnToMasterError`。
 
 | 字段 | 说明 |
 |------|------|
@@ -306,7 +306,7 @@ Registry 名格式 `mcp.{server_id}.{tool_name}`，`source=mcp`。配置见 `dat
 
 ## output_schema 注册规则
 
-[`output_schema_for()`](../core/llm/tools/register_helpers.py) 按以下优先级解析，**禁止**用宽泛 `startswith("update_")` 误匹配非 script 域 tool：
+[`output_schema_for()`](../../../core/llm/tools/register_helpers.py) 按以下优先级解析，**禁止**用宽泛 `startswith("update_")` 误匹配非 script 域 tool：
 
 | 映射表 | 覆盖示例 |
 |--------|----------|
@@ -318,7 +318,7 @@ Registry 名格式 `mcp.{server_id}.{tool_name}`，`source=mcp`。配置见 `dat
 
 **context/read tool**（如 `get_shot_details`、`get_export_status`）的 `required` **不得**含 `action`。`ToolRegistry.call_tool` 在 handler 成功后校验 `result.structured`；失败 observation 含 `tool=` 与 `required=` 便于定位。
 
-回归测试：[`tests/unit/test_all_tools_output_schema.py`](../tests/unit/test_all_tools_output_schema.py)。
+回归测试：[`tests/unit/test_all_tools_output_schema.py`](../../../tests/unit/test_all_tools_output_schema.py)。
 
 ---
 

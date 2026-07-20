@@ -30,7 +30,7 @@
 | `apps/web/src/components/board/ShotSubShotFramePicker.tsx` | 编辑单图时段（若编辑入口在此或 SegmentEditor） |
 | `apps/web/src/components/board/ShotSegmentEditor.tsx` | 子镜 produce_mode 编辑 |
 | `apps/web/src/i18n/locales/{zh-CN,en}/board.json` | 文案 |
-| `docs/product-plan.md` 等 | 文档同步 |
+| `docs/superpowers/reference/product-plan.md` 等 | 文档同步 |
 | `tests/unit/test_sub_shot_produce.py` | **新建** 纯函数测试 |
 
 ---
@@ -535,10 +535,10 @@ export function syncProduceModeFromVideoGenModes(modes: VisualVideoGenMode[]): P
 ### Task 6: 产品文档同步
 
 **Files:**
-- Modify: `docs/product-plan.md`（分镜子镜结构、§10 分镜抽屉）
-- Modify: `docs/data-storage.md` 或 `docs/data-storage-schema.md`（ShotSubShot / Image 字段表）
-- Modify: `docs/prompt-architecture.md`（storyboard 动态/固定区说明一行）
-- Modify: `docs/tools-reference.md`（create_shots / refine 字段）
+- Modify: `docs/superpowers/reference/product-plan.md`（分镜子镜结构、§10 分镜抽屉）
+- Modify: `docs/superpowers/reference/data-storage.md` 或 `docs/superpowers/reference/data-storage-schema.md`（ShotSubShot / Image 字段表）
+- Modify: `docs/superpowers/reference/prompt-architecture.md`（storyboard 动态/固定区说明一行）
+- Modify: `docs/superpowers/reference/tools-reference.md`（create_shots / refine 字段）
 - Modify: design spec 状态保持「已批准」；开放项勾选本期不做 hybrid 启发式
 
 - [ ] **Step 1: 按规格 §3–5 更新各文档日期与字段表**（无占位符）

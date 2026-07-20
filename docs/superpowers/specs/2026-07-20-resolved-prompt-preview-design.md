@@ -126,9 +126,9 @@ GET /api/projects/{project_id}/assets/{asset_id}/resolved-prompt
 
 ## 6. 文档同步
 
-- `docs/product-plan.md`：关联资产动态提示词旁补充「详情页可预览实际生成提示词」。  
-- `docs/code-design-plan.md`：API 表增加 `GET .../resolved-prompt`。  
-- `docs/frontend-style-guide.md`：若新增 section actions / 弹层模式，补一句。  
+- `docs/superpowers/reference/product-plan.md`：关联资产动态提示词旁补充「详情页可预览实际生成提示词」。  
+- `docs/superpowers/reference/code-design-plan.md`：API 表增加 `GET .../resolved-prompt`。  
+- `docs/superpowers/reference/frontend-style-guide.md`：若新增 section actions / 弹层模式，补一句。  
 - 本文件状态改为「已批准」后进入实现计划。
 
 ---

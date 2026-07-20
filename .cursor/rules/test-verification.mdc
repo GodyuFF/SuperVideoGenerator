@@ -27,6 +27,6 @@ if test_mode:
   pytest tests/unit/ -q && pytest tests/ -q
   ```
 - 仅在 `tests/support/scripted_llm.py` 中扩展 LLM 脚本响应。
-- 测试因 prompt 变更失败 → 同步更新 `docs/prompt-architecture.md` 并修复实际逻辑。
+- 测试因 prompt 变更失败 → 同步更新 `docs/superpowers/reference/prompt-architecture.md` 并修复实际逻辑。
 
 所有变更提交前必须附带“全量测试通过 + 无非测试mock”的确认。

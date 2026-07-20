@@ -14,7 +14,7 @@ alwaysApply: true
 **BAD 示例**：直接编辑 core/agents/xxx.py，未阅读 docs/。
 
 **GOOD 示例**：
-- 先 Read docs/prompt-architecture.md 确认 fixed/actions.md 结构。
+- 先 Read docs/superpowers/reference/prompt-architecture.md 确认 fixed/actions.md 结构。
 - 规划：新增 action 需同步更新 agents/*/fixed/actions.md 及 registry.py。
 
 若修改涉及 prompt 层或编排逻辑，必须引用文档中的“两条 LLM 调用链”。

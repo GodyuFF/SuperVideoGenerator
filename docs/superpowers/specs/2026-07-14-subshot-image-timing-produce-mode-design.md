@@ -129,7 +129,7 @@ produce_rationale: str = ""          # 短理由，可选，供下游 Agent / UI
 
 - 更新 `storyboard_agent` / `storyboard_refine_agent` 固定区：说明字段语义与推断启发（动作强、时段短 → 倾向 ai_video；风光建立、长时段静帧 → still_edit）  
 - Tool schema（`create_shots` / refine patch）增加 `produce_mode`、`produce_rationale`、`images[].start_ms/end_ms`  
-- 更新 `docs/prompt-architecture.md`、`docs/tools-reference.md`、`docs/product-plan.md` 对应章节
+- 更新 `docs/superpowers/reference/prompt-architecture.md`、`docs/superpowers/reference/tools-reference.md`、`docs/superpowers/reference/product-plan.md` 对应章节
 
 ---
 

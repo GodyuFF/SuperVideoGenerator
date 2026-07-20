@@ -60,7 +60,7 @@ Renderer (现有 apps/web)
 ## 启动与二进制安装（实现约束）
 
 - `dev-desktop.bat` / `apps/desktop/npm start` 经 `ensure-electron.cjs` 安装 **Electron 官方 zip 二进制** 到 `%LOCALAPPDATA%\SuperVideoGenerator\electron\v{version}\`（可用 `SVG_ELECTRON_HOME` 覆盖），**不依赖** 工作区内残缺的 `node_modules/electron`（Windows 上 Cursor/索引常锁住 `default_app.asar`，导致 `ECONNRESET` / `EBUSY` 后安装半残、窗口一闪退出）。
-- 默认 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`；`DESKTOP_WEB_URL` 固定 `http://localhost:5173`（见 `docs/i18n.md`）。
+- 默认 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`；`DESKTOP_WEB_URL` 固定 `http://localhost:5173`（见 `docs/superpowers/reference/i18n.md`）。
 - Vite 开发服须 `server.host: true`（`apps/web/vite.config.ts`）：默认仅绑 `::1` 时 Electron 窗口可能空白；主进程在 `did-fail-load` 时可见并重试加载。
 
 ## 验收
@@ -68,4 +68,4 @@ Renderer (现有 apps/web)
 1. `dev-desktop.bat`（或 `cd apps/desktop && npm start`）打开窗口并加载工作台
 2. 桌面下打开剪辑 Tab，水合不再对本机媒体发大体积 `fetch`（devtools Network 可见），改走 IPC
 3. 浏览器模式行为不变（无 `svfDesktop` 时仍 HTTP 水合）
-4. 相关单测通过；`docs/code-design-plan.md` 仓库结构含 `apps/desktop`
+4. 相关单测通过；`docs/superpowers/reference/code-design-plan.md` 仓库结构含 `apps/desktop`

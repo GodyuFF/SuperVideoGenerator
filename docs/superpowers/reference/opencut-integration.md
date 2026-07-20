@@ -1,8 +1,20 @@
 # OpenCut Classic 深度融合架构
 
-> 更新日期：2026-07-12（音效 API + shot 投影往返）
+> 更新日期：2026-07-20（许可声明）  
+> 先前：2026-07-12（音效 API + shot 投影往返）
 
-SuperVideoGenerator 以仓库根目录 [opencut-classic/](../opencut-classic/) 为参考，将完整 Classic 编辑器源码 Vite 化移植到 [`apps/web/src/editor/opencut/`](../apps/web/src/editor/opencut/)，经 SVF 适配层对接 FastAPI 与 editing_agent。
+## 许可与归属
+
+本仓库中 `apps/web/src/editor/opencut/` 等剪辑助手相关代码基于 **OpenCut**（MIT）。
+
+- 项目整体许可：[LICENSE](../../../LICENSE)（MIT）
+- OpenCut 版权与完整许可正文：[THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md)、[`apps/web/src/editor/opencut/LICENSE`](../../../apps/web/src/editor/opencut/LICENSE)
+
+Copyright 2025-2026 OpenCut — 须在所有副本或实质性部分中保留上述版权与许可声明。
+
+---
+
+SuperVideoGenerator 将 Classic 编辑器源码 Vite 化移植到 [`apps/web/src/editor/opencut/`](../../../apps/web/src/editor/opencut/)，经 SVF 适配层对接 FastAPI 与 editing_agent。
 
 ## SSOT 与三端一致
 
@@ -115,7 +127,7 @@ editing_agent tools → opencut_handler → patch_timeline → store
 
 - 剪辑 Tab mount / hover「剪辑修改」时预加载 `SvfClassicEditor` chunk 与 `opencut-wasm`
 - Vite `manualChunks`：`opencut-core` / `opencut-wasm` / `transformers`（字幕 Tab 懒加载）
-- **SVF 本地项目版本**：`CURRENT_PROJECT_VERSION = 31`（[`constants.ts`](../apps/web/src/editor/opencut/services/storage/constants.ts)）；不再运行 v0→v31 storage migrations，旧 OPFS 项目需清空站点数据后重建
+- **SVF 本地项目版本**：`CURRENT_PROJECT_VERSION = 31`（[`constants.ts`](../../../apps/web/src/editor/opencut/services/storage/constants.ts)）；不再运行 v0→v31 storage migrations，旧 OPFS 项目需清空站点数据后重建
 - Modal 传入 `initialTimeline` 避免重复 GET
 
 ## Agent 工具
@@ -128,7 +140,7 @@ editing_agent tools → opencut_handler → patch_timeline → store
 
 | 能力 | 说明 |
 |------|------|
-| 内置目录 | [`core/sounds/builtin_catalog.py`](../core/sounds/builtin_catalog.py)：12 条 Mixkit 可商用短音效，**无需 API Key** |
+| 内置目录 | [`core/sounds/builtin_catalog.py`](../../../core/sounds/builtin_catalog.py)：12 条 Mixkit 可商用短音效，**无需 API Key** |
 | 在线搜索 | 环境变量 `FREESOUND_API_KEY` → [Freesound API v2](https://freesound.org/docs/api/overview.html) |
 | 商用筛选 | `commercial_only=true`（默认）仅 CC0 / Attribution |
 | 预览代理 | `GET /api/sounds/preview/{id}` 绕过 CORS，供试听与时间轴 fetch |

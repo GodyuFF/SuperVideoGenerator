@@ -78,7 +78,7 @@ from core.models.entities import (
     StepStatus,
     VideoStyleMode,
 )
-from core.llm.tool_call_batch import merge_batch_observations
+from core.llm.tool_call_batch import ExclusiveToolBatchError, merge_batch_observations
 from core.store.memory import MemoryStore
 from core.super_video_master import MASTER_AGENT_NAME
 
@@ -539,6 +539,38 @@ class MasterReActEngine:
                 except ExecutionCancelledError:
                     user_aborted = True
                     break
+                except ExclusiveToolBatchError as e:
+                    # 独占混用属可恢复协议错误：把报错写回 observation，供下一轮纠正
+                    observation = f"主编排决策失败：{e}"
+                    ctx.observations.append(observation)
+                    session.observations = list(ctx.observations)
+                    self._conversations.add_orphan_observation(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        observation,
+                        channel="master",
+                    )
+                    await self._emit(
+                        script_id,
+                        "react_observation",
+                        {
+                            "iteration": ctx.iteration,
+                            "observation": observation,
+                            "conversation_id": conversation_id,
+                            "kind": "master",
+                        },
+                    )
+                    await self._drain_stream_delta(stream_id)
+                    await self._end_llm_stream(
+                        script_id,
+                        conversation_id,
+                        stream_id,
+                        "react_thought",
+                        iteration=ctx.iteration,
+                        visibility="user",
+                    )
+                    continue
                 except (RuntimeError, ValueError) as e:
                     observation = f"主编排决策失败：{e}"
                     ctx.observations.append(observation)

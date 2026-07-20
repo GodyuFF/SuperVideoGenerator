@@ -477,11 +477,12 @@ REACT_STATE_HEADER = MASTER_STATE_HEADER
 MASTER_STATE_INSTRUCTIONS = """说明（每轮决策前必读）：
 1. **必须通过 tool_calls 调用且只能调用**下方 JSON 的 `available_actions` 中提供的 function；角色说明中的行动全集仅供参考。
 2. 委派子 Agent 使用 `delegate_agent`，传入 `agent_id`；`sub_agents` 列出各子 Agent 职责与就绪状态；`available_sub_agents` 为本轮可委派的 agent_id 列表（与工具 enum 一致）。
-3. 当必要步骤均已完成、available_actions 仅剩 `finish` 时，应选择 `finish`。
-4. 勿根据对话历史中曾出现的行动，选用当前 available_actions 中已不存在的 action。
-5. 若最近 observation 报告图片生成失败且建议修订提示词，script 步骤可能已重新开放，应先分析失败明细再决定是否 `delegate_agent(agent_id=script_agent)` 修 prompt。
-6. **Store 复用**：启动时已将 `inferred_completed_steps` 写入 `completed_actions`（除非用户说「全部重做」，或明确要求重做/续跑某步如「重新配音」「从剪辑继续」——该步及下游才会剔除）。已有配音时勿再委派 tts_agent；据 `user_message` 与 `next_actions` 只补缺口；从剪辑继续且 `ready_for_edit_compose=true` 时优先 `editing_agent`。
-7. **完整成片顺序**：`remaining_plan` 须遵守 canonical：`storyboard_refine_agent` 为剪辑前最后一步；AI 视频须 `video_agent` → `tts_agent` → `storyboard_refine_agent` → `editing_agent`（禁止复核后再生视频）。"""
+3. **硬性独占**：`delegate_agent` / `finish` / `ask_user_question` 本轮 tool_calls **只能各占一轮且不可与其他 function 并列**；禁止与 `tool_*` 同轮。若 observation 含「不可与其他 tool 同轮调用」，下一轮立即改为只调那一个独占 action。
+4. 当必要步骤均已完成、available_actions 仅剩 `finish` 时，应选择 `finish`。
+5. 勿根据对话历史中曾出现的行动，选用当前 available_actions 中已不存在的 action。
+6. 若最近 observation 报告图片生成失败且建议修订提示词，script 步骤可能已重新开放，应先分析失败明细再决定是否 `delegate_agent(agent_id=script_agent)` 修 prompt。
+7. **Store 复用**：启动时已将 `inferred_completed_steps` 写入 `completed_actions`（除非用户说「全部重做」，或明确要求重做/续跑某步如「重新配音」「从剪辑继续」——该步及下游才会剔除）。已有配音时勿再委派 tts_agent；据 `user_message` 与 `next_actions` 只补缺口；从剪辑继续且 `ready_for_edit_compose=true` 时优先 `editing_agent`。
+8. **完整成片顺序**：`remaining_plan` 须遵守 canonical：`storyboard_refine_agent` 为剪辑前最后一步；AI 视频须 `video_agent` → `tts_agent` → `storyboard_refine_agent` → `editing_agent`（禁止复核后再生视频）。"""
 
 SUB_AGENT_STATE_INSTRUCTIONS = """说明（每轮决策前必读）：
 1. **必须通过 tool_calls 调用且只能调用**下方 JSON 的 `available_actions` 中提供的 function。

@@ -12,7 +12,7 @@ SuperVideoGenerator 支持通过 **pip entry_points** 扩展 Skill（prompt + to
 | `svg.tools` | 注册 Tool | `(registry: ToolRegistry) -> None` |
 | `svg.mcp_servers` | 预声明 MCP Server 模板 | `() -> dict` |
 
-主包 [`pyproject.toml`](../pyproject.toml) 已注册内置 `web_search` 扩展：
+主包 [`pyproject.toml`](../../../pyproject.toml) 已注册内置 `web_search` 扩展：
 
 ```toml
 [project.entry-points."svg.tools"]
@@ -31,13 +31,23 @@ web_search = "core.extensions.builtin.web_search:register_tools"
 
 ### 2.2 示例
 
-见 [`examples/svg-ext-template/`](../examples/svg-ext-template/)。
+扩展包是普通 Python 包，通过 `pyproject.toml` 声明 entry_points 即可。最小结构示例：
+
+```
+my_svg_ext/
+  pyproject.toml          # [project.entry-points."svg.tools"] / "svg.skills"
+  my_svg_ext/
+    __init__.py
+    tools.py              # def register_tools(registry): ...
+    skills.py             # def load_skills(): ...
+```
 
 ```bash
-cd examples/svg-ext-template
-pip install -e .
-# 重启 uvicorn
+pip install -e ./my_svg_ext
+# 重启 uvicorn 后生效
 ```
+
+内置参考实现：[`core/extensions/builtin/web_search.py`](../../../core/extensions/builtin/web_search.py)。
 
 ## 3. Skill 扩展
 
@@ -144,7 +154,7 @@ FastAPI startup
 
 | 路径 | 职责 |
 |------|------|
-| [`core/extensions/`](../core/extensions/) | 发现、Skill 合并、Tool 加载、过滤 |
-| [`core/extensions/mcp/`](../core/extensions/mcp/) | MCP Client、Adapter、Guard |
-| [`core/llm/tools/registry.py`](../core/llm/tools/registry.py) | ToolSpec.source、register_many |
-| [`GET /api/skills`](../apps/api/routes/skills.py) | Skill 列表（含 source/tools） |
+| [`core/extensions/`](../../../core/extensions/) | 发现、Skill 合并、Tool 加载、过滤 |
+| [`core/extensions/mcp/`](../../../core/extensions/mcp/) | MCP Client、Adapter、Guard |
+| [`core/llm/tools/registry.py`](../../../core/llm/tools/registry.py) | ToolSpec.source、register_many |
+| [`GET /api/skills`](../../../apps/api/routes/skills.py) | Skill 列表（含 source/tools） |

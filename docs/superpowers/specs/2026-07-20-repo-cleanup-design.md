@@ -17,7 +17,7 @@
 | 垃圾 mp4 | 删除根目录 `fake_*.mp4`、`shot_pipeline_out.mp4` |
 | demo 媒体 | 删除 `apps/web/public/demo/*.mp4`（代码无引用）及 `dist/demo` 副本 |
 | 本地大目录 | 清空 `.worktrees/`、`apps/desktop/runtime/`、`.remotion/` |
-| 保留 | `data/`、`.venv`、`node_modules`、`examples/`、`vendor/` |
+| 保留 | `data/`、`.venv`、`node_modules`（不含 examples/vendor；2026-07-20 已删） |
 
 ## 文档同步
 
