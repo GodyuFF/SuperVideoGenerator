@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SuperVideoGenerator</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..800&family=Outfit:wght@300..800&display=swap"
+    rel="stylesheet"
+  />
+</head>
+<body>
+  <header class="topbar">
+    <a class="topbar-brand" href="#" data-i18n="brand"></a>
+    <nav class="topbar-nav" aria-label="Primary">
+      <a href="#pipeline" data-i18n="navPipeline"></a>
+      <a href="#film" data-i18n="navFilm"></a>
+      <a href="#get" data-i18n="navGet"></a>
+    </nav>
+    <div class="topbar-lang" role="group" aria-label="Language">
+      <button type="button" data-lang-set="zh" data-i18n="langZh"></button>
+      <button type="button" data-lang-set="en" data-i18n="langEn"></button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1 data-i18n="heroTitle"></h1>
+      <p class="hero-claim" data-i18n="heroClaim"></p>
+      <div class="hero-cta">
+        <button type="button" class="btn btn-primary cta-watch" data-i18n="ctaWatch"></button>
+        <a
+          class="btn btn-secondary"
+          href="https://github.com/GodyuFF/SuperVideoGenerator/releases"
+          data-i18n="ctaDownload"
+        ></a>
+        <a
+          class="btn btn-ghost"
+          href="https://github.com/GodyuFF/SuperVideoGenerator"
+          data-i18n="ctaGithub"
+        ></a>
+      </div>
+      <div class="viewfinder">
+        <div class="viewfinder-light" aria-hidden="true"></div>
+        <video
+          id="demo"
+          controls
+          playsinline
+          preload="metadata"
+          data-i18n-attr="title:videoTitle"
+        >
+          <source src="assets/demo-final.mp4" type="video/mp4" />
+        </video>
+      </div>
+    </section>
+
+    <section id="pipeline">
+      <p class="eyebrow" data-i18n="pipelineEyebrow"></p>
+      <div class="filmstrip sprocket">
+        <article class="step">
+          <h2 data-i18n="stepDialogue"></h2>
+          <p data-i18n="stepDialogueBody"></p>
+          <div class="placeholder-frame" data-i18n="placeholderChat"></div>
+        </article>
+        <article class="step">
+          <h2 data-i18n="stepBoard"></h2>
+          <p data-i18n="stepBoardBody"></p>
+          <div class="placeholder-frame" data-i18n="placeholderBoard"></div>
+          <div class="placeholder-frame" data-i18n="placeholderAssets"></div>
+        </article>
+        <article class="step is-active">
+          <h2 data-i18n="stepEdit"></h2>
+          <p data-i18n="stepEditBody"></p>
+          <img
+            src="assets/edit-timeline.png"
+            width="1200"
+            height="675"
+            data-i18n-attr="alt:editAlt"
+            class="pipeline-shot"
+          />
+        </article>
+        <article class="step">
+          <h2 data-i18n="stepFinal"></h2>
+          <p data-i18n="stepFinalBody"></p>
+          <a class="step-final-link" href="#film" data-i18n="ctaWatch"></a>
+        </article>
+      </div>
+    </section>
+
+    <section id="film">
+      <h2 data-i18n="stepFinal"></h2>
+      <p data-i18n="stepFinalBody"></p>
+      <button type="button" class="btn btn-primary cta-watch" data-i18n="ctaWatch"></button>
+    </section>
+
+    <section class="caps">
+      <p class="eyebrow" data-i18n="capsEyebrow"></p>
+      <div class="caps-grid">
+        <article class="cap">
+          <h3 data-i18n="capChatTitle"></h3>
+          <p data-i18n="capChatBody"></p>
+        </article>
+        <article class="cap">
+          <h3 data-i18n="capAssetsTitle"></h3>
+          <p data-i18n="capAssetsBody"></p>
+        </article>
+        <article class="cap">
+          <h3 data-i18n="capEditTitle"></h3>
+          <p data-i18n="capEditBody"></p>
+        </article>
+      </div>
+    </section>
+
+    <section id="get">
+      <p class="eyebrow" data-i18n="getEyebrow"></p>
+      <div class="get-actions">
+        <a
+          class="btn btn-primary"
+          href="https://github.com/GodyuFF/SuperVideoGenerator/releases"
+          data-i18n="getDownload"
+        ></a>
+        <div class="get-clone">
+          <p data-i18n="getClone"></p>
+          <pre><code data-i18n="getCloneCmd"></code></pre>
+        </div>
+        <a
+          href="https://github.com/GodyuFF/SuperVideoGenerator/blob/main/docs/getting-started.md"
+          data-i18n="getDocs"
+        ></a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a
+      href="https://github.com/GodyuFF/SuperVideoGenerator/blob/main/LICENSE"
+      data-i18n="footerLicense"
+    ></a>
+    <a
+      href="https://github.com/GodyuFF/SuperVideoGenerator/blob/main/THIRD_PARTY_NOTICES.md"
+      data-i18n="footerNotices"
+    ></a>
+  </footer>
+
+  <script src="i18n.js"></script>
+  <script>
+    document.querySelectorAll(".cta-watch").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var demo = document.getElementById("demo");
+        if (!demo) return;
+        demo.scrollIntoView({ behavior: "smooth", block: "center" });
+        demo.play();
+      });
+    });
+  </script>
+</body>
+</html>
