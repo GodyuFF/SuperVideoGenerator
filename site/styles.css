@@ -1,0 +1,657 @@
+/* SuperVideoGenerator 展示站 — 暗房胶片视觉系统 */
+
+:root {
+  --film-void: #12100e;
+  --film-surface: #1c1916;
+  --film-ink: #e8e2d6;
+  --film-muted: #a39a8c;
+  --film-accent: #e0634a;
+  --film-accent-hover: #c4523c;
+  --film-copper: #8a7a62;
+  --film-border: color-mix(in srgb, var(--film-copper) 50%, transparent);
+  --film-border-subtle: color-mix(in srgb, var(--film-copper) 25%, transparent);
+  --font-display: "Newsreader", Georgia, serif;
+  --font-body: "Outfit", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 0.75rem;
+  --space-lg: 1.25rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --max-width: 72rem;
+  --topbar-height: 3.25rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--film-void);
+  color: var(--film-ink);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+img,
+video {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: var(--film-accent);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+a:hover {
+  color: var(--film-accent-hover);
+}
+
+/* ── 顶栏 ── */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  height: var(--topbar-height);
+  padding: 0 var(--space-lg);
+  background: color-mix(in srgb, var(--film-void) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--film-border-subtle);
+}
+
+.topbar-brand {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--film-ink);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.topbar-brand:hover {
+  color: var(--film-accent);
+}
+
+.topbar-nav {
+  display: flex;
+  gap: var(--space-lg);
+  flex: 1;
+}
+
+.topbar-nav a {
+  font-size: 0.9rem;
+  color: var(--film-muted);
+}
+
+.topbar-nav a:hover {
+  color: var(--film-ink);
+}
+
+.topbar-lang {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--film-surface);
+  border: 1px solid var(--film-border-subtle);
+  border-radius: 4px;
+}
+
+.topbar-lang button {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 0.3rem 0.55rem;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--film-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.topbar-lang button:hover {
+  color: var(--film-ink);
+}
+
+.topbar-lang button[aria-pressed="true"] {
+  background: var(--film-accent);
+  color: var(--film-void);
+}
+
+/* ── 主内容区 ── */
+
+main {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0 var(--space-lg) var(--space-2xl);
+}
+
+main > section {
+  padding-top: var(--space-2xl);
+}
+
+/* ── Hero ── */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: var(--space-xl);
+  gap: var(--space-lg);
+}
+
+.hero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.25rem, 6vw, 3.75rem);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--film-ink);
+}
+
+.hero-claim {
+  margin: 0;
+  max-width: 36ch;
+  font-size: clamp(1.05rem, 2.5vw, 1.25rem);
+  color: var(--film-muted);
+}
+
+.hero-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-sm);
+}
+
+.hero .viewfinder {
+  width: 100%;
+  margin-top: var(--space-md);
+}
+
+.hero .viewfinder video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #0a0908;
+  vertical-align: top;
+}
+
+/* ── 取景器 ── */
+
+.viewfinder {
+  position: relative;
+  background: var(--film-surface);
+  border: 1px solid var(--film-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.viewfinder-light {
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--film-accent), transparent);
+}
+
+/* ── 眉标 ── */
+
+.eyebrow {
+  margin: 0 0 var(--space-lg);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--film-copper);
+}
+
+/* ── 胶片流水线 ── */
+
+.filmstrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(200px, 1fr));
+  gap: var(--space-md);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--film-copper) var(--film-surface);
+}
+
+.filmstrip::-webkit-scrollbar {
+  height: 6px;
+}
+
+.filmstrip::-webkit-scrollbar-track {
+  background: var(--film-surface);
+  border-radius: 3px;
+}
+
+.filmstrip::-webkit-scrollbar-thumb {
+  background: var(--film-copper);
+  border-radius: 3px;
+}
+
+.sprocket {
+  position: relative;
+  padding-top: 1.1rem;
+  padding-bottom: 1.1rem;
+}
+
+.sprocket::before,
+.sprocket::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--film-copper) 70%, transparent) 2.5px,
+    transparent 2.5px
+  );
+  background-size: 14px 8px;
+  background-repeat: repeat-x;
+  pointer-events: none;
+}
+
+.sprocket::before {
+  top: 0;
+}
+
+.sprocket::after {
+  bottom: 0;
+}
+
+.step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--film-surface);
+  border: 1px solid var(--film-border-subtle);
+  border-radius: 4px;
+  scroll-snap-align: start;
+  opacity: 0.65;
+  transition: opacity 0.2s ease, border-color 0.2s ease;
+}
+
+.step h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--film-muted);
+}
+
+.step p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--film-muted);
+  flex: 1;
+}
+
+.step.is-active {
+  opacity: 1;
+  border-color: var(--film-border);
+}
+
+.step.is-active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--film-accent), transparent);
+  border-radius: 4px 4px 0 0;
+}
+
+.step.is-active::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--film-accent);
+}
+
+.step.is-active h2 {
+  color: var(--film-ink);
+}
+
+.step.is-active p {
+  color: color-mix(in srgb, var(--film-ink) 80%, var(--film-muted));
+}
+
+.placeholder-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 5rem;
+  padding: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--film-muted);
+  text-align: center;
+  border: 1px dashed var(--film-border);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--film-void) 60%, transparent);
+}
+
+.pipeline-shot {
+  border-radius: 3px;
+  border: 1px solid var(--film-border-subtle);
+}
+
+.step-final-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: auto;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--film-accent);
+}
+
+.step-final-link::after {
+  content: "→";
+}
+
+/* ── 成片区 ── */
+
+#film {
+  text-align: center;
+}
+
+#film h2 {
+  margin: 0 0 var(--space-sm);
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 500;
+}
+
+#film p {
+  margin: 0 0 var(--space-lg);
+  color: var(--film-muted);
+  max-width: 48ch;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── 能力三格 ── */
+
+.caps-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-md);
+}
+
+.cap {
+  padding: var(--space-lg);
+  background: var(--film-surface);
+  border: 1px solid var(--film-border-subtle);
+  border-radius: 4px;
+}
+
+.cap h3 {
+  margin: 0 0 var(--space-sm);
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: var(--film-ink);
+}
+
+.cap p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--film-muted);
+}
+
+/* ── 上手区 ── */
+
+.get-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  max-width: 40rem;
+}
+
+.get-clone {
+  padding: var(--space-md) var(--space-lg);
+  background: var(--film-surface);
+  border: 1px solid var(--film-border-subtle);
+  border-radius: 4px;
+}
+
+.get-clone p {
+  margin: 0 0 var(--space-sm);
+  font-size: 0.875rem;
+  color: var(--film-muted);
+}
+
+.get-clone pre {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--film-void);
+  border-radius: 3px;
+  overflow-x: auto;
+}
+
+.get-clone code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--film-ink);
+}
+
+#get > .get-actions > a:not(.btn) {
+  font-size: 0.9rem;
+  color: var(--film-muted);
+}
+
+#get > .get-actions > a:not(.btn):hover {
+  color: var(--film-accent);
+}
+
+/* ── 按钮 ── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: 0.6rem 1.15rem;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.2;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--film-accent);
+  color: var(--film-void);
+  border-color: var(--film-accent);
+}
+
+.btn-primary:hover {
+  background: var(--film-accent-hover);
+  border-color: var(--film-accent-hover);
+  color: var(--film-void);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--film-ink);
+  border-color: var(--film-border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--film-copper);
+  color: var(--film-ink);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--film-muted);
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  color: var(--film-ink);
+  background: color-mix(in srgb, var(--film-surface) 80%, transparent);
+}
+
+/* ── 页脚 ── */
+
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-xl) var(--space-lg);
+  border-top: 1px solid var(--film-border-subtle);
+}
+
+.site-footer a {
+  font-size: 0.8rem;
+  color: var(--film-muted);
+}
+
+.site-footer a:hover {
+  color: var(--film-ink);
+}
+
+/* ── 入场动效 ── */
+
+@keyframes film-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes strip-nudge {
+  from {
+    transform: translateX(-6px);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero .viewfinder-light {
+    opacity: 0;
+    animation: film-fade-in 0.7s ease forwards;
+  }
+
+  .hero h1 {
+    opacity: 0;
+    animation: film-fade-in 0.6s ease 0.45s forwards;
+  }
+
+  .hero .hero-claim,
+  .hero .hero-cta {
+    opacity: 0;
+    animation: film-fade-in 0.5s ease 0.65s forwards;
+  }
+
+  .hero .viewfinder {
+    opacity: 0;
+    animation: film-fade-in 0.7s ease 0.85s forwards;
+  }
+
+  .filmstrip.sprocket {
+    animation: strip-nudge 0.45s ease-out 0.2s both;
+  }
+}
+
+/* ── 响应式 ── */
+
+@media (max-width: 900px) {
+  .filmstrip {
+    grid-template-columns: repeat(4, minmax(240px, 80vw));
+    padding-bottom: var(--space-sm);
+  }
+
+  .caps-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: var(--space-sm) var(--space-md);
+    gap: var(--space-sm);
+  }
+
+  .topbar-nav {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    gap: var(--space-md);
+  }
+
+  .topbar-lang {
+    margin-left: auto;
+  }
+
+  main {
+    padding-left: var(--space-md);
+    padding-right: var(--space-md);
+  }
+
+  .hero-cta {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .hero-cta .btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
