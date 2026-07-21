@@ -8,9 +8,9 @@ Language: [中文](README.md) | **English**
 
 **From script to final cut — one conversation pipeline.**
 
-A local-first, multi-agent AI video tool: describe your idea in natural language to produce script, storyboard, images, voiceover, and edit. Bring your own API keys; project data stays on your machine by default.
+Skip the steep tool learning curve: say what you want to make, and multi-agent orchestration carries you through script, storyboard, images, voiceover, and edit. Bring your own API keys; data stays on your machine by default.
 
-**Get started:** [Download installer](https://github.com/GodyuFF/SuperVideoGenerator/releases) · [Quick start](docs/getting-started.md) (zh) · [Product overview](docs/product-overview.md) (zh)
+**Get started:** [Download installer](https://github.com/GodyuFF/SuperVideoGenerator/releases) · [Quick start](docs/getting-started.en.md) ([中文](docs/getting-started.md)) · [Product overview](docs/product-overview.md) (zh)
 
 ## Demo
 
@@ -37,40 +37,35 @@ Sample story: Nüwa Mends the Sky (storybook final cut).
 
 ## Features
 
-- **Chat + board**: Plans are visible and reviewable before execution
-- **Sub-agent pipeline**: Script / storyboard / image / TTS / edit / AI video
-- **Asset reuse**: Characters, props, and scenes shared across scripts
-- **Edit Studio**: In-shot multi-track polish with write-back to shots
-- **Local-first**: Projects and API keys live under `data/` (not in Git by default)
-- **Desktop distribution**: Electron shell + installers on GitHub Releases
+- **Make video by chatting**: Describe the idea in natural language and push toward a final cut — less tool friction, more time for the story
+- **Multi-agent you can see**: Reviewable steps, rich logs, and customizable flows — ship videos today, or learn agents and extend the system
+- **One entry, many providers**: Chat and generation across multiple LLM / image / TTS services — pick the right model per job, no single-vendor lock-in
+- **A clear path, not a maze**: Script → storyboard → final cut without complex canvas node graphs — fast to learn, easier to control
+- **Polish without losing the plot**: Board edits for plans and shots, Edit Studio for multi-track polish, reusable characters and scenes; keys stay local, desktop install ready to go
+
+## Join the community
+
+Curious about workflows, orchestration, or extending the project? Join the group to chat, share cases, and improve the pipeline together.
+
+| Channel | Detail |
+|---------|--------|
+| QQ group | `829936747` |
+| WeChat group | Scan the QR below (it expires; use QQ or email if needed) |
+| Email | [312188032@qq.com](mailto:312188032@qq.com) |
+
+<img src="site/assets/wechat-group-qr.png" alt="WeChat group QR code" width="180" />
 
 ## Quick Start
 
-Requires Python 3.11+ and Node.js 18+ (FFmpeg optional).
+**Day-to-day use:** Download the desktop installer from [Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) and configure API keys in the app (unsigned-installer warnings are expected).
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate          # Windows; macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-cd apps/web && npm install && cd ../..
-cp .env.example .env            # set at least an LLM API key
-```
-
-**Launch (Windows recommended):**
+**From source (desktop shell):** Requires Python 3.11+ and Node.js 18+. After installing dependencies, from the repository root:
 
 ```bat
 launch-desktop.vbs
 ```
 
-Or browser mode: `uvicorn apps.api.main:app --port 8000` + `cd apps/web && npm run dev` → [http://localhost:5173](http://localhost:5173)
-
-Full steps: [docs/getting-started.md](docs/getting-started.md) (zh).
-
-## Desktop
-
-- Installers: [GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) (unsigned by default — Windows SmartScreen / macOS Gatekeeper warnings are expected)
-- Dev shell: `launch-desktop.vbs` / `launch-desktop.bat`, or `cd apps/desktop && npm start`
-- Build Windows package locally: `.\apps\desktop\packaging\build-desktop.ps1` (see [apps/desktop/README.md](apps/desktop/README.md))
+Full steps: [docs/getting-started.en.md](docs/getting-started.en.md) · [docs/getting-started.md](docs/getting-started.md) (zh). Packaging and dev shell: [apps/desktop/README.md](apps/desktop/README.md).
 
 ## Architecture
 
@@ -86,20 +81,10 @@ apps/web (Vite + React)  ──HTTP/WS──►  apps/api (FastAPI)
 |-----|--------|
 | [Docs index](docs/README.md) (zh) | Entry and manuals |
 | [Product overview](docs/product-overview.md) (zh) | Positioning and principles |
-| [Getting started](docs/getting-started.md) (zh) | Install and launch |
+| [Getting started](docs/getting-started.en.md) / [中文](docs/getting-started.md) | Desktop install and launch |
 | [Contributing](CONTRIBUTING.md) (zh) | Issues / PRs |
 | [Security](SECURITY.md) (zh) | Private vulnerability reports |
 | [Code of Conduct](CODE_OF_CONDUCT.md) (zh) | Community norms |
-
-## Contact
-
-| Channel | Detail |
-|---------|--------|
-| QQ group | `829936747` |
-| Email | [312188032@qq.com](mailto:312188032@qq.com) |
-| WeChat group | Scan the QR code (it expires; use QQ / email if needed) |
-
-<img src="site/assets/wechat-group-qr.png" alt="WeChat group QR code" width="180" />
 
 ## License
 

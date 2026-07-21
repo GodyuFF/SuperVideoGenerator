@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import useDeepCompareEffect from "use-deep-compare-effect";
 import { useEditor } from "@opencut/editor/use-editor";
 import { useRafLoop } from "@opencut/hooks/use-raf-loop";
@@ -174,20 +181,21 @@ function PreviewCanvas({
 		});
 	}, [nativeWidth, nativeHeight, activeProject?.settings.fps]);
 
-	// Mount the compositor's output canvas directly into the preview. wgpu
-	// renders straight into this element, so there is no intermediate copy —
-	// the container div owns positioning/styling, the canvas itself fills it.
-	useEffect(() => {
+	// 将 wasm 单例输出 canvas 挂入预览槽。须在 layout 阶段装卸，并用 canvas.remove()
+	// 而非 parent.removeChild，避免 StrictMode/重挂时父节点已变更抛出 DOMException。
+	useLayoutEffect(() => {
 		const mount = canvasMountRef.current;
 		if (!mount || !renderer) return;
 		const outputCanvas = renderer.getOutputCanvas();
 		outputCanvas.style.display = "block";
 		outputCanvas.style.width = "100%";
 		outputCanvas.style.height = "100%";
-		mount.appendChild(outputCanvas);
+		if (outputCanvas.parentElement !== mount) {
+			mount.appendChild(outputCanvas);
+		}
 		return () => {
 			if (outputCanvas.parentElement === mount) {
-				mount.removeChild(outputCanvas);
+				outputCanvas.remove();
 			}
 		};
 	}, [renderer]);
@@ -327,7 +335,7 @@ function PreviewCanvas({
 									width: viewport.sceneWidth,
 									height: viewport.sceneHeight,
 									background:
-										activeProject.settings.background.type === "blur"
+										activeProject?.settings.background.type === "blur"
 											? "transparent"
 											: activeProject?.settings.background.color,
 								}}

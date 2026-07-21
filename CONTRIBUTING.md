@@ -4,7 +4,7 @@
 
 ## 开始之前
 
-1. 阅读根目录 [README.md](README.md) 与 [docs/getting-started.md](docs/getting-started.md)，确认能在本机跑通。
+1. 阅读根目录 [README.md](README.md) 与 [docs/getting-started.md](docs/getting-started.md)（[EN](docs/getting-started.en.md)），确认能在本机跑通桌面路径。
 2. 自备 LLM / 生图 / TTS 等 API Key（见 `.env.example`），费用自负。
 3. 搜索是否已有相同 Issue / PR，避免重复。
 

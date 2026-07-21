@@ -30,5 +30,5 @@
 
 ## 下一步
 
-- 上手：[快速开始](getting-started.md)
+- 上手：[快速开始](getting-started.md)（[EN](getting-started.en.md)）
 - 桌面：[apps/desktop/README.md](../apps/desktop/README.md)

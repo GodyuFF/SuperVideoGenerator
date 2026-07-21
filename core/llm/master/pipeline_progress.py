@@ -290,7 +290,13 @@ _REOPEN_STEP_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"重新配音|重做配音|再合成配音|重新合成配音|重录(旁白|配音)", re.I), "tts_gen"),
     (re.compile(r"重新分镜|重做分镜|重写分镜|重做镜头", re.I), "storyboard"),
     (re.compile(r"重新生图|重做(配图|生图)|重新配图", re.I), "image_gen"),
-    (re.compile(r"重新(写)?剧本|重做剧本|推倒剧本", re.I), "script_design"),
+    (
+        re.compile(
+            r"重新(写|设计)?剧本|重做剧本|推倒剧本",
+            re.I,
+        ),
+        "script_design",
+    ),
     (re.compile(r"重新详设|重做详设|重跑详设", re.I), "shot_detail"),
     (re.compile(r"重新(生成)?视频|重做视频片段", re.I), "video_gen"),
     (
@@ -338,18 +344,29 @@ def seed_completed_steps_for_message(
     script_id: str,
     style_mode: VideoStyleMode,
     user_message: str,
+    intent: Any | None = None,
 ) -> set[str]:
     """
     新对话启动时根据 Store 复用已完成步骤。
 
     - 默认：inferred_completed_steps 全部记入 completed，避免无意义全量重跑。
-    - 用户明确「全部重做」：不复用。
-    - 用户明确重做/从某步继续：该步及下游不记入 completed。
+    - 传入 intent（混合判定结果）：按 full_redo / reopen_steps 剔除。
+    - 未传 intent 时回退：全部重做正则 / detect_reopen_steps（兼容旧调用）。
     """
+    from core.llm.master.reopen_intent import (
+        ReopenIntent,
+        apply_reopen_intent_to_completed,
+    )
+
+    completed = set(infer_completed_step_types(store, script_id, style_mode))
+    if intent is not None:
+        if not isinstance(intent, ReopenIntent):
+            raise TypeError("intent 须为 ReopenIntent 或 None")
+        return apply_reopen_intent_to_completed(completed, intent)
+
     text = (user_message or "").strip()
     if _FULL_REDO_RE.search(text):
         return set()
-    completed = set(infer_completed_step_types(store, script_id, style_mode))
     for resume in detect_reopen_steps(text):
         completed.discard(resume)
         for dep in _DOWNSTREAM_INVALIDATE.get(resume, ()):

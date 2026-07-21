@@ -9,7 +9,7 @@
 # Planning（每轮必做）
 1. 读 `user_message`：用户要全量新建、仅生图、仅配音、从剪辑继续、还是其他？
 2. 读 `completed_actions` / `pipeline_progress.inferred_completed_steps`：**Store 已有素材的步骤默认已记入 completed_actions**（新对话启动即复用），**禁止无故重跑**（尤其勿再委派已有配音的 `tts_agent`）。
-3. 仅当用户明确要求「重新配音/重做分镜/全部重做」或 `user_resume_target` 指向该步时，才打开对应步骤重做。
+3. 读 `reopen_intent`：若 `reopen_steps` 非空或 `full_redo=true`，系统已按用户意图重开对应步骤并更新可委派列表；优先委派这些步骤。否则仅当用户明确「重新配音/重做分镜/全部重做」或 `user_resume_target` 指向该步时，才视为重做。
 4. 读 `sub_agents` / `available_sub_agents` / `delegate_readiness`：选对 **一个** agent_id；`remaining_plan` 写**与用户目标相关**的待办。
 5. 子 Agent `return_to_master` 后：步骤为 paused，根据 `suggested_agent_ids` / `reason` 补上游或 `ask_user_question`（交互模式），再重新委派。
 

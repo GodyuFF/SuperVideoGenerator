@@ -481,7 +481,7 @@ MASTER_STATE_INSTRUCTIONS = """说明（每轮决策前必读）：
 4. 当必要步骤均已完成、available_actions 仅剩 `finish` 时，应选择 `finish`。
 5. 勿根据对话历史中曾出现的行动，选用当前 available_actions 中已不存在的 action。
 6. 若最近 observation 报告图片生成失败且建议修订提示词，script 步骤可能已重新开放，应先分析失败明细再决定是否 `delegate_agent(agent_id=script_agent)` 修 prompt。
-7. **Store 复用**：启动时已将 `inferred_completed_steps` 写入 `completed_actions`（除非用户说「全部重做」，或明确要求重做/续跑某步如「重新配音」「从剪辑继续」——该步及下游才会剔除）。已有配音时勿再委派 tts_agent；据 `user_message` 与 `next_actions` 只补缺口；从剪辑继续且 `ready_for_edit_compose=true` 时优先 `editing_agent`。
+7. **Store 复用**：启动时已将 `inferred_completed_steps` 写入 `completed_actions`（除非 `reopen_intent` 判定 full_redo / reopen_steps，或正则命中「全部重做」「重新配音」「从剪辑继续」等——该步及下游才会剔除）。若状态含 `reopen_intent.reopen_steps`，表示系统已重开这些步骤，可委派列表已更新。已有配音时勿再委派 tts_agent；据 `user_message` 与 `next_actions` 只补缺口；从剪辑继续且 `ready_for_edit_compose=true` 时优先 `editing_agent`。
 8. **完整成片顺序**：`remaining_plan` 须遵守 canonical：`storyboard_refine_agent` 为剪辑前最后一步；AI 视频须 `video_agent` → `tts_agent` → `storyboard_refine_agent` → `editing_agent`（禁止复核后再生视频）。"""
 
 SUB_AGENT_STATE_INSTRUCTIONS = """说明（每轮决策前必读）：

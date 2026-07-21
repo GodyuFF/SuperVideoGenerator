@@ -397,15 +397,29 @@ class MasterReActEngine:
             detect_resume_target_step,
             seed_completed_steps_for_message,
         )
+        from core.llm.master.reopen_intent import resolve_reopen_intent
 
         progress = build_pipeline_progress(self._store, script_id, style_mode)
+        reopen_intent = await resolve_reopen_intent(
+            user_message,
+            progress,
+            style_mode,
+            llm_client=self._llm_client,
+        )
         resume_target = detect_resume_target_step(user_message)
+        if reopen_intent.resume_target:
+            resume_target = reopen_intent.resume_target
         seeded = seed_completed_steps_for_message(
-            self._store, script_id, style_mode, user_message
+            self._store,
+            script_id,
+            style_mode,
+            user_message,
+            intent=reopen_intent,
         )
         ctx.completed_step_types = set(seeded)
         session.completed_step_types = set(seeded)
         session.extra["pipeline_progress"] = progress
+        session.extra["reopen_intent"] = reopen_intent.to_dict()
         session.extra["delegate_readiness"] = resolve_delegate_readiness(
             self._store,
             script_id,
@@ -421,6 +435,18 @@ class MasterReActEngine:
         )
         if resume_obs:
             ctx.observations.append(resume_obs)
+            session.observations = list(ctx.observations)
+        if reopen_intent.reopen_steps or reopen_intent.full_redo:
+            reason = reopen_intent.reason or "用户意图重开"
+            steps_txt = (
+                "全部步骤"
+                if reopen_intent.full_redo
+                else "、".join(reopen_intent.reopen_steps)
+            )
+            ctx.observations.append(
+                f"已按意图重开（source={reopen_intent.source}）：{steps_txt}。"
+                f"{reason}"
+            )
             session.observations = list(ctx.observations)
         if seeded:
             ctx.observations.append(

@@ -118,52 +118,45 @@ export function EditorProvider({
 		? "bg-background flex h-full w-full items-center justify-center"
 		: "bg-background flex h-screen w-screen items-center justify-center";
 
-	if (error) {
-		return (
-			<div className={loadingShellClass}>
+	const readyContent =
+		!error && !showLoadingShell && activeProject ? (
+			<>
+				<EditorRuntimeBindings />
+				{children}
+			</>
+		) : null;
+
+	/** 外层 host 在 loading/error/ready 间保持同一 DOM 节点，避免与 Portal/canvas 卸载争抢 removeChild。 */
+	return (
+		<div
+			className={
+				readyContent
+					? "flex size-full min-h-0 min-w-0 flex-col"
+					: loadingShellClass
+			}
+		>
+			{error ? (
 				<div className="flex flex-col items-center gap-4">
 					<p className="text-destructive text-sm">{error}</p>
 					{embedded && (
 						<p className="muted text-sm">{tDialogs("embeddedRetryHint")}</p>
 					)}
 				</div>
-			</div>
-		);
-	}
-
-	if (showLoadingShell) {
-		return (
-			<div className={loadingShellClass}>
+			) : showLoadingShell || !activeProject ? (
 				<div className="flex flex-col items-center gap-4">
 					<Loader2 className="text-muted-foreground size-8 animate-spin" />
 					<p className="text-muted-foreground text-sm">
-						{embedded
-							? tDialogs("loadingEmbedded")
-							: tDialogs("loadingProject")}
+						{!activeProject && !showLoadingShell
+							? tDialogs("exitingProject")
+							: embedded
+								? tDialogs("loadingEmbedded")
+								: tDialogs("loadingProject")}
 					</p>
 				</div>
-			</div>
-		);
-	}
-
-	if (!activeProject) {
-		return (
-			<div className={loadingShellClass}>
-				<div className="flex flex-col items-center gap-4">
-					<Loader2 className="text-muted-foreground size-8 animate-spin" />
-					<p className="text-muted-foreground text-sm">
-						{tDialogs("exitingProject")}
-					</p>
-				</div>
-			</div>
-		);
-	}
-
-	return (
-		<>
-			<EditorRuntimeBindings />
-			{children}
-		</>
+			) : (
+				readyContent
+			)}
+		</div>
 	);
 }
 

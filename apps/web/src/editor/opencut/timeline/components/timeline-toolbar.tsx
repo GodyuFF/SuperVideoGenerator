@@ -118,17 +118,17 @@ function ToolbarLeftSection() {
 	const canToggleSelectedSourceAudio =
 		!!selectedElement &&
 		canToggleSourceAudio(selectedElement.element, selectedMediaAsset);
+	const isSelectedSourceAudioSeparated =
+		selectedElement?.element.type === "video" &&
+		isSourceAudioSeparated({
+			element: selectedElement.element,
+		});
 	const sourceAudioLabel =
 		selectedElement?.element.type === "video"
 			? isSelectedSourceAudioSeparated
 				? tTimeline("recoverAudio")
 				: tTimeline("extractAudio")
 			: tTimeline("extractAudio");
-	const isSelectedSourceAudioSeparated =
-		selectedElement?.element.type === "video" &&
-		isSourceAudioSeparated({
-			element: selectedElement.element,
-		});
 
 	const handleAction = ({
 		action,

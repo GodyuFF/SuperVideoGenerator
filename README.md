@@ -8,9 +8,9 @@ Language: **中文** | [English](README.en.md)
 
 **从剧本到成片，一条对话流水线。**
 
-多 Agent 协作的本地优先 AI 视频工具：用自然语言描述创意，完成剧本、分镜、生图、配音与剪辑；自备 API Key，数据默认留在本机。
+不用先学复杂工具：说清楚你想拍什么，多 Agent 帮你走完剧本、分镜、生图、配音与剪辑。自备 API Key，数据默认留在本机。
 
-**开始使用：** [下载安装包](https://github.com/GodyuFF/SuperVideoGenerator/releases) · [快速开始](docs/getting-started.md) · [产品概览](docs/product-overview.md)
+**开始使用：** [下载安装包](https://github.com/GodyuFF/SuperVideoGenerator/releases) · [快速开始](docs/getting-started.md)（[EN](docs/getting-started.en.md)） · [产品概览](docs/product-overview.md)
 
 ## Demo
 
@@ -37,40 +37,35 @@ Language: **中文** | [English](README.en.md)
 
 ## Features
 
-- **对话 + 看板**：计划可见可审，再按步骤执行
-- **子 Agent 流水线**：剧本 / 分镜 / 生图 / TTS / 剪辑 / AI 视频
-- **资产复用**：人物·道具·场景跨剧本共享，降低系列重复劳动
-- **Edit Studio**：镜内多轨精修，可写回分镜
-- **本地优先**：项目与 API Key 落在本机 `data/`，默认不入 Git
-- **桌面分发**：Electron 开发壳 + GitHub Releases 安装包
+- **开口就能做视频**：像聊天一样描述创意，就能推进到成片——少踩工具坑，把精力留在故事本身
+- **看得见的多 Agent 编排**：步骤可审、日志齐全、流程可改；既适合直接出片，也适合学 AI Agent、做二次定制
+- **一家入口，多家能力**：对话与生成可对接多套 LLM / 生图 / TTS，按场景选最合适的模型，不必锁死单一平台
+- **流程稳、界面不绕**：剧本 → 分镜 → 成片一条清晰主线，告别复杂画布节点，上手快、结果可控
+- **精修不丢主线**：看板改计划与分镜，Edit Studio 多轨打磨，人物·场景可复用；数据与 Key 留在本机，桌面安装即用
+
+## 一起交流
+
+对产品用法、编排思路或二次开发感兴趣？欢迎加群探讨——问题反馈、案例分享、一起打磨工作流。
+
+| 方式 | 内容 |
+|------|------|
+| QQ 群 | `829936747` |
+| 微信群 | 扫下方二维码（会过期；失效请用 QQ 或邮件） |
+| 邮箱 | [312188032@qq.com](mailto:312188032@qq.com) |
+
+<img src="site/assets/wechat-group-qr.png" alt="微信交流群二维码" width="180" />
 
 ## Quick Start
 
-需要 Python 3.11+、Node.js 18+（FFmpeg 可选）。
+**日常使用：** 从 [Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) 下载桌面安装包，在应用内配置 API Key 即可（未签名提示属预期）。
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate          # Windows；macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-cd apps/web && npm install && cd ../..
-cp .env.example .env            # 至少配置 LLM API Key
-```
-
-**启动（Windows 推荐）：**
+**从源码开发（桌面壳）：** 需 Python 3.11+、Node.js 18+。安装依赖后在仓库根目录运行：
 
 ```bat
 launch-desktop.vbs
 ```
 
-或浏览器模式：`uvicorn apps.api.main:app --port 8000` + `cd apps/web && npm run dev` → [http://localhost:5173](http://localhost:5173)
-
-完整步骤见 [docs/getting-started.md](docs/getting-started.md)。
-
-## Desktop
-
-- 安装包：[GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases)（默认未代码签名，Windows SmartScreen / macOS Gatekeeper 可能提示拦截，属预期）
-- 开发壳：`launch-desktop.vbs` / `launch-desktop.bat`，或 `cd apps/desktop && npm start`
-- 本地打 Windows 包：`.\apps\desktop\packaging\build-desktop.ps1`（见 [apps/desktop/README.md](apps/desktop/README.md)）
+完整步骤（中/英）：[docs/getting-started.md](docs/getting-started.md) · [docs/getting-started.en.md](docs/getting-started.en.md)。打包与开发壳细节见 [apps/desktop/README.md](apps/desktop/README.md)。
 
 ## Architecture
 
@@ -86,20 +81,10 @@ apps/web (Vite + React)  ──HTTP/WS──►  apps/api (FastAPI)
 |------|------|
 | [文档目录](docs/README.md) | 入门与手册导航 |
 | [产品概览](docs/product-overview.md) | 定位与原则摘要 |
-| [快速开始](docs/getting-started.md) | 安装与启动 |
+| [快速开始](docs/getting-started.md) / [EN](docs/getting-started.en.md) | 桌面安装与启动 |
 | [贡献指南](CONTRIBUTING.md) | Issue / PR |
 | [安全政策](SECURITY.md) | 漏洞私下报告 |
 | [行为准则](CODE_OF_CONDUCT.md) | 社区规范 |
-
-## Contact
-
-| 方式 | 内容 |
-|------|------|
-| QQ 群 | `829936747` |
-| 邮箱 | [312188032@qq.com](mailto:312188032@qq.com) |
-| 微信群 | 扫码加入（二维码会过期，失效请用 QQ / 邮箱） |
-
-<img src="site/assets/wechat-group-qr.png" alt="微信交流群二维码" width="180" />
 
 ## License
 
