@@ -4,9 +4,12 @@
 
 ## Project site
 
-展示站（流水线演示 · 中/EN）：发布 GitHub Pages 后访问  
+展示站（流水线演示 · 中/EN）：  
 `https://godyuff.github.io/SuperVideoGenerator/`  
-（源码目录 [`site/`](site/)；开启方式见 [`site/README.md`](site/README.md)）
+
+源码：[`site/`](site/)。首次发布：打开  
+[Settings → Pages](https://github.com/GodyuFF/SuperVideoGenerator/settings/pages)  
+→ Source 选 **GitHub Actions**（说明见 [`site/README.md`](site/README.md)）。
 
 ## Features
 
@@ -73,7 +76,7 @@ launch-desktop.vbs
 | 邮箱 | [312188032@qq.com](mailto:312188032@qq.com) |
 | 微信群 | 扫码加入（二维码会过期，失效请用 QQ / 邮箱） |
 
-![微信交流群二维码](site/assets/wechat-group-qr.png)
+<img src="site/assets/wechat-group-qr.png" alt="微信交流群二维码" width="180" />
 
 展示站联系区见：[Project site](https://godyuff.github.io/SuperVideoGenerator/#contact)
 

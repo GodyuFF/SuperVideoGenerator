@@ -16,10 +16,16 @@ npx serve site
 
 ## GitHub Pages
 
-1. 打开仓库 **Settings → Pages**
-2. **Build and deployment → Source**：Deploy from a branch
-3. **Branch**：`main`，文件夹 **`/site`**
-4. **Save**；几分钟后访问 Settings 中显示的 Pages URL（通常为 `https://godyuff.github.io/SuperVideoGenerator/`）
+推荐用 **GitHub Actions** 发布（本仓库已有 `.github/workflows/pages.yml`）：
+
+1. 直接打开：  
+   https://github.com/GodyuFF/SuperVideoGenerator/settings/pages  
+   （需仓库 **Admin** 权限；侧边栏在 **Code and automation → Pages**，不是往下翻主 Settings 页）
+2. **Build and deployment → Source** 选 **GitHub Actions**
+3. 回到仓库 **Actions** 页，打开 **Deploy Pages**，点 **Run workflow**（或再 push 一次 `site/`）
+4. 成功后访问：`https://godyuff.github.io/SuperVideoGenerator/`
+
+若侧边栏仍无 Pages：确认已登录、账号对该仓库有管理员权限，或用上面的直达链接。
 
 ## 冒烟检查
 
