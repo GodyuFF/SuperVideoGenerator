@@ -2,14 +2,26 @@
 
 基于多 Agent 协作的 AI 视频生成系统。用自然语言描述创意，**超级视频大师** 以 ReAct 编排剧本、分镜、生图、配音、剪辑等子 Agent，完成从创意到成片；支持看板精修与 Edit Studio 多轨时间轴。
 
-## Project site
+**一句话：** 从剧本到成片，一条对话流水线。
 
-展示站（流水线演示 · 中/EN）：  
-`https://godyuff.github.io/SuperVideoGenerator/`  
+## Demo
 
-源码：[`site/`](site/)。首次发布：打开  
-[Settings → Pages](https://github.com/GodyuFF/SuperVideoGenerator/settings/pages)  
-→ Source 选 **GitHub Actions**（说明见 [`site/README.md`](site/README.md)）。
+示例题材：女娲补天（故事书成片）。
+
+| 步骤 | 说明 |
+|------|------|
+| 对话 | 自然语言描述创意，主 Agent 编排计划 |
+| 分镜与资产 | 看板可见可改，人物 / 场景可复用 |
+| 剪辑 | Edit Studio 多轨精修字幕、画面与旁白 |
+| 成片 | 导出故事书视频 |
+
+**成片演示视频：** [`site/assets/demo-final.mp4`](site/assets/demo-final.mp4)（点开即可在线观看）
+
+**对应剪辑时间轴：**
+
+<img src="site/assets/edit-timeline.png" alt="女娲补天项目的多轨剪辑时间轴" width="720" />
+
+本地还可打开完整静态介绍页（中/EN）：[`site/index.html`](site/index.html)（说明见 [`site/README.md`](site/README.md)）。
 
 ## Features
 
@@ -77,8 +89,6 @@ launch-desktop.vbs
 | 微信群 | 扫码加入（二维码会过期，失效请用 QQ / 邮箱） |
 
 <img src="site/assets/wechat-group-qr.png" alt="微信交流群二维码" width="180" />
-
-展示站联系区见：[Project site](https://godyuff.github.io/SuperVideoGenerator/#contact)
 
 ## License
 
