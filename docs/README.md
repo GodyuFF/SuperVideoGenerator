@@ -1,6 +1,6 @@
 # SuperVideoGenerator 文档
 
-> 更新日期：2026-07-21
+> 更新日期：2026-07-22
 
 本目录存放面向用户的**项目介绍**、上手与使用手册。
 
@@ -16,7 +16,7 @@
 
 开发手册（Agent / prompt / API / 扩展）**后续补充**。当前技术参考见仓库内 `docs/superpowers/reference/`（面向贡献者，非终端用户必读）。
 
-仓库根目录 [README.md](../README.md) 提供对外简介与最短上手路径；英文简介见 [README.en.md](../README.en.md)。参与贡献见 [CONTRIBUTING.md](../CONTRIBUTING.md)，安全报告见 [SECURITY.md](../SECURITY.md)。
+仓库根目录 [README.md](../README.md) / [README.en.md](../README.en.md) 提供对外简介：界面截图旅程、从零到成片摘要、风格对照与文档导航。参与贡献见 [CONTRIBUTING.md](../CONTRIBUTING.md)，安全报告见 [SECURITY.md](../SECURITY.md)。
 
 桌面开发壳与安装包说明见 [apps/desktop/README.md](../apps/desktop/README.md)。
 
