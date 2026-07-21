@@ -34,12 +34,6 @@ launch-desktop.vbs
 launch-desktop.bat
 ```
 
-可选桌面快捷方式：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\update_desktop_shortcut.ps1
-```
-
 **浏览器模式：**
 
 ```bash
@@ -51,7 +45,7 @@ cd apps/web && npm run dev
 
 ## 桌面安装包
 
-从 [GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) 下载。未签名说明见 [桌面打包](superpowers/reference/desktop-packaging.md)。
+从 [GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases) 下载。安装包默认**未代码签名**，Windows SmartScreen / macOS Gatekeeper 可能提示拦截，属预期；详见 [apps/desktop/README.md](../apps/desktop/README.md)。
 
 维护者本地打 Windows 包：
 

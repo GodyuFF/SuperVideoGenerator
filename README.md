@@ -4,6 +4,10 @@
 
 **一句话：** 从剧本到成片，一条对话流水线。
 
+多 Agent 协作的**本地优先** AI 视频工具：对话驱动剧本与分镜，看板精修，Edit Studio 多轨成片；自备 API Key，数据默认留在本机。
+
+**Topics（GitHub About 可填）：** `ai` · `video-generation` · `electron` · `fastapi` · `react` · `opencut` · `mit` · `multi-agent`
+
 ## Demo
 
 示例题材：女娲补天（故事书成片）。
@@ -85,6 +89,9 @@ launch-desktop.vbs
 | [文档索引](docs/README.md) | 入门与手册导航 |
 | [产品概览](docs/product-overview.md) | 定位与原则摘要 |
 | [快速开始](docs/getting-started.md) | 安装与启动 |
+| [贡献指南](CONTRIBUTING.md) | Issue / PR |
+| [安全政策](SECURITY.md) | 漏洞私下报告 |
+| [行为准则](CODE_OF_CONDUCT.md) | 社区规范 |
 
 ## Contact
 
