@@ -65,6 +65,18 @@ launch-desktop.vbs
 | [产品概览](docs/product-overview.md) | 定位与原则摘要 |
 | [快速开始](docs/getting-started.md) | 安装与启动 |
 
+## Contact
+
+| 方式 | 内容 |
+|------|------|
+| QQ 群 | `829936747` |
+| 邮箱 | [312188032@qq.com](mailto:312188032@qq.com) |
+| 微信群 | 扫码加入（二维码会过期，失效请用 QQ / 邮箱） |
+
+![微信交流群二维码](site/assets/wechat-group-qr.png)
+
+展示站联系区见：[Project site](https://godyuff.github.io/SuperVideoGenerator/#contact)
+
 ## License
 
 本项目采用 [MIT License](LICENSE)。
