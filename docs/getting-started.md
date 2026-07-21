@@ -62,4 +62,4 @@ cd apps/web && npm run dev
 | `data/` | 项目、剧本、媒体、对话、AI 配置 |
 | `.env` | 环境变量与 API Key |
 
-更多见仓库根 [README.md](../README.md) 与 [文档索引](README.md)。
+更多见仓库根 [README.md](../README.md)（英文：[README.en.md](../README.en.md)）与 [文档目录](README.md)。
