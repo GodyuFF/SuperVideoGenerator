@@ -15,7 +15,11 @@
 | 剪辑 | Edit Studio 多轨精修字幕、画面与旁白 |
 | 成片 | 导出故事书视频 |
 
-**成片演示视频：** [`site/assets/demo-final.mp4`](site/assets/demo-final.mp4)（点开即可在线观看）
+**成片演示（女娲补天）：**
+
+[![成片预览 — 点击观看 MP4](site/assets/demo-final-poster.jpg)](site/assets/demo-final.mp4)
+
+> GitHub README 无法内嵌播放本地视频；点击上方封面图即可打开 [`demo-final.mp4`](site/assets/demo-final.mp4) 在线观看。
 
 **对应剪辑时间轴：**
 
