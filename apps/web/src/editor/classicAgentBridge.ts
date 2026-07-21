@@ -52,6 +52,16 @@ export async function reloadClassicFromApi(
   const { EditorCore, mediaTimeFromSeconds, mediaTimeToSeconds } = await getClassicRuntime();
   const key = svfProjectKey(projectId, scriptId);
   const editor = EditorCore.getInstance();
+
+  // 本地未落盘改动优先 flush，避免用旧 API 覆盖刚设的倍速/音量
+  if (editor.save.getIsDirty()) {
+    try {
+      await editor.save.flush();
+    } catch (err) {
+      console.warn("[classicAgentBridge] flush before reload failed", err);
+    }
+  }
+
   const playheadMs =
     mediaTimeToSeconds({ time: editor.playback.getCurrentTime() }) * 1000;
 

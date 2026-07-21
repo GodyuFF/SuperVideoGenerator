@@ -173,3 +173,134 @@ def apply_plan_update_to_document(
     """将 LLM plan 回写合并进 PlanDocument。"""
     plan.runtime_summary = update.plan_status
     return plan
+
+
+def _resolve_step(
+    plan: PlanDocument,
+    *,
+    step_id: str = "",
+    step_type: str = "",
+) -> PlanStep | None:
+    """按 id 或 type 定位步骤（type 取第一个匹配）。"""
+    sid = (step_id or "").strip()
+    if sid:
+        for step in plan.steps:
+            if step.id == sid:
+                return step
+    stype = (step_type or "").strip()
+    if stype:
+        for step in plan.steps:
+            if step.type == stype:
+                return step
+    return None
+
+
+def _parse_step_status(raw: Any) -> StepStatus | None:
+    """解析步骤状态字符串。"""
+    text = str(raw or "").strip().lower()
+    if not text:
+        return None
+    try:
+        return StepStatus(text)
+    except ValueError:
+        return None
+
+
+def apply_replan_op(plan: PlanDocument, op: dict[str, Any]) -> list[str]:
+    """对 PlanDocument 应用单条 replan op，返回受影响 step_id 列表。"""
+    kind = str(op.get("op", "")).strip()
+    step = _resolve_step(
+        plan,
+        step_id=str(op.get("step_id", "")),
+        step_type=str(op.get("step_type", "")),
+    )
+    if step is None:
+        return []
+    if kind == "skip":
+        step.status = StepStatus.SKIPPED
+        return [step.id]
+    if kind == "reset_pending":
+        step.status = StepStatus.PENDING
+        step.progress = 0
+        step.error = None
+        return [step.id]
+    if kind == "set_status":
+        status = _parse_step_status(op.get("status"))
+        if status is None:
+            return []
+        step.status = status
+        return [step.id]
+    if kind == "set_title":
+        title = str(op.get("title", "")).strip()
+        if not title:
+            return []
+        step.title = title
+        return [step.id]
+    return []
+
+
+def apply_replan_to_document(
+    plan: PlanDocument,
+    update: PlanUpdate,
+    *,
+    reason: str,
+    goal: str | None = None,
+    ops: list[dict[str, Any]] | None = None,
+    upsert_steps: list[dict[str, Any]] | None = None,
+) -> tuple[PlanDocument, list[str]]:
+    """应用结构化 replan：version++、ops、upsert，返回 (plan, affected_ids)。"""
+    from core.models.entities import PlanStep
+
+    affected: list[str] = []
+    for raw in ops or []:
+        if not isinstance(raw, dict):
+            continue
+        affected.extend(apply_replan_op(plan, raw))
+    existing_types = {s.type for s in plan.steps}
+    for raw in upsert_steps or []:
+        if not isinstance(raw, dict):
+            continue
+        stype = str(raw.get("type", "")).strip()
+        title = str(raw.get("title", "")).strip()
+        agent = str(raw.get("agent", "")).strip()
+        if not stype or not title or not agent:
+            continue
+        if stype in existing_types:
+            step = _resolve_step(plan, step_type=stype)
+            if step is None:
+                continue
+            step.title = title
+            step.agent = agent
+            desc = str(raw.get("description", "")).strip()
+            if desc:
+                step.description = desc
+            status = _parse_step_status(raw.get("status"))
+            if status is not None:
+                step.status = status
+            affected.append(step.id)
+            continue
+        status = _parse_step_status(raw.get("status")) or StepStatus.PENDING
+        step = PlanStep(
+            type=stype,
+            title=title,
+            agent=agent,
+            description=str(raw.get("description", "") or ""),
+            status=status,
+        )
+        plan.steps.append(step)
+        existing_types.add(stype)
+        affected.append(step.id)
+    # 去重保序
+    seen: set[str] = set()
+    unique_affected: list[str] = []
+    for sid in affected:
+        if sid not in seen:
+            seen.add(sid)
+            unique_affected.append(sid)
+    plan.version = int(plan.version or 0) + 1
+    if goal:
+        plan.goal = goal
+    plan.runtime_summary = update.plan_status
+    plan.last_replan_reason = reason.strip()
+    plan.affected_step_ids = list(unique_affected)
+    return plan, unique_affected

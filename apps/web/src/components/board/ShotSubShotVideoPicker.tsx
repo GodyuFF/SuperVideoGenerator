@@ -331,9 +331,6 @@ export function ShotSubShotVideoPicker({
                       videoOptions={{
                         subShotIdx,
                         sourceFrameAssetIds: [],
-                        sourceVideoClipAssetIds: [vid.videoClipAssetId],
-                        sourceMediaIds: [],
-                        sourceElementRefs: {},
                       }}
                       onDone={onRegenerateDone}
                     />

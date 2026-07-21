@@ -28,8 +28,9 @@ class PlaceholderToolCallError(ValueError):
 PLACEHOLDER_CORRECTION_USER = (
     "上一轮 tool_calls 无效：不得使用 $TOOL_NAME、$PARAMETER_NAME 等占位符，"
     "arguments 必须是合法 JSON。"
-    "请从 available_actions 中选择真实函数名，并按 input_schema 填写参数"
-    "（含 plan_status、remaining_plan）。立即重试一次 tool_calls。"
+    "请从 available_actions 中选择真实函数名，并按 input_schema 填写参数。"
+    "计划进度请单独调用 update_plan；结构调整请调用 replan。"
+    "立即重试一次 tool_calls。"
 )
 
 

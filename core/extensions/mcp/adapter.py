@@ -50,7 +50,7 @@ def build_mcp_tool_specs(
             registry_name = f"{config.tool_prefix}.{tool_name}"
         description = str(getattr(tool, "description", "") or f"MCP tool {tool_name}")
         input_schema = dict(getattr(tool, "inputSchema", None) or {"type": "object", "properties": {}})
-        input_schema = merge_plan_tracking(input_schema)
+        input_schema = merge_plan_tracking(input_schema, required=False)
         handler = _make_mcp_handler(manager, config.id, tool_name, config.timeout_sec)
         specs.append(
             ToolSpec(

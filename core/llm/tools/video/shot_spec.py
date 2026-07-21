@@ -43,7 +43,6 @@ class ShotVideoGenSpec:
     sub_shot_idx: int
     source_frame_asset_id: str = ""
     source_frame_asset_ids: list[str] = field(default_factory=list)
-    source_media_ids: list[str] = field(default_factory=list)
     video_clip_asset_id: str = ""
 
 
@@ -205,19 +204,17 @@ def _apply_explicit_source_urls(
 
 
 def _normalize_element_refs(raw: dict[str, Any] | None) -> dict[str, list[str]]:
-    """清洗 API 传入的 element_refs 桶结构。"""
+    """清洗 API 传入的 element_refs，仅保留 frame 桶。"""
     if not raw or not isinstance(raw, dict):
         return {}
-    out: dict[str, list[str]] = {}
-    for bucket in ("scene", "character", "prop", "frame"):
-        val = raw.get(bucket)
-        if val is None:
-            continue
-        ids = val if isinstance(val, list) else [val]
-        cleaned = [str(x).strip() for x in ids if str(x).strip()]
-        if cleaned:
-            out[bucket] = cleaned
-    return out
+    val = raw.get("frame")
+    if val is None:
+        return {}
+    ids = val if isinstance(val, list) else [val]
+    cleaned = [str(x).strip() for x in ids if str(x).strip()]
+    if not cleaned:
+        return {}
+    return {"frame": cleaned}
 
 
 def resolve_shot_video_gen_spec(
@@ -228,7 +225,6 @@ def resolve_shot_video_gen_spec(
     sub_shot_idx: int = 0,
     preferred_frame_asset_id: str = "",
     source_frame_asset_ids: list[str] | None = None,
-    source_media_ids: list[str] | None = None,
     source_element_refs: dict[str, Any] | None = None,
     forced_video_mode: str | None = None,
     allowed_modes: list[str] | None = None,
@@ -250,9 +246,8 @@ def resolve_shot_video_gen_spec(
     explicit_frames = [str(x).strip() for x in (source_frame_asset_ids or []) if str(x).strip()]
     if not explicit_frames and (preferred_frame_asset_id or "").strip():
         explicit_frames = [preferred_frame_asset_id.strip()]
-    explicit_media = [str(x).strip() for x in (source_media_ids or []) if str(x).strip()]
     explicit_refs = _normalize_element_refs(source_element_refs)
-    has_explicit = bool(explicit_frames or explicit_media or explicit_refs)
+    has_explicit = bool(explicit_frames or explicit_refs)
 
     video_clip_id = ""
     for vid in sub.videos:
@@ -310,7 +305,6 @@ def resolve_shot_video_gen_spec(
         explicit_urls = collect_video_source_image_urls(
             store,
             frame_asset_ids=explicit_frames,
-            media_ids=explicit_media,
             element_refs=explicit_refs,
         )
         mode, prompt, image_url, keyframe_urls = _apply_explicit_source_urls(
@@ -370,5 +364,4 @@ def resolve_shot_video_gen_spec(
         sub_shot_idx=idx,
         source_frame_asset_id=source_frame,
         source_frame_asset_ids=explicit_frames if has_explicit else ([source_frame] if source_frame else []),
-        source_media_ids=explicit_media,
     )

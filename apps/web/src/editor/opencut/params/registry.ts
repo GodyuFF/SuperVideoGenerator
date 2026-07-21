@@ -163,6 +163,7 @@ const audioElementParams: ElementParamDefinition[] = [
 		min: VOLUME_DB_MIN,
 		max: VOLUME_DB_MAX,
 		step: 0.01,
+		suffix: "dB",
 	},
 	{
 		key: "muted",

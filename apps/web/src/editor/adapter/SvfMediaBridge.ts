@@ -298,6 +298,8 @@ export function inferClipMediaType(
   lookup: MediaIdLookup,
   fallback: string,
 ): string {
+  // 音频轨 / 提取音频：即使 media 是视频文件也保持 audio 语义
+  if (fallback === "audio") return "audio";
   const mediaId = lookup.resolveMediaId(clip);
   if (mediaId) {
     const resolved = lookup.getMediaType(mediaId);

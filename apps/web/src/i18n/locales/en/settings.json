@@ -166,6 +166,7 @@
     "confirmContinue": "Confirm and continue",
     "awaitingReply": "Awaiting reply",
     "awaitingConfirm": "Awaiting confirm",
+    "awaitingPlanConfirm": "Awaiting plan approval",
     "answered": "Answered",
     "submitted": "Submitted",
     "cancelled": "Cancelled",

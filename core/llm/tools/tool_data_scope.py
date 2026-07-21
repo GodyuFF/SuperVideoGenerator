@@ -59,6 +59,8 @@ _ACTION_DATA_SCOPE: dict[str, ToolDataScope] = {
     "ask_user_question": _read("无业务持久化"),
     "return_to_master": _write("编排层", ("ReAct 执行计划",), note="步骤 PAUSED，不写资产表"),
     "delegate_agent": _write("编排层", ("ReAct 执行计划",), note="委派子 Agent"),
+    "update_plan": _write("编排层", ("ReAct 执行计划",), note="回写 runtime_summary / remaining_plan"),
+    "replan": _write("编排层", ("ReAct 执行计划",), note="version++ 与步骤结构调整"),
     "tool_get_plan_summary": _read("剧本", "ReAct 执行计划"),
     "tool_list_assets": _read("文字资产", "数字媒体资产"),
     "tool_read_webpage": _read("无持久化"),

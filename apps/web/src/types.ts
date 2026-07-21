@@ -126,6 +126,9 @@ export interface PlanDocument {
 export interface PlanViewState extends PlanDocument {
   plan_status_history: string[];
   last_remaining_plan: string[];
+  /** 最近一次 replan 受影响的步骤 id（用于高亮） */
+  affected_step_ids?: string[];
+  last_replan_reason?: string;
 }
 
 /** 分镜镜头与视频计划稿（对齐镜内多轨 API） */

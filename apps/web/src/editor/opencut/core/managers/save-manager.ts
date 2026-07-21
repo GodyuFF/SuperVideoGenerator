@@ -32,6 +32,9 @@ export class SaveManager {
 				this.markDirty();
 			}),
 			this.editor.timeline.subscribe(() => {
+				// previewElements 仅改预览叠层也会 notify；此时提交态未变，禁止触发 PATCH，
+				// 否则会在倍速/音量未 commit 前用旧数据保存并经 WS soft-reload「弹回」。
+				if (this.editor.timeline.isPreviewActive()) return;
 				this.markDirty();
 			}),
 		];

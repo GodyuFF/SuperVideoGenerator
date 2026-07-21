@@ -86,6 +86,8 @@ class ReActSession:
             actions.append(DELEGATE_AGENT_ACTION)
         tool_actions = [t.action_name for t in self.tools]
         actions.extend(tool_actions)
+        actions.append("update_plan")
+        actions.append("replan")
         actions.append("finish")
         if str(self.extra.get("execution_mode", "")) != ExecutionMode.GOAL.value:
             actions.append(ASK_USER_QUESTION_ACTION)

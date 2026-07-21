@@ -67,6 +67,8 @@ export function emptyPlanView(): PlanViewState {
     runtime_summary: "",
     plan_status_history: [],
     last_remaining_plan: [],
+    affected_step_ids: [],
+    last_replan_reason: "",
   };
 }
 

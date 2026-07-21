@@ -20,6 +20,13 @@ import {
 import type { TCanvasSize } from "@opencut/project/types";
 import type { ParamValues } from "@opencut/params";
 import { buildTransformFromParams, type Transform } from "@opencut/rendering";
+import { resolveTransformAtTime } from "@opencut/rendering/animation-values";
+import {
+	getElementLocalTime,
+	hasKeyframesForPath,
+	setChannel,
+} from "@opencut/animation";
+import type { ElementAnimations } from "@opencut/animation/types";
 import { isVisualElement } from "@opencut/timeline/element-utils";
 import type {
 	ElementRef,
@@ -53,6 +60,8 @@ interface DragElementSnapshot {
 	readonly elementId: string;
 	readonly initialTransform: Transform;
 	readonly initialParams: ParamValues;
+	readonly shouldClearPositionAnimation: boolean;
+	readonly animationsWithoutPosition: ElementAnimations | undefined;
 }
 
 interface DraggingGesture extends CapturedPointerState {
@@ -204,10 +213,47 @@ function movedPastDragThreshold({
 	);
 }
 
+/** 拖移时清除 position 动画通道，避免 Ken Burns 关键帧盖住 params 位移。 */
+function buildPositionAnimationReset({
+	animations,
+}: {
+	animations: ElementAnimations | undefined;
+}): {
+	shouldClearPositionAnimation: boolean;
+	animationsWithoutPosition: ElementAnimations | undefined;
+} {
+	const shouldClearPositionAnimation =
+		hasKeyframesForPath({
+			animations,
+			propertyPath: "transform.positionX",
+		}) ||
+		hasKeyframesForPath({
+			animations,
+			propertyPath: "transform.positionY",
+		});
+
+	return {
+		shouldClearPositionAnimation,
+		animationsWithoutPosition: shouldClearPositionAnimation
+			? setChannel({
+					animations: setChannel({
+						animations,
+						propertyPath: "transform.positionX",
+						channel: undefined,
+					}),
+					propertyPath: "transform.positionY",
+					channel: undefined,
+				})
+			: animations,
+	};
+}
+
 function toDragElementSnapshots({
 	elementsWithTracks,
+	timelineTime,
 }: {
 	elementsWithTracks: Array<{ track: TimelineTrack; element: TimelineElement }>;
+	timelineTime: number;
 }): DragElementSnapshot[] {
 	const isVisualTrackedElement = (value: {
 		track: TimelineTrack;
@@ -217,12 +263,28 @@ function toDragElementSnapshots({
 
 	return elementsWithTracks
 		.filter(isVisualTrackedElement)
-		.map(({ track, element }) => ({
-			trackId: track.id,
-			elementId: element.id,
-			initialTransform: buildTransformFromParams({ params: element.params }),
-			initialParams: element.params,
-		}));
+		.map(({ track, element }) => {
+			const localTime = getElementLocalTime({
+				timelineTime,
+				elementStartTime: element.startTime,
+				elementDuration: element.duration,
+			});
+			const positionReset = buildPositionAnimationReset({
+				animations: element.animations,
+			});
+			return {
+				trackId: track.id,
+				elementId: element.id,
+				initialTransform: resolveTransformAtTime({
+					baseTransform: buildTransformFromParams({ params: element.params }),
+					animations: element.animations,
+					localTime,
+				}),
+				initialParams: element.params,
+				shouldClearPositionAnimation: positionReset.shouldClearPositionAnimation,
+				animationsWithoutPosition: positionReset.animationsWithoutPosition,
+			};
+		});
 }
 
 export class PreviewInteractionController {
@@ -492,6 +554,7 @@ export class PreviewInteractionController {
 			elementsWithTracks: this.deps.timeline.getElementsWithTracks({
 				elements: dragSelection,
 			}),
+			timelineTime: this.deps.scene.getCurrentTime(),
 		});
 
 		if (draggableElements.length === 0) {
@@ -568,17 +631,29 @@ export class PreviewInteractionController {
 			snappedPosition.y - firstElement.initialTransform.position.y;
 
 		this.deps.timeline.previewElements(
-			drag.elements.map(({ trackId, elementId, initialTransform, initialParams }) => ({
-				trackId,
-				elementId,
-				updates: {
-					params: {
-						...initialParams,
-						"transform.positionX": initialTransform.position.x + deltaSnappedX,
-						"transform.positionY": initialTransform.position.y + deltaSnappedY,
+			drag.elements.map(
+				({
+					trackId,
+					elementId,
+					initialTransform,
+					initialParams,
+					shouldClearPositionAnimation,
+					animationsWithoutPosition,
+				}) => ({
+					trackId,
+					elementId,
+					updates: {
+						params: {
+							...initialParams,
+							"transform.positionX": initialTransform.position.x + deltaSnappedX,
+							"transform.positionY": initialTransform.position.y + deltaSnappedY,
+						},
+						...(shouldClearPositionAnimation && {
+							animations: animationsWithoutPosition,
+						}),
 					},
-				},
-			})),
+				}),
+			),
 		);
 	}
 }

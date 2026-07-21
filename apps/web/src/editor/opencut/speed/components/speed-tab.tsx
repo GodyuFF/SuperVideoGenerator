@@ -81,6 +81,7 @@ export function SpeedTab({
 		rate: number;
 		maintainPitch: boolean;
 	}) => {
+		// updateTracks 会清掉 preview 叠层；时长由 update-pipeline 按 retime 重算
 		editor.timeline.updateElementRetime({
 			trackId,
 			elementId: element.id,
@@ -93,6 +94,8 @@ export function SpeedTab({
 		parse: (input) => parseSpeedInput({ input }),
 		onPreview: (nextRate) => {
 			pendingRateRef.current = nextRate;
+			// 仅叠层预览数值；时长在 onCommit 经 updateElementRetime 重算。
+			// 禁止在 preview 阶段 markDirty 保存（见 SaveManager）。
 			editor.timeline.previewElements({
 				updates: [
 					{

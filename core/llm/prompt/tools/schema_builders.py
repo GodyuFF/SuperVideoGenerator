@@ -315,16 +315,29 @@ def build_frame_content_schema() -> dict[str, Any]:
     )
 
 
+def _video_clip_element_refs_schema() -> dict[str, Any]:
+    """video_clip 仅允许关联画面 frame。"""
+    return {
+        "type": "object",
+        "description": "仅关联画面 frame 文字资产 ID；禁止 character/scene/prop",
+        "properties": {
+            "frame": {"type": "array", "items": {"type": "string"}},
+        },
+        "additionalProperties": False,
+    }
+
+
 def build_video_clip_content_schema() -> dict[str, Any]:
     """video_clip content：仅 summary / video_prompt / notes / element_refs（系统字段可额外写入）。"""
     full = _model_properties(VideoClipContent)
-    keep = ("summary", "video_prompt", "notes", "element_refs", "media_refs", "prompt_locked")
+    keep = ("summary", "video_prompt", "notes", "element_refs", "prompt_locked")
     props = {k: full[k] for k in keep if k in full}
+    if "element_refs" in props:
+        props["element_refs"] = _video_clip_element_refs_schema()
     for key, desc in {
         "video_prompt": "生视频提示词（≥80字）",
         "summary": "一句话摘要",
         "notes": "AI 编排自用备注，不进入生视频提示词",
-        "element_refs": "关联角色/空镜/物品/画面资产",
     }.items():
         if key in props and isinstance(props[key], dict):
             field = dict(props[key])
@@ -766,20 +779,7 @@ def build_video_clip_item_schema() -> dict[str, Any]:
                     "缺省时系统自动取同子镜已关联的 frame_asset_id"
                 ),
             },
-            "element_refs": _shot_element_refs_schema(),
-            "media_refs": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "直接引用的 media_id 列表",
-            },
-            "reference_order": {
-                "type": "array",
-                "items": {
-                    "type": "string",
-                    "enum": ["scene", "character", "prop", "frame", "media"],
-                },
-                "description": "多参考图顺序，默认 scene→character→prop→frame→media",
-            },
+            "element_refs": _video_clip_element_refs_schema(),
         },
         required=["sub_shot_id", "video_prompt", "element_refs"],
         additional_properties=True,
@@ -792,7 +792,8 @@ def build_video_clips_array_schema() -> dict[str, Any]:
         "type": "array",
         "description": (
             "为每个子镜创建 video_clip 文字资产（video_clips 数量应等于计划稿子镜总数），"
-            "回填 sub_shots[].videos[].video_clip_asset_id"
+            "回填 sub_shots[].videos[].video_clip_asset_id；"
+            "element_refs 仅 {\"frame\":[...]}（禁止 character/scene/prop）"
         ),
         "items": build_video_clip_item_schema(),
     }
@@ -809,6 +810,13 @@ def build_ask_user_question_schema() -> dict[str, Any]:
             "description": {
                 "type": "string",
                 "description": "弹窗说明（可选）",
+            },
+            "kind": {
+                "type": "string",
+                "enum": ["generic", "plan_approval"],
+                "description": (
+                    "确认类型：generic=一般提问；plan_approval=计划/重规划确认"
+                ),
             },
             "questions": {
                 "type": "array",

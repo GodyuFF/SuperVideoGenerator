@@ -166,6 +166,7 @@
     "confirmContinue": "确认并继续",
     "awaitingReply": "等待回答",
     "awaitingConfirm": "等待确认",
+    "awaitingPlanConfirm": "等待计划确认",
     "answered": "已回答",
     "submitted": "已提交",
     "cancelled": "已取消",

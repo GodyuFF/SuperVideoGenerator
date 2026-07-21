@@ -215,6 +215,7 @@ function NumberParamField({
 	return (
 		<NumberField
 			icon={param.shortLabel}
+			suffix={param.suffix}
 			value={draft.displayValue}
 			dragSensitivity="slow"
 			isDefault={value === param.default}

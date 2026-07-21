@@ -8,6 +8,7 @@
   "remainingPlan": "后续计划",
   "statusHistory": "状态历史（{{count}}）",
   "pipelineHint": "步骤按实际委派顺序追加，非固定模板",
+  "lastReplan": "最近重规划",
   "scriptStatus": {
     "draft": "草稿",
     "planned": "已规划",

@@ -1028,8 +1028,18 @@ def _extend_video_clips_for_narration_master(
             target = extend_end_by_shot.get(sid)
             if target is not None and int(clip.end_ms) < target:
                 meta = dict(clip.metadata or {})
-                # 保留已有 rate/freeze；若无 freeze 则标记需垫帧
-                if not meta.get("freeze_tail_ms") and not meta.get("playback_rate"):
+                # 用户已设倍速缩短时长：勿把 end 扩回配音长（否则像「倍速弹回」）
+                rate = meta.get("playback_rate")
+                try:
+                    rate_f = float(rate) if rate is not None else 1.0
+                except (TypeError, ValueError):
+                    rate_f = 1.0
+                if abs(rate_f - 1.0) > 0.001:
+                    new_clips.append(clip)
+                    max_end = max(max_end, int(clip.end_ms))
+                    continue
+                # 保留已有 freeze；若无 freeze 则标记需垫帧
+                if not meta.get("freeze_tail_ms"):
                     meta["freeze_tail_ms"] = target - int(clip.end_ms)
                 new_clips.append(clip.model_copy(update={"end_ms": target, "metadata": meta}))
                 changed = True

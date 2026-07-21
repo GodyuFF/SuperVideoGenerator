@@ -37,6 +37,8 @@ export const PlanPanel = memo(function PlanPanel({
   const summary = plan.runtime_summary?.trim();
   const history = plan.plan_status_history.filter((h) => h.trim());
   const remaining = plan.last_remaining_plan.filter((r) => r.trim());
+  const affected = new Set(plan.affected_step_ids ?? []);
+  const replanReason = plan.last_replan_reason?.trim();
 
   return (
     <section className="plan-panel">
@@ -110,6 +112,13 @@ export const PlanPanel = memo(function PlanPanel({
         </details>
       )}
 
+      {replanReason && (
+        <div className="plan-status-card plan-replan-reason">
+          <div className="plan-status-label">{t("plan:lastReplan")}</div>
+          <p className="plan-status-text">{replanReason}</p>
+        </div>
+      )}
+
       {!hasSteps && !summary && (
         <p className="muted plan-empty-hint">{t("plan:pipelineHint")}</p>
       )}
@@ -118,10 +127,11 @@ export const PlanPanel = memo(function PlanPanel({
         <ol className="plan-step-timeline">
           {plan.steps.map((step, index) => {
             const shownStatus = displayStepStatus(plan.steps, index);
+            const isAffected = affected.has(step.id);
             return (
             <li
               key={step.id}
-              className={`plan-step-card status-${shownStatus}`}
+              className={`plan-step-card status-${shownStatus}${isAffected ? " plan-step--affected" : ""}`}
             >
               <div className="plan-step-index">{index + 1}</div>
               <div className="plan-step-body">

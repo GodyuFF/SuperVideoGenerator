@@ -178,7 +178,9 @@ class ReActRunner:
             ctx.llm_observations = prepared.observations
             ctx.history_summary = prepared.history_summary
             decision = await wait_or_cancel(script_id, decide(ctx))
-            plan_update = extract_plan_update(decision.action_input)
+            plan_update = None
+            if decision.action == "update_plan":
+                plan_update = extract_plan_update(decision.action_input)
 
             await self._emit_agent_react(
                 script_id, agent_name, display_name, step_id, "agent_react_thought",

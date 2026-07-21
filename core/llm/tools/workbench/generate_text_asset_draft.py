@@ -99,8 +99,7 @@ def _compact_content_field_spec(asset_type: str) -> str:
     if asset_type == "frame":
         lines.append('- element_refs: {"scene":[],"character":[],"prop":[],"frame":[]}')
     if asset_type == "video_clip":
-        lines.append('- element_refs: {"scene":[],"character":[],"prop":[],"frame":[],"video_clip":[]}')
-        lines.append("- media_refs: []")
+        lines.append('- element_refs: {"frame":[]}')
     return "\n".join(lines)
 
 
@@ -125,7 +124,8 @@ def _build_system_prompt(asset_type: str) -> str:
         video_clip_rule = (
             "\n- 视频片段仅五块：summary / video_prompt / notes / element_refs；"
             "video_prompt 不少于 80 字；notes 仅供 AI 编排自用；"
-            "element_refs / media_refs 可留空；勿手写 prompt_locked / video_mode / camera_motion。"
+            "element_refs 仅可填 frame 桶（`{\"frame\":[]}`），可留空数组；"
+            "禁止 character/scene/prop；勿手写 prompt_locked / video_mode / camera_motion。"
         )
     if asset_type == "video_clip":
         prompt_rule = "- content.video_prompt 生视频提示词不少于 80 字。"

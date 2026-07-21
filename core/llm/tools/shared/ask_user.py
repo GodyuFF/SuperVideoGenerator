@@ -93,6 +93,9 @@ async def execute_ask_user_question(
     action_input = normalize_ask_user_action_input(dict(action_input or {}))
     title = str(action_input.get("title", "")).strip() or "请补充信息"
     description = str(action_input.get("description", "")).strip()
+    kind_raw = str(action_input.get("kind", "generic") or "generic").strip().lower()
+    if kind_raw not in ("generic", "plan_approval"):
+        kind_raw = "generic"
     questions = action_input.get("questions") or []
     if not isinstance(questions, list) or not questions:
         raise ValueError("ask_user_question 需要非空 questions 数组")
@@ -108,6 +111,7 @@ async def execute_ask_user_question(
             questions=list(questions),
             step_id=step_id or None,
             conversation_id=conversation_id or None,
+            kind=kind_raw,
         )
     except ConfirmationTimeoutError:
         return "用户确认超时，未收到回答。", {}

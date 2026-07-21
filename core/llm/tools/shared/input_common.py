@@ -53,8 +53,8 @@ PLAN_TRACKING_PROPERTIES: dict[str, Any] = {
 PLAN_TRACKING_REQUIRED = ["plan_status", "remaining_plan"]
 
 
-def merge_plan_tracking(schema: dict[str, Any], *, required: bool = True) -> dict[str, Any]:
-    """在既有 schema 上合并 plan_status / remaining_plan。"""
+def merge_plan_tracking(schema: dict[str, Any], *, required: bool = False) -> dict[str, Any]:
+    """在既有 schema 上合并 plan_status / remaining_plan（默认可选，显式 update_plan/replan 才必填）。"""
     merged = dict(schema)
     props = dict(merged.get("properties") or {})
     props.update(PLAN_TRACKING_PROPERTIES)
@@ -64,12 +64,16 @@ def merge_plan_tracking(schema: dict[str, Any], *, required: bool = True) -> dic
         for key in PLAN_TRACKING_REQUIRED:
             if key not in required_fields:
                 required_fields.append(key)
+    else:
+        required_fields = [k for k in required_fields if k not in PLAN_TRACKING_REQUIRED]
     merged["required"] = required_fields
     merged["additionalProperties"] = True
     return merged
 
 
-READ_ONLY_QUERY_SCHEMA = merge_plan_tracking(build_read_only_query_schema())
+READ_ONLY_QUERY_SCHEMA = merge_plan_tracking(
+    build_read_only_query_schema(), required=False
+)
 
 DELETE_ASSET_SCHEMA: dict[str, Any] = {
     "type": "object",

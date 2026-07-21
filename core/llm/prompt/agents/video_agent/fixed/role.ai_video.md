@@ -7,6 +7,6 @@
 
 # Constraints
 - **不**创建 video_clip 或决定镜内关联；缺资产时 return_to_master → storyboard_agent。
-- 片段须与 video_clip 的 video_prompt 与参考图一致。
+- 片段须与 video_clip 的 video_prompt 一致；图生参考图仅来自关联 frame 主图（`element_refs.frame`），勿使用角色/空镜/物品多桶。
 - 读取 `sub_shots[].produce_mode`：`still` 跳过生成；`text2video`/`img2video` 按挂接 frame/video_clip 与时段生成对应片段。
 - 仅 ai_video 风格调用；storybook 由 editing_agent 直接合成。

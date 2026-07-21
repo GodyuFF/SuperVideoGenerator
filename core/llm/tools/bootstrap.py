@@ -15,9 +15,11 @@ from core.llm.tools.video.register import register_video_tools
 
 def register_all_tools(registry: ToolRegistry) -> None:
     register_common_tools(registry)
+    from core.llm.tools.plan.register import register_plan_tools
     from core.llm.tools.shared.return_to_master_register import register_return_to_master_tool
 
     register_return_to_master_tool(registry)
+    register_plan_tools(registry)
     register_script_tools(registry)
     register_image_tools(registry)
     register_storyboard_tools(registry)

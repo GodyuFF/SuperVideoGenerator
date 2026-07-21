@@ -7,12 +7,12 @@ from typing import Any
 from core.llm.prompt.tools.schema_builders import build_ask_user_question_schema
 from core.llm.tools.editing.schemas import EDITING_SCHEMAS
 from core.llm.tools.image.schemas import IMAGE_SCHEMAS
+from core.llm.tools.plan.schemas import REPLAN_SCHEMA, UPDATE_PLAN_SCHEMA
 from core.llm.tools.script.schemas import SCRIPT_SCHEMAS
 from core.llm.tools.shared.input_common import (
     FINISH_SCHEMA,
     OBSERVATION_ONLY,
     REACT_INPUT_SCHEMA,
-    merge_plan_tracking,
 )
 from core.llm.tools.storyboard.schemas import STORYBOARD_SCHEMAS
 from core.llm.tools.storyboard_refine.schemas import STORYBOARD_REFINE_SCHEMAS
@@ -47,6 +47,8 @@ ACTION_INPUT_SCHEMAS: dict[str, dict[str, Any]] = {
     "finish": FINISH_SCHEMA,
     "return_to_master": RETURN_TO_MASTER_SCHEMA,
     ASK_USER_QUESTION_ACTION: _ASK_USER_QUESTION_SCHEMA,
+    "update_plan": UPDATE_PLAN_SCHEMA,
+    "replan": REPLAN_SCHEMA,
     **SCRIPT_SCHEMAS,
     **IMAGE_SCHEMAS,
     **STORYBOARD_SCHEMAS,
@@ -59,18 +61,22 @@ ACTION_INPUT_SCHEMAS: dict[str, dict[str, Any]] = {
 
 
 def react_input_schema(action: str) -> dict[str, Any]:
-    """ReAct 决策阶段 schema（ask_user_question 需完整 questions）。"""
+    """ReAct 决策阶段 schema（计划字段仅 update_plan/replan 必填）。"""
     if action == "finish":
         base = dict(FINISH_SCHEMA)
         base["additionalProperties"] = True
-        return merge_plan_tracking(base)
+        return base
     if action == ASK_USER_QUESTION_ACTION:
-        return merge_plan_tracking(dict(_ASK_USER_QUESTION_SCHEMA))
+        return dict(_ASK_USER_QUESTION_SCHEMA)
+    if action == "update_plan":
+        return dict(UPDATE_PLAN_SCHEMA)
+    if action == "replan":
+        return dict(REPLAN_SCHEMA)
     if action == "read_webpage":
         return read_webpage_react_input_schema()
     if action in _READ_ONLY_REACT_ACTIONS:
         return dict(REACT_INPUT_SCHEMA)
-    return merge_plan_tracking(dict(REACT_INPUT_SCHEMA))
+    return dict(REACT_INPUT_SCHEMA)
 
 
 def action_input_schema(action: str) -> dict[str, Any]:

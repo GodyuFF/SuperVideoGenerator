@@ -124,9 +124,11 @@ function SubmittedSummary({
 function A2UIEyebrow({ kind }: { kind: string }) {
   const { t } = useAppTranslation(["settings"]);
   const label =
-    kind === "generic" || kind === "script_requirements"
-      ? t("settings:a2ui.awaitingReply")
-      : t("settings:a2ui.awaitingConfirm");
+    kind === "plan_approval"
+      ? t("settings:a2ui.awaitingPlanConfirm")
+      : kind === "generic" || kind === "script_requirements"
+        ? t("settings:a2ui.awaitingReply")
+        : t("settings:a2ui.awaitingConfirm");
   return <span className="a2ui-eyebrow">{label}</span>;
 }
 

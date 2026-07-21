@@ -196,7 +196,7 @@ def build_delegate_agent_input_schema(
     eligible_agent_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """按当前 roster 生成 delegate_agent 的 input_schema（enum 默认仅含本轮可委派 id）。"""
-    from core.llm.tools.shared.input_common import REACT_INPUT_SCHEMA, merge_plan_tracking
+    from core.llm.tools.shared.input_common import REACT_INPUT_SCHEMA
 
     candidates = build_delegate_agent_candidates(
         profile_id, style_mode, config=config
@@ -204,7 +204,7 @@ def build_delegate_agent_input_schema(
     roster_ids = [item.agent_id for item in candidates]
     agent_ids = list(eligible_agent_ids) if eligible_agent_ids is not None else roster_ids
     agent_ids = [aid for aid in agent_ids if aid in roster_ids]
-    schema = merge_plan_tracking(dict(REACT_INPUT_SCHEMA))
+    schema = dict(REACT_INPUT_SCHEMA)
     props = dict(schema.get("properties") or {})
     props["agent_id"] = {
         "type": "string",

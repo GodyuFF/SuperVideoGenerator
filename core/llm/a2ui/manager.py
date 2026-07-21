@@ -328,6 +328,7 @@ class ConfirmationManager:
         step_id: str | None = None,
         timeout: float | None = None,
         conversation_id: str | None = None,
+        kind: str | None = None,
     ) -> A2UIConfirmationResponse:
         """Agent ask_user_question 工具：动态表单收集用户回答。"""
         from core.llm.tools.shared.ask_user import _questions_to_components
@@ -335,8 +336,16 @@ class ConfirmationManager:
         components = _questions_to_components(list(questions or []))
         if not components:
             raise ValueError("questions 不能为空")
+        resolved_kind = (kind or "").strip() or A2UIConfirmationKind.GENERIC
+        if resolved_kind not in (
+            A2UIConfirmationKind.GENERIC,
+            A2UIConfirmationKind.PLAN_APPROVAL,
+            "generic",
+            "plan_approval",
+        ):
+            resolved_kind = A2UIConfirmationKind.GENERIC
         response = await self.request(
-            kind=A2UIConfirmationKind.GENERIC,
+            kind=resolved_kind,
             title=title,
             description=description,
             components=components,

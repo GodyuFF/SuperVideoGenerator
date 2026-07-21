@@ -77,7 +77,6 @@ def _video_spec_from_payload(
         sub_shot_idx=int(payload.get("sub_shot_idx", 0)),
         source_frame_asset_id=str(payload.get("source_frame_asset_id", "")),
         source_frame_asset_ids=list(payload.get("source_frame_asset_ids") or []),
-        source_media_ids=list(payload.get("source_media_ids") or []),
         video_clip_asset_id=clip_id,
     )
 

@@ -407,16 +407,9 @@
       }
     },
     "videoGen": {
-      "sourceLead": "AI 生视频参考源（非分镜挂接）：video_clip、画面、落盘图或角色/场景/道具形象",
-      "sourceVideoClips": "视频片段",
+      "sourceLead": "AI 生视频参考源（非分镜挂接）：仅可选剧本画面",
       "sourceFrames": "剧本画面",
-      "sourceImages": "落盘图片",
-      "sourceBucket": {
-        "character": "角色形象",
-        "scene": "场景",
-        "prop": "道具"
-      },
-      "sourceSummary": "已选 {{count}} 张参考图，推断模式：{{mode}}",
+      "sourceSummary": "已选 {{count}} 张画面参考，推断模式：{{mode}}",
       "modeAuto": "自动",
       "sourceEmpty": "未选择参考源时将按子镜已有画面自动推断"
     }

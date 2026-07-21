@@ -1036,42 +1036,142 @@ button:disabled {
 }
 
 .project-home-card {
+  position: relative;
   display: flex;
   gap: 0.75rem;
   background: var(--svf-surface, #111520);
   border: 1px solid var(--svf-frame, #2a3347);
-  border-radius: 12px;
-  padding: 0.75rem;
+  border-radius: var(--svf-radius-lg, 14px);
+  padding: 0.85rem 0.9rem;
   align-items: flex-start;
+  overflow: hidden;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.15s ease,
+    background-color 0.18s ease;
+}
+
+/* 取景器顶光条：仅选中时亮起，与 A2UI / 详情卡签名一致 */
+.project-home-card-viewfinder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--svf-accent, #e0634a);
+  opacity: 0;
+  transform: scaleX(0.35);
+  transform-origin: left center;
+  transition: opacity 0.18s ease, transform 0.22s ease;
+  pointer-events: none;
+}
+
+.project-home-card.is-selected .project-home-card-viewfinder {
+  opacity: 0.9;
+  transform: scaleX(1);
+}
+
+.project-home-card.is-selected {
+  border-color: color-mix(in srgb, var(--svf-accent, #e0634a) 55%, var(--svf-frame, #2a3347));
+  background: color-mix(in srgb, var(--svf-accent, #e0634a) 8%, var(--svf-surface, #111520));
+  box-shadow: var(--svf-shadow-accent, 0 0 0 1px rgba(224, 99, 74, 0.22), 0 4px 20px rgba(224, 99, 74, 0.12));
 }
 
 .project-home-card-check {
-  padding-top: 0.35rem;
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  padding-top: 0.2rem;
+  cursor: pointer;
 }
 
-.project-home-card-body {
+.project-home-card-checkbox {
+  appearance: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  border: 1.5px solid var(--svf-frame, #2a3347);
+  border-radius: 4px;
+  background: var(--svf-void, #080a0f);
+  cursor: pointer;
+  vertical-align: top;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.project-home-card-checkbox:hover {
+  border-color: color-mix(in srgb, var(--svf-accent, #e0634a) 50%, var(--svf-frame, #2a3347));
+}
+
+.project-home-card-checkbox:checked {
+  border-color: var(--svf-accent, #e0634a);
+  background-color: var(--svf-accent, #e0634a);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M2.5 6.2 5 8.7 9.5 3.5'/%3E%3C/svg%3E");
+  background-size: 0.7rem;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.project-home-card-checkbox:focus-visible {
+  outline: 2px solid var(--svf-accent, #e0634a);
+  outline-offset: 2px;
+}
+
+/*
+ * 卡片正文是幽灵 button：须压过全局 button { background: accent }，
+ * 否则 hover/默认态会整块染成珊瑚红（选中观感异常的根因）。
+ */
+button.project-home-card-body,
+button.project-home-card-body:hover,
+button.project-home-card-body:active,
+button.project-home-card-body:focus,
+button.project-home-card-body:focus-visible {
   flex: 1;
+  min-width: 0;
   text-align: left;
-  background: none;
+  background: transparent;
   border: none;
+  border-radius: 0;
+  box-shadow: none;
   color: inherit;
   cursor: pointer;
-  padding: 0.25rem 0;
+  padding: 0.15rem 0 0.1rem;
+  transform: none;
+  font-size: inherit;
+  font-weight: inherit;
 }
 
-.project-home-card-body strong {
+button.project-home-card-body:focus-visible {
+  outline: 2px solid var(--svf-accent, #e0634a);
+  outline-offset: 3px;
+  border-radius: var(--svf-radius-sm, 6px);
+}
+
+.project-home-card-title {
   display: block;
-  font-size: 1rem;
-  margin-bottom: 0.35rem;
+  font-family: var(--svf-font-display, "Newsreader", Georgia, serif);
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 0.3rem;
+  color: var(--svf-text, #e6eaf2);
+}
+
+.project-home-card-count {
+  margin: 0;
+  font-size: 0.8125rem;
 }
 
 .project-home-meta {
-  font-size: 0.8rem;
+  margin: 0.55rem 0 0;
+  font-family: var(--svf-font-mono, "IBM Plex Mono", ui-monospace, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
 }
 
 .project-home-scripts {
   list-style: none;
-  margin: 0.4rem 0 0;
+  margin: 0.45rem 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -1084,7 +1184,7 @@ button:disabled {
   align-items: baseline;
   gap: 0.45rem;
   font-size: 0.8125rem;
-  color: var(--svf-text, #e8ecf4);
+  color: var(--svf-text-soft, #b8c0d0);
   min-width: 0;
 }
 
@@ -1096,9 +1196,29 @@ button:disabled {
 
 .project-home-open {
   display: inline-block;
-  margin-top: 0.75rem;
+  margin-top: 0.85rem;
   color: var(--svf-accent, #e0634a);
   font-size: 0.85rem;
+  font-weight: 500;
+  transition: color 0.15s ease, letter-spacing 0.15s ease;
+}
+
+button.project-home-card-body:hover .project-home-open {
+  letter-spacing: 0.02em;
+  color: var(--svf-accent-hover, #c4523c);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-home-card,
+  .project-home-card-viewfinder,
+  .project-home-card-checkbox,
+  .project-home-open {
+    transition: none;
+  }
+
+  .project-home-card.is-selected .project-home-card-viewfinder {
+    transform: none;
+  }
 }
 
 .board-card-actions {
@@ -3018,6 +3138,11 @@ button:disabled {
 
 .plan-step-card.status-awaiting_confirmation {
   border-color: var(--svf-awaiting-border);
+}
+
+.plan-step-card.plan-step--affected {
+  outline: 2px solid var(--svf-accent, #e07a5f);
+  outline-offset: 1px;
 }
 
 .plan-step-index {

@@ -132,7 +132,7 @@ _STYLE_TASK_BRIEFS: dict[VideoStyleMode, dict[str, str]] = {
     VideoStyleMode.AI_VIDEO: {
         "storyboard": (
             "【AI 视频】生成分镜与 VideoPlan：create_shots 填写 element_refs 与 sub_shots；"
-            "create_video_clips 为每子镜创建 video_clip（含 video_prompt 与参考关联）；"
+            "create_video_clips 为每子镜创建 video_clip（video_prompt + element_refs 仅 frame 桶）；"
             "勿 create_frames。"
         ),
         "video_gen": (

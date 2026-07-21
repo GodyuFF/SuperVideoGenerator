@@ -194,6 +194,8 @@ export interface NumberParamDefinition<TKey extends string = string>
 	unit?: "percent";
 	/** Short label shown as the scrub handle icon in the number field (e.g. "W", "R"). */
 	shortLabel?: string;
+	/** 显示后缀（如音量 dB），不影响存储值。 */
+	suffix?: string;
 }
 
 export interface BooleanParamDefinition<TKey extends string = string>

@@ -252,7 +252,11 @@ export function CreateTextAssetDialog({
                 <AssetRefPicker
                   projectId={projectId}
                   scriptId={scriptId}
-                  kinds={["scene", "character", "prop", "frame"]}
+                  kinds={
+                    assetType === "video_clip"
+                      ? ["frame"]
+                      : ["scene", "character", "prop", "frame"]
+                  }
                   value={elementRefs}
                   onChange={setElementRefs}
                   variantRefs={variantRefs}

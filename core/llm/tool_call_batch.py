@@ -21,6 +21,8 @@ EXCLUSIVE_ACTIONS = frozenset(
         "finish",
         ASK_USER_QUESTION_ACTION,
         "delegate_agent",
+        "update_plan",
+        "replan",
     }
 )
 

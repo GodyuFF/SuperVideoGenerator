@@ -40,7 +40,7 @@ export function HandleButton({
 		<button
 			type="button"
 			className={cn(
-				"absolute flex items-center justify-center outline-none",
+				"svf-preview-handle absolute flex items-center justify-center bg-transparent outline-none",
 				className,
 			)}
 			style={{

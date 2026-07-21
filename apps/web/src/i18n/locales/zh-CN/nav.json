@@ -24,5 +24,18 @@
   "recentScripts": "最近打开的剧本",
   "serverProjects": "服务端项目",
   "noProjects": "暂无项目，请新建",
-  "scriptCount": "{{count}} 个剧本"
+  "scriptCount": "{{count}} 个剧本",
+  "heroAria": "产品介绍",
+  "heroEyebrow": "AI 视频创作工作台",
+  "heroTitle": "从剧本到成片，一条对话流水线",
+  "heroDesc": "用自然语言驱动多 Agent 协作：写剧本、建分镜、生图配音、剪辑导出。每个项目独立管理，资产可复用。",
+  "loadingProjects": "加载项目列表…",
+  "emptyProjectsHint": "暂无项目，点击「新建项目」开始创作。",
+  "unnamedProject": "未命名项目",
+  "defaultProjectTitle": "视频项目 {{date}}",
+  "createdAt": "创建于 {{date}}",
+  "selectProject": "选择项目 {{title}}",
+  "deleteConfirmOne": "该项目",
+  "deleteConfirmMany": "选中的 {{count}} 个项目",
+  "deleteConfirm": "确定删除{{label}}？将同时删除磁盘目录与对话数据，且不可恢复。"
 }

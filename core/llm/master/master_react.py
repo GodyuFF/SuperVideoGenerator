@@ -193,9 +193,12 @@ class MasterReActEngine:
         script_id: str,
         decision: ReActDecision,
     ) -> str | None:
+        """仅在 update_plan / replan 时回写 session 与 PlanDocument。"""
+        if decision.action not in ("update_plan", "replan"):
+            return None
         update = extract_plan_update(decision.action_input)
         if update is None:
-            return "提示：请在 tool_calls 中填写 plan_status 与 remaining_plan，以便跟踪全局计划。"
+            return "提示：update_plan / replan 须填写 plan_status 与 remaining_plan。"
         session.plan_status_history = trim_plan_status_history(
             [*session.plan_status_history, update.plan_status]
         )
@@ -213,8 +216,10 @@ class MasterReActEngine:
         session: Any,
         *,
         include_full_plan: bool = False,
+        affected_step_ids: list[str] | None = None,
+        reason: str | None = None,
     ) -> None:
-        """推送 plan 元数据更新；默认轻量 delta，全量 plan 由 plan_ready 承担。"""
+        """推送 plan 元数据更新；默认轻量 delta，全量 plan 由 plan_ready / replan 承担。"""
         payload: dict[str, Any] = {
             "conversation_id": conversation_id,
             "runtime_summary": plan.runtime_summary,
@@ -224,6 +229,10 @@ class MasterReActEngine:
         }
         if include_full_plan:
             payload["plan"] = plan.model_dump()
+        if affected_step_ids is not None:
+            payload["affected_step_ids"] = list(affected_step_ids)
+        if reason:
+            payload["reason"] = reason
         await self._emit(script_id, "plan_updated", payload)
 
     def _make_thought_stream_handler(
@@ -639,13 +648,7 @@ class MasterReActEngine:
                     visibility="user",
                 )
 
-                plan_warn = self._apply_master_plan_update(
-                    session, plan, script_id, decision
-                )
-                if plan_warn:
-                    ctx.observations.append(plan_warn)
-                    session.observations = list(ctx.observations)
-                await self._emit_plan_updated(script_id, conversation_id, plan, session)
+                # 计划回写改由显式 update_plan / replan 处理，不再每轮强制抽取
 
                 if session.is_delegate_action(decision.action):
                     agent_id = str(
@@ -689,6 +692,94 @@ class MasterReActEngine:
                     )
                     finished_normally = True
                     break
+
+                if decision.action in ("update_plan", "replan"):
+                    await self._emit(
+                        script_id,
+                        "react_action",
+                        self._react_action_payload(
+                            decision, conversation_id, ctx.iteration
+                        ),
+                    )
+                    from core.llm.tools.plan.handler import (
+                        handle_replan,
+                        handle_update_plan,
+                    )
+                    from core.llm.agent.react_core import AgentRunContext
+
+                    plan_ctx = AgentRunContext(
+                        task_brief=session.task_brief,
+                        work_context={},
+                        script_id=script_id,
+                        step_id=script_id,
+                        agent_name=MASTER_AGENT_NAME,
+                        conversation_id=conversation_id,
+                        project_id=project_id,
+                    )
+                    handler = (
+                        handle_replan
+                        if decision.action == "replan"
+                        else handle_update_plan
+                    )
+                    result = handler(
+                        self._store, plan_ctx, dict(decision.action_input or {})
+                    )
+                    observation = result.observation
+                    if result.ok:
+                        plan_warn = self._apply_master_plan_update(
+                            session, plan, script_id, decision
+                        )
+                        if plan_warn:
+                            observation = f"{observation}\n{plan_warn}"
+                        # 重新加载 store 中的 plan（replan 已 version++）
+                        refreshed = self._store.get_plan(script_id)
+                        if refreshed is not None:
+                            plan = refreshed
+                        session.execution_plan = build_plan_snapshot(plan)
+                        structured = result.structured or {}
+                        await self._emit_plan_updated(
+                            script_id,
+                            conversation_id,
+                            plan,
+                            session,
+                            include_full_plan=decision.action == "replan",
+                            affected_step_ids=(
+                                list(structured.get("affected_step_ids") or [])
+                                if decision.action == "replan"
+                                else None
+                            ),
+                            reason=(
+                                str(structured.get("reason") or "")
+                                if decision.action == "replan"
+                                else None
+                            ),
+                        )
+                        if decision.action == "replan":
+                            await self._emit(
+                                script_id,
+                                "plan_ready",
+                                {"plan": plan.model_dump()},
+                            )
+                    ctx.observations.append(observation)
+                    session.observations = list(ctx.observations)
+                    self._persist_master_react_turn(
+                        conversation_id,
+                        project_id,
+                        script_id,
+                        decision,
+                        observation,
+                    )
+                    await self._emit(
+                        script_id,
+                        "react_observation",
+                        {
+                            "iteration": ctx.iteration,
+                            "observation": observation,
+                            "conversation_id": conversation_id,
+                            "kind": "master",
+                        },
+                    )
+                    continue
 
                 if decision.action == ASK_USER_QUESTION_ACTION:
                     if goal_mode:

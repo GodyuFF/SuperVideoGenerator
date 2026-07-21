@@ -259,6 +259,10 @@ export function useWorkbenchWs(options: UseWorkbenchWsOptions) {
             ? (e.last_remaining_plan as string[])
             : undefined,
           version: typeof e.version === "number" ? e.version : undefined,
+          affected_step_ids: Array.isArray(e.affected_step_ids)
+            ? (e.affected_step_ids as string[])
+            : undefined,
+          reason: e.reason !== undefined ? String(e.reason) : undefined,
         });
       }
 

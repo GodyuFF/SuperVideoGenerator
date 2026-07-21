@@ -129,6 +129,8 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 680,
     show: false,
+    // 与 splash / --svf-void 一致，避免 loadURL 导航间隙白闪
+    backgroundColor: "#080a0f",
     title: "SuperVideoGenerator",
     icon: iconPath,
     autoHideMenuBar: true,

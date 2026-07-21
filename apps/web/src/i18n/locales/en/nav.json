@@ -24,5 +24,18 @@
   "recentScripts": "Recently opened scripts",
   "serverProjects": "Server projects",
   "noProjects": "No projects yet — create one",
-  "scriptCount": "{{count}} scripts"
+  "scriptCount": "{{count}} scripts",
+  "heroAria": "Product introduction",
+  "heroEyebrow": "AI video workbench",
+  "heroTitle": "From script to cut — one conversation pipeline",
+  "heroDesc": "Drive multi-agent collaboration in natural language: script, storyboard, image & voice, edit & export. Each project stays isolated; assets stay reusable.",
+  "loadingProjects": "Loading projects…",
+  "emptyProjectsHint": "No projects yet. Click “New project” to start.",
+  "unnamedProject": "Untitled project",
+  "defaultProjectTitle": "Video project {{date}}",
+  "createdAt": "Created {{date}}",
+  "selectProject": "Select project {{title}}",
+  "deleteConfirmOne": "this project",
+  "deleteConfirmMany": "{{count}} selected projects",
+  "deleteConfirm": "Delete {{label}}? Disk folders and conversation data will be removed permanently."
 }

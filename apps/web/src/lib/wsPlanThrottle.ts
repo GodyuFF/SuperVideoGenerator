@@ -12,6 +12,8 @@ export interface PlanUpdatedPayload {
   plan_status_history?: string[];
   last_remaining_plan?: string[];
   version?: number;
+  affected_step_ids?: string[];
+  reason?: string;
 }
 
 interface PendingPlanUpdated {
@@ -20,6 +22,8 @@ interface PendingPlanUpdated {
   plan_status_history?: string[];
   last_remaining_plan?: string[];
   version?: number;
+  affected_step_ids?: string[];
+  reason?: string;
 }
 
 /** 合并 plan_updated 防抖缓冲。 */
@@ -43,6 +47,12 @@ export function mergePlanUpdatedPending(
   if (payload.version !== undefined) {
     next.version = payload.version;
   }
+  if (Array.isArray(payload.affected_step_ids)) {
+    next.affected_step_ids = payload.affected_step_ids;
+  }
+  if (payload.reason !== undefined) {
+    next.reason = payload.reason;
+  }
   return next;
 }
 
@@ -65,6 +75,15 @@ export function applyPlanUpdatedPending(
   }
   if (pending.version !== undefined) {
     next = { ...next, version: pending.version };
+  }
+  if (Array.isArray(pending.affected_step_ids)) {
+    next = {
+      ...next,
+      affected_step_ids: pending.affected_step_ids,
+      last_replan_reason: pending.reason ?? next.last_replan_reason,
+    };
+  } else if (pending.reason !== undefined) {
+    next = { ...next, last_replan_reason: pending.reason };
   }
   return next;
 }

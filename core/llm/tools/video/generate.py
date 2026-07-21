@@ -51,12 +51,6 @@ def collect_shot_video_specs(
         if isinstance(raw_frame_ids, list)
         else None
     )
-    raw_media_ids = args.get("source_media_ids")
-    media_ids = (
-        [str(x).strip() for x in raw_media_ids if str(x).strip()]
-        if isinstance(raw_media_ids, list)
-        else None
-    )
     element_refs = args.get("source_element_refs")
     if element_refs is not None and not isinstance(element_refs, dict):
         element_refs = None
@@ -76,7 +70,6 @@ def collect_shot_video_specs(
                 sub_shot_idx=sub_idx,
                 preferred_frame_asset_id=preferred_frame,
                 source_frame_asset_ids=frame_ids,
-                source_media_ids=media_ids,
                 source_element_refs=element_refs,
                 forced_video_mode=forced_mode,
                 allowed_modes=allowed_modes,
@@ -110,7 +103,6 @@ def _persist_generated_video(
         "agnes_task_id": task_meta.get("task_id") or task_meta.get("id"),
         "source_frame_asset_id": spec.source_frame_asset_id,
         "source_frame_asset_ids": spec.source_frame_asset_ids,
-        "source_media_ids": spec.source_media_ids,
     }
     _persist_media(
         store,

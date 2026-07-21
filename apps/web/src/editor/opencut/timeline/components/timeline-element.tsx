@@ -21,7 +21,7 @@ import {
 	timelineTimeToSnappedPixels,
 } from "@opencut/timeline";
 import { getTrackHeight } from "./track-layout";
-import { getTimelineElementClassName, TIMELINE_TRACK_THEME } from "./theme";
+import { getTimelineElementClassName, TIMELINE_TRACK_THEME, TIMELINE_VIDEO_AUDIO_RAIL_COLOR } from "./theme";
 import {
 	ContextMenu,
 	ContextMenuContent,
@@ -42,6 +42,7 @@ import type { MediaAsset } from "@opencut/media/types";
 import { mediaSupportsAudio } from "@opencut/media/media-utils";
 import {
 	canToggleSourceAudio,
+	doesElementHaveEnabledAudio,
 	isSourceAudioSeparated,
 } from "@opencut/timeline/audio-separation";
 import { useOpencutT } from "@opencut/i18n/useOpencutT";
@@ -935,20 +936,20 @@ function TextElementContent({
 	if (displayTier === "compact") {
 		return (
 			<div
-				className="flex size-full items-center justify-start pl-1"
+				className="flex size-full items-center justify-start"
 				title={content}
 			>
-				<span className="text-[10px] text-white/90">#{elementIndex}</span>
+				<span className="svf-timeline-clip-label">#{elementIndex}</span>
 			</div>
 		);
 	}
 
 	return (
 		<div
-			className="flex size-full items-center justify-start pl-1"
+			className="flex size-full items-center justify-start"
 			title={content}
 		>
-			<span className="truncate text-xs text-white">{content}</span>
+			<span className="svf-timeline-clip-label">{content}</span>
 		</div>
 	);
 }
@@ -1197,6 +1198,7 @@ function TiledMediaContent({
 	displayTier: ClipDisplayTier;
 }) {
 	const mediaAssets = useEditor((e) => e.media.getAssets());
+	const pixelsPerSecond = useContext(PixelsPerSecondContext);
 
 	const mediaAsset = mediaAssets.find((asset) => asset.id === element.mediaId);
 	const imageUrl =
@@ -1204,20 +1206,47 @@ function TiledMediaContent({
 			? mediaAsset?.thumbnailUrl
 			: (mediaAsset?.thumbnailUrl ?? mediaAsset?.url);
 
+	const showAudioRail =
+		element.type === "video" &&
+		displayTier !== "bar" &&
+		mediaSupportsAudio({ media: mediaAsset }) &&
+		pixelsPerSecond !== null;
+	const audioEnabled =
+		element.type === "video" &&
+		doesElementHaveEnabledAudio({ element, mediaAsset });
+	const gainSamples = useMemo(
+		() =>
+			element.type === "video"
+				? buildWaveformGainSamples({
+						element,
+						count: WAVEFORM_GAIN_SAMPLE_COUNT,
+					})
+				: [],
+		[element],
+	);
+
 	if (!imageUrl) {
 		if (displayTier === "bar") {
 			return <div className="size-full" title={element.name} />;
 		}
 		return (
-			<span
-				className={cn(
-					"text-foreground/80 truncate",
-					displayTier === "compact" ? "text-[10px] pl-1" : "text-xs",
+			<div className="relative size-full">
+				<span
+					className="svf-timeline-clip-label"
+					title={element.name}
+				>
+					{displayTier === "compact" ? "…" : element.name}
+				</span>
+				{showAudioRail && (
+					<VideoAudioRail
+						element={element}
+						mediaAsset={mediaAsset}
+						pixelsPerSecond={pixelsPerSecond}
+						gainSamples={gainSamples}
+						muted={!audioEnabled}
+					/>
 				)}
-				title={element.name}
-			>
-				{displayTier === "compact" ? "…" : element.name}
-			</span>
+			</div>
 		);
 	}
 
@@ -1235,19 +1264,67 @@ function TiledMediaContent({
 					backgroundSize: `${tileWidth}px ${trackHeight}px`,
 					backgroundPosition: "left center",
 					pointerEvents: "none",
+					opacity: 0.92,
 				}}
 			/>
 			<MediaElementHeader
-				name={mediaAsset?.name}
+				name={mediaAsset?.name ?? element.name}
 				leading={
 					hasElementEffects({ element }) ? (
 						<EffectsButton element={element} track={track} />
 					) : null
 				}
-				hasFade={true}
+				hasFade={false}
 				displayTier={displayTier}
 			/>
+			{showAudioRail && (
+				<VideoAudioRail
+					element={element}
+					mediaAsset={mediaAsset}
+					pixelsPerSecond={pixelsPerSecond}
+					gainSamples={gainSamples}
+					muted={!audioEnabled}
+				/>
+			)}
 		</>
+	);
+}
+
+/** 视频 clip 底部嵌入音频能量条：有片内声时显示波形，提取后淡化虚线提示。 */
+function VideoAudioRail({
+	element,
+	mediaAsset,
+	pixelsPerSecond,
+	gainSamples,
+	muted,
+}: {
+	element: VideoElement;
+	mediaAsset: MediaAsset | undefined;
+	pixelsPerSecond: number;
+	gainSamples: number[];
+	muted: boolean;
+}) {
+	const sourceKey = buildWaveformSourceKey({ kind: "media", id: element.mediaId });
+	return (
+		<div
+			className={cn(
+				"svf-timeline-video-audio-rail",
+				muted && "svf-timeline-video-audio-rail--muted",
+			)}
+			aria-hidden="true"
+		>
+			<AudioWaveform
+				sourceKey={sourceKey}
+				sourceFile={mediaAsset?.file}
+				audioUrl={mediaAsset?.url}
+				gainSamples={gainSamples}
+				pixelsPerSecond={pixelsPerSecond}
+				clipDurationSec={element.duration / TICKS_PER_SECOND}
+				retime={element.retime}
+				sourceStartSec={element.trimStart / TICKS_PER_SECOND}
+				color={TIMELINE_VIDEO_AUDIO_RAIL_COLOR}
+			/>
+		</div>
 	);
 }
 
@@ -1275,13 +1352,13 @@ function MediaElementHeader({
 	return (
 		<div
 			className={cn(
-				"absolute top-0 left-0 flex h-5 w-full bg-linear-to-b pt-1",
-				hasFade && "from-black/30 to-transparent",
+				"absolute top-0 left-0 z-3 flex h-5 w-full items-start pt-0.5",
+				hasFade && "bg-linear-to-b from-black/30 to-transparent",
 			)}
 		>
 			{leading && <div className="pl-1">{leading}</div>}
 			{name && (
-				<span className="truncate px-1.5 text-[0.6rem] leading-tight text-white/75">
+				<span className="svf-timeline-clip-label" title={name}>
 					{name}
 				</span>
 			)}

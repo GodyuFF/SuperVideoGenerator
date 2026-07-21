@@ -344,6 +344,74 @@ html.svf-opencut-active button {
   border-radius: 6px;
 }
 
+/*
+ * 默认幽灵按钮：压过 design-system 全局 button { background: accent }，
+ * 否则预览变换手柄 / 工具栏图标会变成实心珊瑚 pill。
+ * 排除 .svf-switch：Radix Switch 根节点是 button，透明化后只剩「静音」文字不可点。
+ */
+.svf-opencut-theme button:not(.bg-primary):not(.btn-primary):not(.svf-timeline-playhead-grip):not(.svf-switch),
+html.svf-opencut-active .svf-opencut-theme button:not(.bg-primary):not(.btn-primary):not(.svf-timeline-playhead-grip):not(.svf-switch),
+.svf-opencut-theme button:not(.bg-primary):not(.btn-primary):not(.svf-timeline-playhead-grip):not(.svf-switch):hover,
+.svf-opencut-theme button:not(.bg-primary):not(.btn-primary):not(.svf-timeline-playhead-grip):not(.svf-switch):active,
+.svf-opencut-theme button:not(.bg-primary):not(.btn-primary):not(.svf-timeline-playhead-grip):not(.svf-switch):focus {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: inherit !important;
+  box-shadow: none !important;
+}
+
+/* Switch 轨道 / 拇指：压过下方 [data-state=checked] 通用选中态 */
+.svf-opencut-theme button.svf-switch[data-state="unchecked"],
+html.svf-opencut-active .svf-opencut-theme button.svf-switch[data-state="unchecked"] {
+  background-color: hsl(214 8% 28%) !important;
+  background: hsl(214 8% 28%) !important;
+  border-color: transparent !important;
+  color: inherit !important;
+  box-shadow: none !important;
+}
+
+.svf-opencut-theme button.svf-switch[data-state="checked"],
+html.svf-opencut-active .svf-opencut-theme button.svf-switch[data-state="checked"] {
+  background-color: hsl(11 73% 59%) !important;
+  background: hsl(11 73% 59%) !important;
+  border-color: transparent !important;
+  color: inherit !important;
+  box-shadow: none !important;
+}
+
+.svf-opencut-theme.light button.svf-switch[data-state="unchecked"],
+html.light.svf-opencut-active .svf-opencut-theme button.svf-switch[data-state="unchecked"] {
+  background-color: hsl(220 12% 78%) !important;
+  background: hsl(220 12% 78%) !important;
+}
+
+.svf-opencut-theme button.svf-switch [data-state],
+.svf-opencut-theme button.svf-switch span {
+  background-color: hsl(0 0% 100%) !important;
+  background: hsl(0 0% 100%) !important;
+}
+
+.svf-opencut-theme button.bg-white,
+.svf-opencut-theme button.bg-white:hover,
+.svf-opencut-theme button.bg-white:active {
+  background: #fff !important;
+  background-color: #fff !important;
+  color: #111 !important;
+}
+
+.svf-opencut-theme button.svf-preview-handle,
+.svf-opencut-theme button.svf-preview-handle:hover,
+.svf-opencut-theme button.svf-preview-handle:active,
+.svf-opencut-theme button.svf-preview-handle:focus {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
+}
+
 .svf-opencut-theme .bg-primary,
 html.svf-opencut-active .bg-primary,
 .svf-opencut-theme button.bg-primary {
@@ -398,40 +466,40 @@ html.light.svf-opencut-active .text-foreground {
   color: hsl(222 28% 14%) !important;
 }
 
-/* Tabs / Toggle / 工具栏选中态 */
+/* Tabs / Toggle / 工具栏选中态（不含 role=switch，避免盖住 Switch 主色） */
 .svf-opencut-theme.dark [role="tab"][data-state="active"],
-.svf-opencut-theme.dark [data-state="on"],
-.svf-opencut-theme.dark [data-state="checked"],
+.svf-opencut-theme.dark [data-state="on"]:not([role="switch"]),
+.svf-opencut-theme.dark [data-state="checked"]:not([role="switch"]),
 html.dark.svf-opencut-active [role="tab"][data-state="active"],
-html.dark.svf-opencut-active [data-state="on"],
-html.dark.svf-opencut-active [data-state="checked"] {
+html.dark.svf-opencut-active [data-state="on"]:not([role="switch"]),
+html.dark.svf-opencut-active [data-state="checked"]:not([role="switch"]) {
   background-color: hsl(214 10% 16%) !important;
   color: hsl(210 9% 91%) !important;
   border-color: hsl(214 8% 22%) !important;
 }
 
 .svf-opencut-theme.light [role="tab"][data-state="active"],
-.svf-opencut-theme.light [data-state="on"],
-.svf-opencut-theme.light [data-state="checked"],
+.svf-opencut-theme.light [data-state="on"]:not([role="switch"]),
+.svf-opencut-theme.light [data-state="checked"]:not([role="switch"]),
 html.light.svf-opencut-active [role="tab"][data-state="active"],
-html.light.svf-opencut-active [data-state="on"],
-html.light.svf-opencut-active [data-state="checked"] {
+html.light.svf-opencut-active [data-state="on"]:not([role="switch"]),
+html.light.svf-opencut-active [data-state="checked"]:not([role="switch"]) {
   background-color: hsl(220 14% 92%) !important;
   color: hsl(222 28% 14%) !important;
   border-color: hsl(220 12% 84%) !important;
 }
 
 .svf-opencut-theme.dark [role="tab"]:hover,
-.svf-opencut-theme.dark button:hover.bg-transparent,
+.svf-opencut-theme.dark button:hover.bg-transparent:not(.svf-timeline-clip-hit):not(.svf-timeline-resize-handle):not(.svf-timeline-playhead-grip),
 html.dark.svf-opencut-active [role="tab"]:hover,
-html.dark.svf-opencut-active button:hover.bg-transparent {
+html.dark.svf-opencut-active button:hover.bg-transparent:not(.svf-timeline-clip-hit):not(.svf-timeline-resize-handle):not(.svf-timeline-playhead-grip) {
   background-color: hsl(214 8% 22% / 0.55) !important;
 }
 
 .svf-opencut-theme.light [role="tab"]:hover,
-.svf-opencut-theme.light button:hover.bg-transparent,
+.svf-opencut-theme.light button:hover.bg-transparent:not(.svf-timeline-clip-hit):not(.svf-timeline-resize-handle):not(.svf-timeline-playhead-grip),
 html.light.svf-opencut-active [role="tab"]:hover,
-html.light.svf-opencut-active button:hover.bg-transparent {
+html.light.svf-opencut-active button:hover.bg-transparent:not(.svf-timeline-clip-hit):not(.svf-timeline-resize-handle):not(.svf-timeline-playhead-grip) {
   background-color: hsl(220 12% 88% / 0.75) !important;
 }
 
@@ -729,51 +797,52 @@ html.dark.svf-opencut-active,
   background-image: none !important;
 }
 
-/* 时间轴 clip：分轨半透明胶片色 + 左色条，铺满轨道高度与时间宽度 */
+/* 时间轴 clip：深色胶片底 + 左类型色条；避免实心珊瑚大色块 */
 .svf-opencut-theme .svf-timeline-clip {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
   min-height: 100%;
-  background-color: var(--svf-timeline-surface, #1a2030) !important;
-  border: 1px solid var(--svf-frame, #2a3347) !important;
+  background-color: color-mix(in srgb, var(--svf-surface-2, #181e2c) 92%, var(--svf-void, #080a0f)) !important;
+  border: 1px solid color-mix(in srgb, var(--svf-frame, #2a3347) 80%, transparent) !important;
   border-top-color: transparent !important;
   border-bottom-color: transparent !important;
   border-left-width: 3px !important;
-  border-right-color: var(--svf-frame, #2a3347) !important;
+  border-right-color: color-mix(in srgb, var(--svf-frame, #2a3347) 55%, transparent) !important;
   color: var(--svf-text, #e6eaf2) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .svf-opencut-theme .svf-timeline-clip--text,
 .svf-opencut-theme .svf-timeline-clip--audio {
-  border-radius: 1px !important;
+  border-radius: 2px !important;
   border-top-color: transparent !important;
   border-bottom-color: transparent !important;
 }
 
 .svf-opencut-theme .svf-timeline-clip--video {
-  background-color: hsl(11 55% 42% / 0.28) !important;
-  border-left-color: hsl(11 73% 59%) !important;
+  background-color: color-mix(in srgb, var(--svf-surface-2, #181e2c) 88%, hsl(11 55% 42%)) !important;
+  border-left-color: var(--svf-accent, #e0634a) !important;
 }
 
 .svf-opencut-theme .svf-timeline-clip--text {
-  background-color: hsl(158 40% 36% / 0.3) !important;
-  border-left-color: hsl(158 61% 41%) !important;
+  background-color: color-mix(in srgb, var(--svf-surface-2, #181e2c) 86%, hsl(158 40% 36%)) !important;
+  border-left-color: hsl(158 55% 48%) !important;
 }
 
 .svf-opencut-theme .svf-timeline-clip--audio {
-  background-color: hsl(203 45% 40% / 0.28) !important;
-  border-left-color: hsl(203 55% 55%) !important;
+  background-color: color-mix(in srgb, var(--svf-void, #080a0f) 55%, hsl(203 35% 28%)) !important;
+  border-left-color: hsl(203 58% 58%) !important;
 }
 
 .svf-opencut-theme .svf-timeline-clip--graphic {
-  background-color: hsl(48 45% 38% / 0.28) !important;
+  background-color: color-mix(in srgb, var(--svf-surface-2, #181e2c) 88%, hsl(48 45% 38%)) !important;
   border-left-color: var(--svf-gold, #c9a227) !important;
 }
 
 .svf-opencut-theme .svf-timeline-clip--effect {
-  background-color: hsl(214 12% 28% / 0.45) !important;
-  border-left-color: var(--svf-text-muted, #8b95a8) !important;
+  background-color: color-mix(in srgb, var(--svf-surface-2, #181e2c) 80%, hsl(214 12% 28%)) !important;
+  border-left-color: var(--svf-muted, #8e9aaf) !important;
 }
 
 .svf-opencut-theme .svf-timeline-clip[data-display-tier="bar"] {
@@ -786,56 +855,163 @@ html.dark.svf-opencut-active,
   font-size: 10px !important;
 }
 
-/* 选中 clip：内描边，避免 box-shadow 撑出大红块 */
+/* 选中：内描边 + 轻微提亮，不盖住文字/波形 */
 .svf-opencut-theme .svf-timeline-clip--selected {
-  outline: 1.5px solid hsl(11 73% 59% / 0.85) !important;
+  outline: 1.5px solid color-mix(in srgb, var(--svf-accent, #e0634a) 90%, white) !important;
   outline-offset: -1.5px !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--svf-accent, #e0634a) 35%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  z-index: 2;
 }
 
-/* 时间轴内部按钮：透明热区，覆盖全局 button border-radius */
-section[data-svf-region="timeline"] .svf-timeline-resize-handle,
-section[data-svf-region="timeline"] .svf-timeline-clip-hit,
-.svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle,
-.svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-clip-hit {
+/* clip 标签芯片：深色底保证选中/悬停时仍可读 */
+.svf-opencut-theme .svf-timeline-clip-label {
+  position: relative;
+  z-index: 3;
+  max-width: calc(100% - 8px);
+  margin: 3px 0 0 4px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--svf-void, #080a0f) 72%, transparent);
+  color: var(--svf-text, #e6eaf2) !important;
+  font-size: 0.62rem;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.svf-opencut-theme .svf-timeline-clip--video .svf-timeline-clip-label {
+  background: color-mix(in srgb, var(--svf-void, #080a0f) 78%, var(--svf-accent, #e0634a));
+}
+
+.svf-opencut-theme .svf-timeline-video-audio-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 16px;
+  pointer-events: none;
+  opacity: 0.92;
+  border-top: 1px solid color-mix(in srgb, hsl(203 55% 55%) 35%, transparent);
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--svf-void, #080a0f) 55%, transparent),
+    transparent
+  );
+}
+
+.svf-opencut-theme .svf-timeline-video-audio-rail--muted {
+  opacity: 0.35;
+  border-top-style: dashed;
+}
+
+/* 时间轴内部按钮：透明热区，覆盖全局 button 珊瑚染色（大色块根因） */
+section[data-svf-region="timeline"] button.svf-timeline-resize-handle,
+section[data-svf-region="timeline"] button.svf-timeline-clip-hit,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-resize-handle,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-clip-hit,
+html.svf-opencut-active section[data-svf-region="timeline"] button.svf-timeline-resize-handle,
+html.svf-opencut-active section[data-svf-region="timeline"] button.svf-timeline-clip-hit,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-resize-handle:hover,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-clip-hit:hover,
+html.svf-opencut-active section[data-svf-region="timeline"] button.svf-timeline-clip-hit:hover,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-resize-handle:active,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-clip-hit:active,
+html.svf-opencut-active section[data-svf-region="timeline"] button.svf-timeline-clip-hit:active,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-resize-handle:focus,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-clip-hit:focus,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-resize-handle:focus-visible,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-clip-hit:focus-visible {
   background: transparent !important;
+  background-color: transparent !important;
   border: none !important;
   box-shadow: none !important;
   border-radius: 0 !important;
+  color: inherit !important;
+  transform: none !important;
 }
 
 section[data-svf-region="timeline"] .svf-timeline-resize-handle,
 .svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle {
   position: absolute;
+  width: 10px !important;
+  z-index: 4;
 }
 
 section[data-svf-region="timeline"] .svf-timeline-resize-handle::after,
 .svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle::after {
   content: "";
   position: absolute;
-  top: 2px;
-  bottom: 2px;
-  width: 2px;
-  border-radius: 1px;
-  background: transparent;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--svf-accent, #e0634a) 55%, transparent);
   pointer-events: none;
-  transition: background-color 120ms ease;
+  transition: background-color 120ms ease, width 120ms ease;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--svf-void, #080a0f) 40%, transparent);
 }
 
 section[data-svf-region="timeline"] .svf-timeline-resize-handle[data-resize-side="left"]::after,
 .svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle[data-resize-side="left"]::after {
-  left: 0;
+  left: 2px;
 }
 
 section[data-svf-region="timeline"] .svf-timeline-resize-handle[data-resize-side="right"]::after,
 .svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle[data-resize-side="right"]::after {
-  right: 0;
+  right: 2px;
 }
 
 section[data-svf-region="timeline"] .svf-timeline-resize-handle:hover::after,
 section[data-svf-region="timeline"] .svf-timeline-resize-handle:focus-visible::after,
 .svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle:hover::after,
 .svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-resize-handle:focus-visible::after {
-  background: hsl(11 73% 59% / 0.75);
+  background: var(--svf-accent, #e0634a);
+  width: 4px;
+}
+
+/* 播头：胶片定位钉，避免小圆点难抓 */
+.svf-opencut-theme section[data-svf-region="timeline"] .svf-timeline-playhead-line {
+  width: 2px !important;
+  background: var(--svf-accent, #e0634a) !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--svf-accent, #e0634a) 45%, transparent);
+}
+
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-playhead-grip,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-playhead-grip:hover,
+.svf-opencut-theme section[data-svf-region="timeline"] button.svf-timeline-playhead-grip:active {
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 3px 3px 6px 6px !important;
+  background: var(--svf-accent, #e0634a) !important;
+  border: 2px solid color-mix(in srgb, var(--svf-void, #080a0f) 35%, white) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
+  transform: translateX(-50%) !important;
+}
+
+/* 属性/缩放滑条：加粗轨道，拖块更易抓 */
+.svf-opencut-theme .svf-slider-track {
+  height: 6px !important;
+  background: var(--svf-surface-3, #1f2638) !important;
+  border: 1px solid var(--svf-frame, #2a3347);
+}
+
+.svf-opencut-theme .svf-slider-range {
+  background: color-mix(in srgb, var(--svf-accent, #e0634a) 85%, white) !important;
+}
+
+.svf-opencut-theme .svf-slider-thumb {
+  width: 14px !important;
+  height: 14px !important;
+  border-width: 2px !important;
+  border-color: var(--svf-accent, #e0634a) !important;
+  background: var(--svf-text, #e6eaf2) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 /* ========== 文字对比度：时间码、次要文案、时间轴刻度 ========== */

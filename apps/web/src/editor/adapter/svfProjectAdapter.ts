@@ -265,6 +265,9 @@ export interface ClassicElementJson {
   /** 源媒体全长（ticks）；audio/video 裁切语义必需。 */
   sourceDuration?: number;
 
+  /** 倍速；须在装饰合并中保留，避免 soft-reload 丢 retime。 */
+  retime?: { rate: number; maintainPitch?: boolean };
+
 }
 
 
@@ -327,6 +330,26 @@ function readClassicSnapshot(timeline: EditTimelineData): ClassicProjectSnapshot
 
 
 
+/** 合并倍速时优先保留非 1x，避免陈旧 rate=1 盖住 API playback_rate。 */
+function pickPreferredRetime(
+  classicRetime: ClassicElementJson["retime"],
+  baseRetime: ClassicElementJson["retime"],
+): ClassicElementJson["retime"] {
+  const classicRate =
+    typeof classicRetime?.rate === "number" && Number.isFinite(classicRetime.rate)
+      ? classicRetime.rate
+      : null;
+  const baseRate =
+    typeof baseRetime?.rate === "number" && Number.isFinite(baseRetime.rate)
+      ? baseRetime.rate
+      : null;
+  const classicCustom = classicRate != null && Math.abs(classicRate - 1) > 0.001;
+  const baseCustom = baseRate != null && Math.abs(baseRate - 1) > 0.001;
+  if (classicCustom) return classicRetime;
+  if (baseCustom) return baseRetime;
+  return classicRetime ?? baseRetime;
+}
+
 /** 用户锁定 clip 时允许 Classic 快照覆盖布局；否则仅合并装饰字段。 */
 function mergeSnapshotDecorations(
   base: ClassicElementJson,
@@ -334,7 +357,7 @@ function mergeSnapshotDecorations(
   userLocked: boolean,
 ): ClassicElementJson {
   if (userLocked) {
-    return {
+    const merged = {
       ...base,
       ...classic,
       id: base.id,
@@ -342,6 +365,8 @@ function mergeSnapshotDecorations(
       mediaId: base.mediaId || classic.mediaId,
       metadata: { ...base.metadata, ...classic.metadata },
     };
+    merged.retime = pickPreferredRetime(classic.retime, base.retime);
+    return merged;
   }
   return {
     ...base,
@@ -350,6 +375,9 @@ function mergeSnapshotDecorations(
     masks: classic.masks ?? base.masks,
     blendMode: classic.blendMode ?? base.blendMode,
     animations: classic.animations ?? base.animations,
+    // 倍速必须保留：否则 soft-reload 会把用户设置的 retime 冲掉。
+    // 优先非 1x：避免陈旧 classic.retime={rate:1} 盖住 API playback_rate 投影。
+    retime: pickPreferredRetime(classic.retime, base.retime),
     metadata: { ...base.metadata, ...classic.metadata },
   };
 }
@@ -440,6 +468,11 @@ function remapSnapshotElement(
     return el;
   }
 
+  // 提取音频后仍共用视频 mediaId：禁止把 type:audio 重映射成 video/image
+  if (el.type === "audio") {
+    return { ...el, mediaId: resolved, type: "audio" };
+  }
+
   const mediaType = lookup.getMediaType(resolved);
   return {
     ...el,
@@ -515,8 +548,35 @@ function resolveAudioClipDurationMs(
 ): number {
   if (elementType !== "audio") return clipDurationMs;
   if (isClassicLayoutLocked(clip)) return clipDurationMs;
+  // 用户设了倍速时保留缩短后的时长，禁止扩回源长导致「倍速弹回」观感
+  const rate = clip.metadata?.playback_rate;
+  if (typeof rate === "number" && Number.isFinite(rate) && Math.abs(rate - 1) > 0.001) {
+    return clipDurationMs;
+  }
   if (sourceDurationMs <= clipDurationMs + 50) return clipDurationMs;
   return sourceDurationMs;
+}
+
+/** 领域线性音量(0–1) → OpenCut dB；1.0 → 0 dB（满音量）。 */
+function linearVolumeToDb(linear: number): number {
+  if (!Number.isFinite(linear) || linear <= 0) return -60;
+  const db = 20 * Math.log10(Math.min(Math.max(linear, 1e-6), 10));
+  return Math.max(-60, Math.min(20, db));
+}
+
+/** OpenCut dB → 领域线性音量。 */
+function dbVolumeToLinear(db: number): number {
+  if (!Number.isFinite(db)) return 1;
+  return 10 ** (db / 20);
+}
+
+/** 从 clip.metadata.volume（线性）解析 OpenCut params.volume（dB）。 */
+function resolveOpenCutVolumeDb(clip: TrackClip): number {
+  const metaVol = clip.metadata?.volume;
+  if (typeof metaVol === "number" && Number.isFinite(metaVol)) {
+    return linearVolumeToDb(metaVol);
+  }
+  return 0;
 }
 
 function clipToElement(
@@ -579,7 +639,10 @@ function clipToElement(
     mediaId,
     params: {
       ...svfTransformToOpenCutParams(resolved, canvas),
-      ...(elementType === "audio" ? { volume: 1 } : {}),
+      // OpenCut volume 为 dB：0 dB = 满音量；禁止写线性 1（会被当成 1 dB）
+      ...((elementType === "audio" || elementType === "video")
+        ? { volume: resolveOpenCutVolumeDb(clip) }
+        : {}),
     },
     animations: motionAnimations,
     // 音画协调写入的 playback_rate → OpenCut retime
@@ -601,6 +664,11 @@ function clipToElement(
       user_locked: clip.metadata?.user_locked,
       playback_rate: playbackRate !== 1 ? playbackRate : undefined,
       freeze_tail_ms: clip.metadata?.freeze_tail_ms,
+      volume: clip.metadata?.volume,
+      audio_lane:
+        typeof clip.metadata?.audio_lane === "number"
+          ? clip.metadata.audio_lane
+          : undefined,
       ...shotMeta,
     },
   };
@@ -673,6 +741,17 @@ function elementToClip(
     ) as TrackClip["motion_detail"];
   }
 
+  const retimeRate =
+    typeof el.retime?.rate === "number"
+      ? el.retime.rate
+      : (el.metadata?.playback_rate as number | undefined);
+  const hasCustomRetime =
+    typeof retimeRate === "number" && Number.isFinite(retimeRate) && Math.abs(retimeRate - 1) > 0.001;
+
+  const volumeDb = typeof params.volume === "number" ? params.volume : undefined;
+  const volumeLinear =
+    typeof volumeDb === "number" ? dbVolumeToLinear(volumeDb) : undefined;
+
   return {
     id: el.id,
     track,
@@ -692,21 +771,108 @@ function elementToClip(
       keyframes,
     },
     metadata: {
-      edited_by: el.metadata?.edited_by as string | undefined,
+      edited_by: hasCustomRetime
+        ? "user"
+        : (el.metadata?.edited_by as string | undefined),
       user_locked: el.metadata?.user_locked as boolean | undefined,
       ...shotMeta,
       // OpenCut retime → 领域 playback_rate（导出 FFmpeg setpts/atempo）
-      playback_rate:
-        typeof (el as { retime?: { rate?: number } }).retime?.rate === "number"
-          ? (el as { retime: { rate: number } }).retime.rate
-          : (el.metadata?.playback_rate as number | undefined),
+      playback_rate: hasCustomRetime ? retimeRate : undefined,
       freeze_tail_ms: el.metadata?.freeze_tail_ms as number | undefined,
+      // OpenCut dB → 领域线性音量
+      volume: volumeLinear,
+      audio_lane: el.metadata?.audio_lane as number | undefined,
       classic: classicRest,
     },
   };
 }
 
 
+
+/** 两段音频在时间轴上是否重叠（边界相接不算重叠）。 */
+function audioIntervalsOverlap(
+  aStart: number,
+  aEnd: number,
+  bStart: number,
+  bEnd: number,
+): boolean {
+  return aStart < bEnd && bStart < aEnd;
+}
+
+/**
+ * 将扁平 audio clip 投影为多条 OpenCut 音频轨。
+ * 优先尊重 metadata.audio_lane；否则按起止时间贪心拆轨，避免提取音频后 soft-reload 塌成单轨。
+ */
+export function packAudioElementsIntoTracks(
+  elements: ClassicElementJson[],
+): ClassicTrackJson[] {
+  if (elements.length === 0) {
+    return [
+      {
+        id: "track_audio_0",
+        name: "音频",
+        type: "audio",
+        elements: [],
+        muted: false,
+      },
+    ];
+  }
+
+  const sorted = [...elements].sort(
+    (a, b) => (a.startTime ?? 0) - (b.startTime ?? 0),
+  );
+  const lanes: ClassicElementJson[][] = [];
+
+  /** 判断元素放入某轨是否与已有 clip 时间重叠。 */
+  const laneHasConflict = (
+    lane: ClassicElementJson[],
+    start: number,
+    end: number,
+  ): boolean =>
+    lane.some((other) => {
+      const oStart = other.startTime ?? 0;
+      const oEnd = oStart + (other.duration ?? 0);
+      return audioIntervalsOverlap(start, end, oStart, oEnd);
+    });
+
+  for (const el of sorted) {
+    const start = el.startTime ?? 0;
+    const end = start + (el.duration ?? 0);
+    const preferredRaw = el.metadata?.audio_lane;
+    const preferred =
+      typeof preferredRaw === "number" && preferredRaw >= 0
+        ? Math.floor(preferredRaw)
+        : null;
+
+    let placed = false;
+    if (preferred !== null) {
+      while (lanes.length <= preferred) {
+        lanes.push([]);
+      }
+      if (!laneHasConflict(lanes[preferred], start, end)) {
+        lanes[preferred].push(el);
+        placed = true;
+      }
+    }
+
+    if (!placed) {
+      let target = lanes.findIndex((lane) => !laneHasConflict(lane, start, end));
+      if (target < 0) {
+        target = lanes.length;
+        lanes.push([]);
+      }
+      lanes[target].push(el);
+    }
+  }
+
+  return lanes.map((els, idx) => ({
+    id: `track_audio_${idx}`,
+    name: idx === 0 ? "音频" : `音频 ${idx + 1}`,
+    type: "audio",
+    elements: els,
+    muted: false,
+  }));
+}
 
 /** 生成时间轴内容指纹（不含 revision/updated_at），用于 soft-reload 判定。 */
 export function buildTimelineFingerprint(timeline: EditTimelineData): string {
@@ -818,25 +984,10 @@ export function loadFromSvf(
 
 
 
-  const audioTracks: ClassicTrackJson[] = [
-
-    {
-
-      id: "track_audio_0",
-
-      name: "音频",
-
-      type: "audio",
-
-      elements: (timeline.tracks?.audio ?? []).map((c) =>
-        clipToElement(c, inferClipMediaType(c, lookup, "audio"), lookup, canvas, projectKey),
-      ),
-
-      muted: false,
-
-    },
-
-  ];
+  const audioElements = (timeline.tracks?.audio ?? []).map((c) =>
+    clipToElement(c, inferClipMediaType(c, lookup, "audio"), lookup, canvas, projectKey),
+  );
+  const audioTracks = packAudioElementsIntoTracks(audioElements);
 
 
 
@@ -1031,8 +1182,17 @@ export function saveToSvf(
     elementToClip(el, "subtitle", undefined, canvas),
   );
 
-  const audioClips = scene.tracks.audio.flatMap((t) =>
-    t.elements.map((el) => elementToClip(el, "audio", undefined, canvas)),
+  const audioClips = scene.tracks.audio.flatMap((t, laneIdx) =>
+    t.elements.map((el) => {
+      const clip = elementToClip(el, "audio", undefined, canvas);
+      return {
+        ...clip,
+        metadata: {
+          ...clip.metadata,
+          audio_lane: laneIdx,
+        },
+      };
+    }),
   );
 
 

@@ -7,15 +7,16 @@ from typing import Any
 from core.llm.tools.shared.input_common import (
     FINISH_SCHEMA,
     REACT_INPUT_SCHEMA,
-    merge_plan_tracking,
 )
 
 
 def build_master_delegate_schema() -> dict[str, Any]:
-    return merge_plan_tracking(dict(REACT_INPUT_SCHEMA))
+    """委派子 Agent 的 ReAct 入参 schema（计划回写改走 update_plan/replan）。"""
+    return dict(REACT_INPUT_SCHEMA)
 
 
 def build_master_finish_schema() -> dict[str, Any]:
+    """主编排 finish 入参 schema。"""
     base = dict(FINISH_SCHEMA)
     base["additionalProperties"] = True
-    return merge_plan_tracking(base)
+    return base

@@ -8,6 +8,7 @@
   "remainingPlan": "Remaining plan",
   "statusHistory": "Status history ({{count}})",
   "pipelineHint": "Script → bible → storyboard → images → [video] → voice → edit",
+  "lastReplan": "Last replan",
   "scriptStatus": {
     "draft": "Draft",
     "planned": "Planned",

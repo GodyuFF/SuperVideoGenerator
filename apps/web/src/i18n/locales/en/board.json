@@ -407,16 +407,9 @@
       }
     },
     "videoGen": {
-      "sourceLead": "AI video references (not shot slots): video clips, frames, saved images, or character/scene/prop looks",
-      "sourceVideoClips": "Video clips",
+      "sourceLead": "AI video references (not shot slots): script frames only",
       "sourceFrames": "Script frames",
-      "sourceImages": "Saved images",
-      "sourceBucket": {
-        "character": "Characters",
-        "scene": "Scenes",
-        "prop": "Props"
-      },
-      "sourceSummary": "{{count}} reference(s) selected; inferred mode: {{mode}}",
+      "sourceSummary": "{{count}} frame reference(s) selected; inferred mode: {{mode}}",
       "modeAuto": "Auto",
       "sourceEmpty": "Leave empty to infer from sub-shot frames automatically"
     }

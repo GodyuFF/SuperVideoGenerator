@@ -18,6 +18,7 @@ import {
   tickAssetQueueWait,
 } from "../utils/generationQueueStatus";
 import {
+  emptyVideoGenSource,
   videoGenSourceToApiBody,
   type VideoGenSourceSelection,
 } from "../utils/videoGenSource";
@@ -289,13 +290,7 @@ export function AssetRegenerateButton({
         body = { kinds: shotKinds };
         if (shotKinds.includes("video")) {
           const videoBody = videoGenSourceToApiBody(
-            videoOptions ?? {
-              subShotIdx: 0,
-              sourceFrameAssetIds: [],
-              sourceVideoClipAssetIds: [],
-              sourceMediaIds: [],
-              sourceElementRefs: {},
-            },
+            videoOptions ?? emptyVideoGenSource(0),
           );
           if (videoBody) {
             body.video = videoBody;

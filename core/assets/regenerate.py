@@ -30,13 +30,11 @@ GenerationQueueKind = Literal["image", "video"]
 
 @dataclass
 class VideoRegenerateOptions:
-    """分镜 AI 视频二次生成可选参考源（画面 / 图片 / 元素引用）。"""
+    """分镜 AI 视频二次生成可选参考源（仅 frame 画面文字资产）。"""
 
     sub_shot_idx: int = 0
     source_frame_asset_ids: list[str] = field(default_factory=list)
-    source_media_ids: list[str] = field(default_factory=list)
     source_element_refs: dict[str, list[str]] = field(default_factory=dict)
-    source_video_clip_asset_ids: list[str] = field(default_factory=list)
     video_mode: str | None = None
 
     @classmethod
@@ -45,53 +43,40 @@ class VideoRegenerateOptions:
         if not raw or not isinstance(raw, dict):
             return None
         frames = raw.get("source_frame_asset_ids") or []
-        media = raw.get("source_media_ids") or []
         refs = raw.get("source_element_refs") or {}
-        vc_ids = raw.get("source_video_clip_asset_ids") or []
         if not isinstance(frames, list):
             frames = []
-        if not isinstance(media, list):
-            media = []
-        if not isinstance(vc_ids, list):
-            vc_ids = []
         if not isinstance(refs, dict):
             refs = {}
         cleaned_refs: dict[str, list[str]] = {}
-        for bucket in ("scene", "character", "prop", "frame"):
-            val = refs.get(bucket)
-            if val is None:
-                continue
+        val = refs.get("frame")
+        if val is not None:
             ids = val if isinstance(val, list) else [val]
             cleaned = [str(x).strip() for x in ids if str(x).strip()]
             if cleaned:
-                cleaned_refs[bucket] = cleaned
+                cleaned_refs["frame"] = cleaned
         mode = str(raw.get("video_mode") or "").strip() or None
         return cls(
             sub_shot_idx=int(raw.get("sub_shot_idx") or 0),
             source_frame_asset_ids=[str(x).strip() for x in frames if str(x).strip()],
-            source_media_ids=[str(x).strip() for x in media if str(x).strip()],
             source_element_refs=cleaned_refs,
-            source_video_clip_asset_ids=[str(x).strip() for x in vc_ids if str(x).strip()],
             video_mode=mode,
         )
 
     def has_explicit_sources(self) -> bool:
-        """是否指定了至少一类参考源。"""
-        if self.source_frame_asset_ids or self.source_media_ids:
+        """是否指定了至少一类 frame 参考源。"""
+        if self.source_frame_asset_ids:
             return True
-        return any(bool(v) for v in self.source_element_refs.values())
+        return bool(self.source_element_refs.get("frame"))
 
     def to_generate_args(self) -> dict[str, Any]:
         """转为 generate_clips 参数字段。"""
         out: dict[str, Any] = {"sub_shot_idx": self.sub_shot_idx}
         if self.source_frame_asset_ids:
             out["source_frame_asset_ids"] = list(self.source_frame_asset_ids)
-        if self.source_media_ids:
-            out["source_media_ids"] = list(self.source_media_ids)
-        if self.source_element_refs:
-            out["source_element_refs"] = dict(self.source_element_refs)
-        if self.source_video_clip_asset_ids:
-            out["video_clip_asset_ids"] = list(self.source_video_clip_asset_ids)
+        frame_refs = self.source_element_refs.get("frame") or []
+        if frame_refs:
+            out["source_element_refs"] = {"frame": list(frame_refs)}
         if self.video_mode:
             out["video_mode"] = self.video_mode
         return out

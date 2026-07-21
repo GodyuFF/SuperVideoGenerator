@@ -333,6 +333,8 @@ class PlanDocument(BaseModel):
     constraints: dict[str, Any] = Field(default_factory=dict)
     steps: list[PlanStep] = Field(default_factory=list)
     runtime_summary: str = ""  # 主编排最新 plan_status 摘要
+    last_replan_reason: str = ""  # 最近一次 replan 原因
+    affected_step_ids: list[str] = Field(default_factory=list)  # 最近 replan 受影响步骤
 
 
 class SubtitleSegment(BaseModel):

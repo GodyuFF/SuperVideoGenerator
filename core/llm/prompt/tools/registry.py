@@ -34,9 +34,13 @@ def _master_action_description(action: str) -> str:
     if action == "finish":
         return "结束主编排 ReAct 循环，进入收尾摘要。"
     if action == ASK_USER_QUESTION_ACTION:
-        return "向用户询问缺失信息（A2UI 弹窗），用于补充任务所需字段。"
+        return "向用户询问缺失信息（A2UI 弹窗），用于补充任务所需字段；计划确认时用 kind=plan_approval。"
     if action == DELEGATE_AGENT_ACTION:
         return "委派子 Agent 执行专项任务（需传入 agent_id）。"
+    if action == "update_plan":
+        return "回写计划进度 plan_status 与 remaining_plan（不提升 version）。"
+    if action == "replan":
+        return "结构化重规划：version++、修改步骤状态/跳过/重置，可选追加步骤。"
     if action.startswith("tool_"):
         return f"调用主编排工具 {action}"
     return action
@@ -123,6 +127,13 @@ def build_master_react_tool(
             name=action,
             description=description,
             input_schema=react_input_schema(ASK_USER_QUESTION_ACTION),
+            kind="function",
+        )
+    if action in ("update_plan", "replan"):
+        return ToolDefinition(
+            name=action,
+            description=description,
+            input_schema=react_input_schema(action),
             kind="function",
         )
     if action == "tool_read_webpage":

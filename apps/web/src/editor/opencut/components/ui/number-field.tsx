@@ -1,13 +1,11 @@
 import { cn } from "@opencut/utils/ui";
 import { clamp } from "@opencut/utils/math";
-import { useRef, useState, useLayoutEffect, type ComponentProps } from "react";
+import { useRef, useState, type ComponentProps } from "react";
 import { useFocusLock } from "@opencut/hooks/use-focus-lock";
 import { Button } from "@opencut/components/ui/button";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowTurnBackwardIcon } from "@hugeicons/core-free-icons";
 import { useOpencutT } from "@opencut/i18n/useOpencutT";
-
-const SUFFIX_GAP_PX = 6;
 
 const DRAG_SENSITIVITIES = {
 	default: 1,
@@ -136,26 +134,9 @@ function NumberField({
 	const { tTimeline } = useOpencutT();
 	const iconRef = useRef<HTMLButtonElement>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
-	const ghostRef = useRef<HTMLSpanElement>(null);
 	const startValueRef = useRef(0);
 	const cumulativeDeltaRef = useRef(0);
 	const [isInputFocused, setIsInputFocused] = useState(false);
-	const [suffixLeft, setSuffixLeft] = useState(0);
-	const ghostValue = Array.isArray(value) ? value.join(", ") : String(value ?? "");
-
-	useLayoutEffect(() => {
-		if (!suffix) {
-			setSuffixLeft(0);
-			return;
-		}
-		if (!ghostRef.current || !inputRef.current) return;
-		if (ghostRef.current.textContent !== ghostValue) {
-			ghostRef.current.textContent = ghostValue;
-		}
-		const paddingLeft =
-			parseFloat(getComputedStyle(inputRef.current).paddingLeft) || 0;
-		setSuffixLeft(paddingLeft + ghostRef.current.offsetWidth);
-	}, [ghostValue, suffix]);
 
 	const { containerRef: wrapperRef } = useFocusLock<HTMLDivElement>({
 		isActive: isInputFocused,
@@ -271,33 +252,22 @@ function NumberField({
 				))}
 			<span
 				className={cn(
-					"relative flex flex-1 min-w-0 items-center",
+					"flex flex-1 min-w-0 items-center gap-1",
 					icon ? "px-1.5" : "pl-2.5",
 					onReset ? "pr-0" : "pr-2.5",
 				)}
 			>
 				{inputNode}
-				{suffix && (
-					<>
-						{/* Ghost mirrors value text to measure width for suffix positioning */}
-						<span
-							ref={ghostRef}
-							className="invisible absolute text-sm leading-none whitespace-pre pointer-events-none"
-							aria-hidden="true"
-						>
-							{ghostValue}
-						</span>
-						<span
-							className={cn(
-								"absolute top-1/2 -translate-y-1/2 select-none pointer-events-none text-sm leading-none",
-								suffixClassName,
-							)}
-							style={{ left: suffixLeft + SUFFIX_GAP_PX }}
-						>
-							{suffix}
-						</span>
-					</>
-				)}
+				{suffix ? (
+					<span
+						className={cn(
+							"text-muted-foreground shrink-0 select-none pointer-events-none text-sm leading-none",
+							suffixClassName,
+						)}
+					>
+						{suffix}
+					</span>
+				) : null}
 			</span>
 			{onReset && !isDefault && (
 				<div className="shrink-0 pr-2 flex items-center">

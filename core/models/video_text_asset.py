@@ -25,9 +25,7 @@ class VideoClipContent(BaseModel):
     """关联资产 → 子形象（variant id）；缺省时用主形象/primary。"""
     variant_refs: dict[str, str] = Field(default_factory=dict)
     media_refs: list[str] = Field(default_factory=list)
-    reference_order: list[str] = Field(
-        default_factory=lambda: ["scene", "character", "prop", "frame", "media"]
-    )
+    reference_order: list[str] = Field(default_factory=lambda: ["frame"])
     shot_id: str = ""
     sub_shot_id: str = ""
     prompt_locked: bool = False
@@ -48,14 +46,11 @@ def normalize_video_clip_content(raw: Any) -> dict[str, Any]:
     tags = raw.get("tags") or []
     if not isinstance(tags, list):
         tags = [str(tags)] if tags else []
-    media_refs = raw.get("media_refs") or []
-    if not isinstance(media_refs, list):
-        media_refs = [str(media_refs)] if media_refs else []
     element_refs = raw.get("element_refs") or {}
     if not isinstance(element_refs, dict):
         element_refs = {}
     cleaned_refs: dict[str, list[str]] = {}
-    for bucket in ("scene", "character", "prop", "frame", "video_clip"):
+    for bucket in ("frame",):
         val = element_refs.get(bucket)
         if val is None:
             continue
@@ -63,17 +58,15 @@ def normalize_video_clip_content(raw: Any) -> dict[str, Any]:
         cleaned = [str(x).strip() for x in ids if str(x).strip()]
         if cleaned:
             cleaned_refs[bucket] = cleaned
+    frame_ids = set(cleaned_refs.get("frame") or [])
     raw_variant_refs = raw.get("variant_refs") or {}
     cleaned_variant_refs: dict[str, str] = {}
     if isinstance(raw_variant_refs, dict):
         for aid, vid in raw_variant_refs.items():
             a = str(aid).strip()
             v = str(vid).strip()
-            if a and v:
+            if a and v and a in frame_ids:
                 cleaned_variant_refs[a] = v
-    ref_order = raw.get("reference_order") or ["scene", "character", "prop", "frame", "media"]
-    if not isinstance(ref_order, list):
-        ref_order = ["scene", "character", "prop", "frame", "media"]
     duration = raw.get("duration_sec")
     duration_sec: float | None = None
     if duration is not None and duration != "":
@@ -94,8 +87,8 @@ def normalize_video_clip_content(raw: Any) -> dict[str, Any]:
         camera_motion=str(raw.get("camera_motion") or "").strip(),
         element_refs=cleaned_refs,
         variant_refs=cleaned_variant_refs,
-        media_refs=[str(m).strip() for m in media_refs if str(m).strip()],
-        reference_order=[str(x).strip() for x in ref_order if str(x).strip()],
+        media_refs=[],
+        reference_order=["frame"],
         shot_id=str(raw.get("shot_id") or "").strip(),
         sub_shot_id=str(raw.get("sub_shot_id") or "").strip(),
         prompt_locked=bool(raw.get("prompt_locked")),

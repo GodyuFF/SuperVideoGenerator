@@ -53,7 +53,11 @@ _ACTION_TAXONOMY: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {
     ),
     "create_shots": (("storyboard", "shot"), ("create",), "设计镜内多轨 Shot（sub_shots + audio_tracks）"),
     "create_frames": (("frame", "shot"), ("create",), "为每子镜创建剧本画面 frame 资产"),
-    "create_video_clips": (("video_clip", "shot"), ("create",), "为每子镜创建 video_clip 文字资产"),
+    "create_video_clips": (
+        ("video_clip", "shot"),
+        ("create",),
+        "为每子镜创建 video_clip 文字资产；element_refs 仅 {\"frame\":[...]}（禁止 character/scene/prop）",
+    ),
     "persist_plan": (("plan", "storyboard"), ("persist",), "保存视频计划稿"),
     "get_plan": (("plan", "storyboard"), ("read",), "读取当前视频计划稿"),
     "get_shot_details": (
@@ -132,6 +136,8 @@ _ACTION_TAXONOMY: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {
     "finish": (("orchestration",), ("control",), "结束当前 ReAct 轮次"),
     "ask_user_question": (("orchestration",), ("control",), "向用户发起结构化确认或提问"),
     "delegate_agent": (("orchestration",), ("delegate",), "委派子 Agent（传入 agent_id）"),
+    "update_plan": (("plan",), ("control",), "回写计划进度 plan_status / remaining_plan"),
+    "replan": (("plan",), ("control",), "结构化重规划（version++）"),
 }
 
 

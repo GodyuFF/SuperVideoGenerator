@@ -28,7 +28,9 @@ from core.models.agent_config import AgentToolOverride
 
 # 全 Agent 默认加载、不可在工作台勾选的系统工具
 
-UNIVERSAL_SYSTEM_TOOLS: frozenset[str] = frozenset({"finish", ASK_USER_QUESTION_ACTION})
+UNIVERSAL_SYSTEM_TOOLS: frozenset[str] = frozenset(
+    {"finish", ASK_USER_QUESTION_ACTION, "update_plan"}
+)
 
 
 
@@ -46,6 +48,10 @@ _SYSTEM_TOOL_DESCRIPTIONS: dict[str, str] = {
 
     "return_to_master": "结束子 Agent 任务并返回主编排",
 
+    "update_plan": "回写计划进度 plan_status / remaining_plan",
+
+    "replan": "结构化重规划（version++）",
+
 }
 
 
@@ -62,7 +68,7 @@ def is_system_tool(agent_name: str, action: str) -> bool:
 
     if agent_name == "super_video_master":
 
-        return action == "delegate_agent"
+        return action in ("delegate_agent", "replan")
 
     return action in SUB_AGENT_SYSTEM_TOOLS
 
@@ -81,6 +87,8 @@ def list_system_tools(agent_name: str) -> list[str]:
         from core.llm.master.delegate_tool import DELEGATE_AGENT_ACTION
 
         names.add(DELEGATE_AGENT_ACTION)
+
+        names.add("replan")
 
     elif agent_name != "super_video_master":
 

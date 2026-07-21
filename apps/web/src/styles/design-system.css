@@ -731,12 +731,36 @@ button:hover:not(:disabled) {
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.15s ease;
 }
 
-.project-home-card:hover,
+.project-home-card:hover:not(.is-selected),
 .board-card:hover,
 .board-card-clickable:hover {
   border-color: rgba(224, 99, 74, 0.45);
   box-shadow: var(--svf-shadow-md);
   transform: translateY(-2px);
+}
+
+.project-home-card.is-selected {
+  border-color: color-mix(in srgb, var(--svf-accent) 55%, var(--svf-frame));
+  background: color-mix(in srgb, var(--svf-accent) 8%, var(--svf-surface));
+  box-shadow: var(--svf-shadow-accent);
+}
+
+.project-home-card.is-selected:hover {
+  border-color: color-mix(in srgb, var(--svf-accent) 70%, var(--svf-frame));
+  box-shadow: var(--svf-shadow-accent);
+  transform: translateY(-1px);
+}
+
+/* 首页项目卡正文为幽灵 button，须压过上方全局 button 染色 */
+button.project-home-card-body,
+button.project-home-card-body:hover,
+button.project-home-card-body:active,
+button.project-home-card-body:focus,
+button.project-home-card-body:focus-visible {
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  transform: none;
 }
 
 .project-home-open {

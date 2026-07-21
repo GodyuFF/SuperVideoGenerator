@@ -286,7 +286,11 @@ export function ImageTextAssetEditor({
                 projectId={projectId}
                 scriptId={scriptId}
                 ownerAssetId={item.id}
-                kinds={["scene", "character", "prop", "frame"]}
+                kinds={
+                  isVideoClip
+                    ? ["frame"]
+                    : ["scene", "character", "prop", "frame"]
+                }
                 value={elementRefs}
                 onChange={setElementRefs}
                 variantRefs={variantRefs}
