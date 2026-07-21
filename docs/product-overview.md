@@ -32,6 +32,7 @@ Language: **中文** | [English](product-overview.en.md)
 
 ## 下一步
 
-- 上手：[快速开始](getting-started.md)（[EN](getting-started.en.md)）
+- 安装 / 启动：[快速开始](getting-started.md)（[EN](getting-started.en.md)）
+- 使用说明（从零到成片等）：[用户手册](user-guide/README.md)
 - 桌面：[apps/desktop/README.md](../apps/desktop/README.md)
 - 英文概览：[Product overview](product-overview.en.md)

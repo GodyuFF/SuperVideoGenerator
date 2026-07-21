@@ -10,7 +10,7 @@ Language: **中文** | [English](README.en.md)
 
 不用先学复杂工具：说清楚你想拍什么，多 Agent 帮你走完剧本、分镜、生图、配音与剪辑。自备 API Key，数据默认留在本机。
 
-**开始使用：** [下载安装包](https://github.com/GodyuFF/SuperVideoGenerator/releases)（[EN](docs/getting-started.en.md)） · [快速开始](docs/getting-started.md)（[EN](docs/getting-started.en.md)） · [产品概览](docs/product-overview.md)（[EN](docs/product-overview.en.md)）
+**开始使用：** [下载安装包](https://github.com/GodyuFF/SuperVideoGenerator/releases) · [快速开始](docs/getting-started.md)（[EN](docs/getting-started.en.md)） · [用户手册](docs/user-guide/README.md) · [产品概览](docs/product-overview.md)（[EN](docs/product-overview.en.md)）
 
 ## Demo
 
@@ -81,7 +81,8 @@ apps/web (Vite + React)  ──HTTP/WS──►  apps/api (FastAPI)
 |------|------|
 | [文档目录](docs/README.md) | 入门与手册导航 |
 | [产品概览](docs/product-overview.md) / [EN](docs/product-overview.en.md) | 定位与原则摘要 |
-| [快速开始](docs/getting-started.md) / [EN](docs/getting-started.en.md) | 桌面安装与启动 |
+| [快速开始](docs/getting-started.md) / [EN](docs/getting-started.en.md) | 安装与启动 |
+| [用户手册](docs/user-guide/README.md) | 从零到成片与功能说明（中文） |
 | [贡献指南](CONTRIBUTING.md) | Issue / PR |
 | [安全政策](SECURITY.md) | 漏洞私下报告 |
 | [行为准则](CODE_OF_CONDUCT.md) | 社区规范 |

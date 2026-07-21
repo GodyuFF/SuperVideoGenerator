@@ -32,5 +32,5 @@ Language: [中文](product-overview.md) | **English**
 
 ## Next steps
 
-- Get started: [Getting started](getting-started.en.md) ([中文](getting-started.md))
+- Get started (including zero-to-final-cut): [Getting started](getting-started.en.md) ([中文](getting-started.md))
 - Desktop: [apps/desktop/README.md](../apps/desktop/README.md)

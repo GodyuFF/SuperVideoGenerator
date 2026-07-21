@@ -10,7 +10,7 @@ Language: [中文](README.md) | **English**
 
 Skip the steep tool learning curve: say what you want to make, and multi-agent orchestration carries you through script, storyboard, images, voiceover, and edit. Bring your own API keys; data stays on your machine by default.
 
-**Get started:** [Download installer](https://github.com/GodyuFF/SuperVideoGenerator/releases) ([中文](docs/getting-started.md)) · [Quick start](docs/getting-started.en.md) ([中文](docs/getting-started.md)) · [Product overview](docs/product-overview.en.md) ([中文](docs/product-overview.md))
+**Get started:** [Download installer](https://github.com/GodyuFF/SuperVideoGenerator/releases) · [Quick start (zero to final cut)](docs/getting-started.en.md) ([中文安装](docs/getting-started.md) · [中文用户手册](docs/user-guide/README.md)) · [Product overview](docs/product-overview.en.md) ([中文](docs/product-overview.md))
 
 ## Demo
 
@@ -81,7 +81,8 @@ apps/web (Vite + React)  ──HTTP/WS──►  apps/api (FastAPI)
 |-----|--------|
 | [Docs index](docs/README.md) (zh) | Entry and manuals |
 | [Product overview](docs/product-overview.en.md) / [中文](docs/product-overview.md) | Positioning and principles |
-| [Getting started](docs/getting-started.en.md) / [中文](docs/getting-started.md) | Desktop install and launch |
+| [Getting started](docs/getting-started.en.md) / [中文](docs/getting-started.md) | Install and launch (EN guide still includes zero-to-final-cut) |
+| [User guide](docs/user-guide/README.md) (zh) | Chinese task-flow manual (first video through FAQ) |
 | [Contributing](CONTRIBUTING.md) (zh) | Issues / PRs |
 | [Security](SECURITY.md) (zh) | Private vulnerability reports |
 | [Code of Conduct](CODE_OF_CONDUCT.md) (zh) | Community norms |

@@ -4,7 +4,13 @@
 
 Language: **中文** | [English](getting-started.en.md)
 
-推荐使用**桌面端**。多数人只需下载安装包；从源码参与开发时，用仓库根目录的桌面启动脚本。
+推荐使用**桌面端**。多数人只需下载安装包；从源码参与开发时，用仓库根目录的桌面启动脚本。装好并启动后，请阅读 **[用户手册 · 从零到成片](user-guide/01-first-video.md)**。
+
+启动时会短暂显示暗房胶片开屏（「正在显影…」），随后进入项目列表。
+
+![图1 启动页](user-guide/assets/figure-01-splash.png)
+
+*图1 启动页*
 
 ## 路径一：下载桌面安装包（推荐）
 
@@ -12,13 +18,15 @@ Language: **中文** | [English](getting-started.en.md)
 
 1. 打开 [GitHub Releases](https://github.com/GodyuFF/SuperVideoGenerator/releases)，下载对应平台的安装包。
 2. 按系统提示安装并启动应用。
-3. 在应用内 **AI 设置** 中配置 LLM / 生图 / TTS 的 API Key（自备 Key；配置仅保存在本机）。
+3. 打开 [用户手册 · 从零到成片](user-guide/01-first-video.md)；API Key 在应用内 **「AI 配置」** 中填写（自备 Key；仅保存在本机）。
 
 安装包默认**未代码签名**。Windows SmartScreen 或 macOS Gatekeeper 可能提示拦截，属预期；按系统提示允许运行即可。更多说明见 [apps/desktop/README.md](../apps/desktop/README.md)。
 
 ## 路径二：从仓库启动桌面开发壳
 
 面向贡献者或需要改代码的用户。需本机已安装 **Python 3.11+**、**Node.js 18+**（FFmpeg 可选）。
+
+虚拟环境（`.venv`）**不会**随 Git 下发，克隆后须在本机重建。
 
 ### 一次性依赖
 
@@ -27,10 +35,10 @@ python -m venv .venv
 .venv\Scripts\activate          # Windows；macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 cd apps/web && npm install && cd ../..
-cp .env.example .env            # 可选：也可稍后在应用内 AI 设置中配置
+cp .env.example .env            # 可选：也可稍后在应用内 AI 配置中填写
 ```
 
-也可在应用 **AI 设置页** 配置 Key，持久化至 `data/ai_config.json`（仅本机）。
+也可在应用 **「AI 配置」** 页填写 Key，持久化至 `data/ai_config.json`（仅本机）。
 
 ### 启动桌面（推荐）
 
@@ -44,12 +52,7 @@ launch-desktop.vbs
 
 开发壳会拉起本机 API + 前端并打开 Electron 窗口；**不**捆绑 Python/Node，依赖上述本机环境。细节见 [apps/desktop/README.md](../apps/desktop/README.md)。
 
-## 本地数据（勿提交）
-
-| 路径 | 内容 |
-|------|------|
-| `data/` | 项目、剧本、媒体、对话、AI 配置 |
-| `.env` | 环境变量与 API Key（若使用） |
+启动后请继续：[用户手册 · 从零到成片](user-guide/01-first-video.md)。完整章节见 [用户手册目录](user-guide/README.md)。
 
 ## 可选：浏览器开发模式
 
@@ -72,4 +75,4 @@ cd apps/web && npm run dev
 
 ---
 
-返回 [文档目录](README.md) · 仓库简介 [README.md](../README.md) / [README.en.md](../README.en.md)
+返回 [文档目录](README.md) · [用户手册](user-guide/README.md) · 仓库简介 [README.md](../README.md) / [README.en.md](../README.en.md)
