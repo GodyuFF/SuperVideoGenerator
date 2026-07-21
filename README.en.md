@@ -10,7 +10,7 @@ Language: [中文](README.md) | **English**
 
 Skip the steep tool learning curve: say what you want to make, and multi-agent orchestration carries you through script, storyboard, images, voiceover, and edit. Bring your own API keys; data stays on your machine by default.
 
-**Get started:** [Download installer](https://github.com/GodyuFF/SuperVideoGenerator/releases) · [Quick start](docs/getting-started.en.md) ([中文](docs/getting-started.md)) · [Product overview](docs/product-overview.md) (zh)
+**Get started:** [Download installer](https://github.com/GodyuFF/SuperVideoGenerator/releases) ([中文](docs/getting-started.md)) · [Quick start](docs/getting-started.en.md) ([中文](docs/getting-started.md)) · [Product overview](docs/product-overview.en.md) ([中文](docs/product-overview.md))
 
 ## Demo
 
@@ -80,7 +80,7 @@ apps/web (Vite + React)  ──HTTP/WS──►  apps/api (FastAPI)
 | Doc | Notes |
 |-----|--------|
 | [Docs index](docs/README.md) (zh) | Entry and manuals |
-| [Product overview](docs/product-overview.md) (zh) | Positioning and principles |
+| [Product overview](docs/product-overview.en.md) / [中文](docs/product-overview.md) | Positioning and principles |
 | [Getting started](docs/getting-started.en.md) / [中文](docs/getting-started.md) | Desktop install and launch |
 | [Contributing](CONTRIBUTING.md) (zh) | Issues / PRs |
 | [Security](SECURITY.md) (zh) | Private vulnerability reports |

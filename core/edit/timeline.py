@@ -935,9 +935,37 @@ def enrich_timeline_audio_from_store(
     *,
     skip_subtitle_enrich: bool = False,
 ) -> EditTimeline:
-    """镜内多轨为权威源，投影已含 audio/subtitle 轨；此处仅归一化返回（无补齐/降级）。"""
-    del plan, skip_subtitle_enrich
-    return timeline
+    """镜内多轨为权威源；audio 不再降级补齐。subtitle 空轨时可从 Shot.subtitles 投影回填。"""
+    del store  # 回填仅用 plan.shots，无需再读 store 媒体
+    if skip_subtitle_enrich:
+        return timeline
+    return backfill_subtitle_track_from_shots(timeline, plan)
+
+
+def backfill_subtitle_track_from_shots(
+    timeline: EditTimeline,
+    plan: VideoPlan | None,
+) -> EditTimeline:
+    """当 timeline 字幕轨为空且镜内有 Shot.subtitles 时，从分镜投影回填 subtitle。"""
+    if timeline.tracks.get("subtitle"):
+        return timeline
+    if plan is None or not plan.shots:
+        return timeline
+    if not any(shot.subtitles for shot in plan.shots):
+        return timeline
+    from core.edit.shot_flatten import compile_timeline_from_shots as _project
+
+    projected = _project(
+        list(plan.shots),
+        script_id=timeline.script_id,
+        plan_id=plan.id or timeline.plan_id,
+    )
+    subs = list(projected.tracks.get("subtitle") or [])
+    if not subs:
+        return timeline
+    tracks = dict(timeline.tracks)
+    tracks["subtitle"] = subs
+    return timeline.model_copy(update={"tracks": tracks})
 
 
 def finalize_merged_timeline(
@@ -947,8 +975,10 @@ def finalize_merged_timeline(
     *,
     skip_subtitle_enrich: bool = False,
 ) -> EditTimeline:
-    """导出/写回前：对齐音频 clip 时长、按主轨扩展视频槽位，并归一化运镜。"""
-    del skip_subtitle_enrich
+    """导出/写回前：字幕回填、对齐音频时长、按主轨扩展视频槽位，并归一化运镜。"""
+    timeline = enrich_timeline_audio_from_store(
+        store, timeline, plan, skip_subtitle_enrich=skip_subtitle_enrich
+    )
     timeline = sync_audio_clip_durations_to_media(store, timeline)
     timeline = _extend_video_clips_for_narration_master(store, timeline, plan)
     return normalize_timeline_motions(timeline)
@@ -1162,7 +1192,7 @@ def merge_agent_timeline(
     mode: str = "merge",
     agent_video_layers: list[EditVideoLayer] | None = None,
 ) -> EditTimeline:
-    """Agent 写入时间轴：merge 保留用户 clip，replace/create 全量替换。"""
+    """Agent 写入时间轴：merge 保留用户 clip 与未交空轨，replace/create 全量替换。"""
     if existing is None or mode == "create":
         ends = [
             c.end_ms for clips in agent_tracks.values() for c in clips
@@ -1211,6 +1241,10 @@ def merge_agent_timeline(
     for key in AUDIO_SUBTITLE_KEYS:
         existing_clips = list(existing.tracks.get(key, []))
         agent_clips = list(agent_tracks.get(key, []))
+        # 稀疏 merge：Agent 未交该轨（空列表）则保留既有，避免只改 audio 时抹掉字幕
+        if not agent_clips:
+            merged_tracks[key] = existing_clips
+            continue
         protected = {c.id: c for c in existing_clips if _clip_is_user_protected(c)}
         protected_shots = {
             str((c.metadata or {}).get("shot_id", "")).strip()

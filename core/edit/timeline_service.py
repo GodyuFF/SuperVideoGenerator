@@ -139,8 +139,11 @@ def patch_timeline(
         timeline.video_layers = _mark_user_layer_metadata(layers[:MAX_VIDEO_LAYERS])
 
     if "tracks" in body and isinstance(body["tracks"], dict):
-        normalized = normalize_tracks(body["tracks"])
+        # 稀疏 PATCH：仅更新 body.tracks 中出现的 key，避免只写 audio 时抹掉 subtitle
         for key in AUDIO_SUBTITLE_KEYS:
+            if key not in body["tracks"]:
+                continue
+            normalized = normalize_tracks({key: body["tracks"][key]})
             timeline.tracks[key] = _mark_user_clip_metadata(normalized.get(key, []))
         if "video_layers" not in body:
             agent_video = extract_agent_video_clips(body["tracks"])

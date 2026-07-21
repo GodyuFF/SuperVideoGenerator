@@ -98,6 +98,10 @@ OPEN_CUT_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "number",
                 "description": "音量 0.0-1.0（仅音频轨）",
             },
+            "playback_rate": {
+                "type": "number",
+                "description": "播放速率（NLE 语义：>1 加速，<1 慢放；写入 metadata.playback_rate，约 0.5–2.0）",
+            },
             "transition_in": {
                 "type": "object",
                 "description": "入转场 {type, duration_ms}",

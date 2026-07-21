@@ -198,12 +198,10 @@ def handle_add_clip(
                 ]
     else:
         track_key = track if track in ("audio", "subtitle") else "audio"
-        tracks_body = {
-            key: [_clip_to_raw(c) for c in timeline.tracks.get(key, [])]
-            for key in ("audio", "subtitle")
-        }
-        tracks_body[track_key].append(new_clip)
-        body = {"tracks": tracks_body}
+        # 稀疏只写目标轨，避免连带清空另一轨
+        clips_out = [_clip_to_raw(c) for c in timeline.tracks.get(track_key, [])]
+        clips_out.append(new_clip)
+        body = {"tracks": {track_key: clips_out}}
 
     try:
         view = patch_timeline(store, script_id=script_id, project_id=project_id, body=body)
@@ -219,10 +217,47 @@ def handle_add_clip(
         return ToolResult(observation=f"添加片段失败：{e}", structured={"error": str(e)}, ok=False)
 
 
+def _apply_clip_update_args(clip_dict: dict[str, Any], args: dict[str, Any]) -> None:
+    """将 update_clip 参数写入 clip 字典（含 volume / playback_rate）。"""
+    if "start_ms" in args:
+        clip_dict["start_ms"] = int(args["start_ms"])
+    if "end_ms" in args:
+        clip_dict["end_ms"] = int(args["end_ms"])
+    if "label" in args:
+        clip_dict["label"] = str(args["label"])
+    if "transform" in args and isinstance(args["transform"], dict):
+        existing = dict(clip_dict.get("transform") or {})
+        existing.update(args["transform"])
+        clip_dict["transform"] = existing
+    if "motion" in args:
+        clip_dict["motion"] = str(args["motion"])
+    if "transition_in" in args:
+        clip_dict["transition_in"] = args["transition_in"]
+    if "transition_out" in args:
+        clip_dict["transition_out"] = args["transition_out"]
+    if "volume" in args:
+        try:
+            vol = float(args["volume"])
+        except (TypeError, ValueError):
+            vol = 1.0
+        clip_dict["volume"] = max(0.0, min(1.0, vol))
+    if "playback_rate" in args:
+        from core.edit.av_sync.types import VIDEO_RATE_HARD_MAX, VIDEO_RATE_HARD_MIN
+
+        try:
+            rate = float(args["playback_rate"])
+        except (TypeError, ValueError):
+            rate = 1.0
+        rate = max(VIDEO_RATE_HARD_MIN, min(VIDEO_RATE_HARD_MAX, rate))
+        meta = dict(clip_dict.get("metadata") or {})
+        meta["playback_rate"] = rate
+        clip_dict["metadata"] = meta
+
+
 def handle_update_clip(
     store: MemoryStore, ctx: AgentRunContext, args: dict[str, Any]
 ) -> ToolResult:
-    """修改片段属性。"""
+    """修改片段属性（video_layers 与 audio/subtitle 轨）。"""
     script_id = _script_from_ctx(ctx)
     project_id = _project_from_ctx(ctx)
     clip_id = str(args.get("clip_id", ""))
@@ -231,7 +266,7 @@ def handle_update_clip(
     if timeline is None:
         return ToolResult(observation="尚无剪辑时间轴", ok=False)
 
-    # 查找并更新 clip
+    # 先扫视频层
     patched = False
     body: dict[str, Any] = {"video_layers": []}
     for layer in timeline.video_layers:
@@ -245,24 +280,26 @@ def handle_update_clip(
             clip_dict = _clip_to_raw(c)
             if c.id == clip_id:
                 patched = True
-                if "start_ms" in args:
-                    clip_dict["start_ms"] = int(args["start_ms"])
-                if "end_ms" in args:
-                    clip_dict["end_ms"] = int(args["end_ms"])
-                if "label" in args:
-                    clip_dict["label"] = str(args["label"])
-                if "transform" in args and isinstance(args["transform"], dict):
-                    existing = dict(clip_dict.get("transform") or {})
-                    existing.update(args["transform"])
-                    clip_dict["transform"] = existing
-                if "motion" in args:
-                    clip_dict["motion"] = str(args["motion"])
-                if "transition_in" in args:
-                    clip_dict["transition_in"] = args["transition_in"]
-                if "transition_out" in args:
-                    clip_dict["transition_out"] = args["transition_out"]
+                _apply_clip_update_args(clip_dict, args)
             layer_dict["clips"].append(clip_dict)
         body["video_layers"].append(layer_dict)
+
+    # 再扫 audio / subtitle（稀疏只写命中轨）
+    if not patched:
+        body = {}
+        for key in ("audio", "subtitle"):
+            clips_out: list[dict[str, Any]] = []
+            hit = False
+            for c in timeline.tracks.get(key, []):
+                clip_dict = _clip_to_raw(c)
+                if c.id == clip_id:
+                    hit = True
+                    patched = True
+                    _apply_clip_update_args(clip_dict, args)
+                clips_out.append(clip_dict)
+            if hit:
+                body["tracks"] = {key: clips_out}
+                break
 
     if not patched:
         return ToolResult(observation=f"未找到片段 {clip_id}", ok=False)
@@ -281,7 +318,7 @@ def handle_update_clip(
 def handle_remove_clip(
     store: MemoryStore, ctx: AgentRunContext, args: dict[str, Any]
 ) -> ToolResult:
-    """删除片段。"""
+    """删除片段（video_layers 与 audio/subtitle 轨）。"""
     script_id = _script_from_ctx(ctx)
     project_id = _project_from_ctx(ctx)
     clip_id = str(args.get("clip_id", ""))
@@ -307,6 +344,21 @@ def handle_remove_clip(
         body["video_layers"].append(layer_dict)
 
     if not removed:
+        body = {}
+        for key in ("audio", "subtitle"):
+            clips_out: list[dict[str, Any]] = []
+            hit = False
+            for c in timeline.tracks.get(key, []):
+                if c.id == clip_id:
+                    hit = True
+                    removed = True
+                    continue
+                clips_out.append(_clip_to_raw(c))
+            if hit:
+                body["tracks"] = {key: clips_out}
+                break
+
+    if not removed:
         return ToolResult(observation=f"未找到片段 {clip_id}", ok=False)
 
     try:
@@ -314,10 +366,11 @@ def handle_remove_clip(
         schedule_save(store, immediate=True)
         return ToolResult(
             observation=f"已删除片段 {clip_id}",
-            structured={"action": "remove_clip", "clip_id": clip_id},
+            structured={"action": "remove_clip", "clip_id": clip_id, "revision": view.get("revision")},
         )
     except Exception as e:
         return ToolResult(observation=f"删除片段失败：{e}", ok=False)
+
 
 
 def handle_apply_effect(
