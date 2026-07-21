@@ -708,7 +708,7 @@ function elementToClip(
 
 
 
-/** 生成时间轴指纹，用于预览 bridge 强制 reload。 */
+/** 生成时间轴内容指纹（不含 revision/updated_at），用于 soft-reload 判定。 */
 export function buildTimelineFingerprint(timeline: EditTimelineData): string {
   const layerSig = (timeline.video_layers ?? [])
     .flatMap((layer) =>
@@ -724,7 +724,8 @@ export function buildTimelineFingerprint(timeline: EditTimelineData): string {
         `${c.id ?? ""}:${c.start_ms ?? 0}:${c.end_ms ?? 0}:${c.asset_ref ?? ""}`,
     )
     .join("|");
-  return `${timeline.revision ?? 0}:${timeline.updated_at ?? ""}:${layerSig}:A:${audioSig}:${timeline.duration_ms ?? 0}`;
+  // 不含 revision/updated_at：自动 PATCH 只抬版本号时不得触发预览重载闪烁。
+  return `${layerSig}:A:${audioSig}:${timeline.duration_ms ?? 0}`;
 }
 
 /** 审计 Classic 项目投影时长是否与 EditTimeline duration_ms 一致。 */

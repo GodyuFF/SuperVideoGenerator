@@ -65,8 +65,9 @@ AGENT_DEFINITIONS: dict[str, AgentDefinition] = {
         "storyboard_refine_agent",
         "分镜复核 Agent",
         action_pipeline=[
-        "sync_actual_assets",
-        "update_frames",
+            "check_refine_prerequisites",
+            "sync_actual_assets",
+            "update_frames",
             "persist_review",
         ],
     ),

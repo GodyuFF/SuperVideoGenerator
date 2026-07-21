@@ -13,7 +13,7 @@ from core.guards.reference import ScriptEditGuard, ScriptEditGuardError
 from core.llm.agent.react_core import AgentRunContext
 from core.llm.tools.image.generate import (
     build_regeneration_generation_items,
-    run_concurrent_image_generation,
+    generate_one_image_item,
 )
 from core.llm.tools.image.settings import is_image_gen_available
 from core.llm.tools.tts.handler import handle_synthesize
@@ -328,7 +328,11 @@ async def _regenerate_text_asset_images(
     *,
     variant_id: str | None = None,
 ) -> RegenerateResult:
-    """对图文文字资产重新生图。"""
+    """对图文文字资产重新生图。
+
+    必须在当前协程内直跑生图，禁止再次入队：详情页 regenerate 已由
+    GenerationQueue 工人执行，再 enqueue+wait 会与串行工人死锁，并在 UI 出现双任务。
+    """
     if not is_image_gen_available():
         raise RegenerateNotAvailableError("生图服务未启用或缺少 API Key，请在 AI 设置中配置。")
 
@@ -342,23 +346,20 @@ async def _regenerate_text_asset_images(
     if not forced_items:
         _raise_regenerate_image_item_error(store, text_asset)
 
-    slim_item: dict[str, str] = {"source_text_asset_id": text_asset.id}
-    if variant_id:
-        slim_item["variant_id"] = variant_id
-    args = {
-        "observation": f"二次生成 {text_asset.name} 图片",
-        "items": [slim_item],
-        "_forced_generation_items": forced_items,
-    }
+    new_ids: list[str] = []
+    total = len(forced_items)
+    for index, item in enumerate(forced_items):
+        generated = await generate_one_image_item(
+            store,
+            ctx,
+            item,
+            index=index,
+            total=total,
+        )
+        mid = str(generated.get("media_id") or generated.get("asset_id") or "").strip()
+        if mid:
+            new_ids.append(mid)
 
-    enriched, _ = await run_concurrent_image_generation(store, ctx.script_id, args, ctx)
-    generated = enriched.get("items") or []
-    new_ids = [
-        str(g.get("media_id") or g.get("asset_id") or "")
-        for g in generated
-        if isinstance(g, dict)
-    ]
-    new_ids = [i for i in new_ids if i]
     schedule_save(store, immediate=True)
     emitter = ctx.work_context.get("emitter")
     if isinstance(emitter, EventEmitter):
@@ -581,9 +582,13 @@ async def _regenerate_video_clip(
     ctx: AgentRunContext,
     text_asset: TextAsset,
 ) -> RegenerateResult:
-    """对 video_clip 文字资产重新生成 AI 视频。"""
-    from core.llm.tools.video.handler import handle_generate_video_clips
+    """对 video_clip 文字资产重新生成 AI 视频。
+
+    与生图 regenerate 相同：已在队列工人内执行时直跑，禁止再次入队。
+    """
     from core.llm.style.video_capability import script_style_video_modes
+    from core.llm.tools.video.shot_spec import resolve_video_clip_gen_spec
+    from core.llm.tools.video.video_clips import generate_one_video_clip
 
     if not get_video_gen_manager().is_available():
         raise RegenerateNotAvailableError(
@@ -599,15 +604,20 @@ async def _regenerate_video_clip(
         if m.source_asset_id == text_asset.id
     ]:
         mark_media_superseded(store, mid)
-    args = {
-        "observation": f"二次生成 video_clip {text_asset.name}",
-        "asset_ids": [text_asset.id],
-    }
-    result = await handle_generate_video_clips(store, ctx, args)
-    if not result.ok:
-        raise RegenerateError(result.observation or "video_clip 二次生成失败")
+
+    allowed = script_style_video_modes(store, ctx.script_id)
+    spec = resolve_video_clip_gen_spec(
+        store,
+        text_asset.id,
+        allowed_modes=list(allowed) if allowed else None,
+    )
+    await generate_one_video_clip(store, ctx, spec)
+
     new_ids = [
-        str(o.asset_id) for o in (result.outputs or []) if o.asset_id
+        m.id
+        for m in store.media_assets.values()
+        if m.source_asset_id == text_asset.id
+        and not (m.metadata or {}).get("superseded")
     ]
     schedule_save(store, immediate=True)
     emitter = ctx.work_context.get("emitter")

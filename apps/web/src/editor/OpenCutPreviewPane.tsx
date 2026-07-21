@@ -20,6 +20,7 @@ import {
   acquireSvfEditorSession,
   releaseSvfEditorSession,
   markSvfProjectLoaded,
+  getSvfBridgeCache,
 } from "./opencut/svf-storage-bridge";
 import {
   getSvfProjectMediaCache,
@@ -30,6 +31,7 @@ import { warmGpuRenderer } from "./classicPrefetch";
 import {
   registerClassicAgentSession,
   unregisterClassicAgentSession,
+  reloadClassicFromApi,
 } from "./classicAgentBridge";
 import type { EditTimelineData } from "../edit/types";
 import { EditTabExportPortal } from "./EditTabExportPortal";
@@ -85,7 +87,10 @@ async function getPlaybackApi() {
   };
 }
 
-/** 订阅 OpenCut 播放状态并上报给父组件（含播放中的逐帧 onUpdate）。 */
+/**
+ * 订阅 OpenCut 播放状态并上报给父组件（含播放中的逐帧 onUpdate）。
+ * 父组件应对 playhead 做 DOM 直写，仅在 playing 变化时 setState，避免整树 60fps 重渲染。
+ */
 function PlaybackReporter({
   onPlaybackChange,
 }: {
@@ -163,6 +168,8 @@ export const OpenCutPreviewPane = forwardRef<OpenCutPreviewPaneHandle, OpenCutPr
     bootstrapTimelineRef.current = timeline;
     const timelineFingerprint = buildTimelineFingerprint(timeline);
     const prevFingerprintRef = useRef("");
+    const latestFingerprintRef = useRef(timelineFingerprint);
+    latestFingerprintRef.current = timelineFingerprint;
 
     useSvfOpencutThemeScope(!paused && ready);
 
@@ -209,6 +216,97 @@ export const OpenCutPreviewPane = forwardRef<OpenCutPreviewPaneHandle, OpenCutPr
       };
     }, [projectId, scriptId, paused, onSaveTimeline]);
 
+    /**
+     * Tab 预览禁止 OpenCut 自动 PATCH。
+     * 媒体 load 结束后 SaveManager 会 resume；若不压制，revision 回写会改指纹并硬重挂，播放数秒后闪屏。
+     */
+    useEffect(() => {
+      if (paused || !ready) return;
+
+      let cancelled = false;
+      let unsubscribe: (() => void) | undefined;
+
+      void getPlaybackApi().then(({ editor }) => {
+        if (cancelled) return;
+        const suppressAutosave = () => {
+          editor.save.pause();
+        };
+        suppressAutosave();
+        unsubscribe = editor.project.subscribe(() => {
+          if (!editor.project.getIsLoading()) {
+            suppressAutosave();
+          }
+        });
+      });
+
+      return () => {
+        cancelled = true;
+        unsubscribe?.();
+        void getPlaybackApi().then(({ editor }) => {
+          editor.save.resume();
+        });
+      };
+    }, [paused, ready]);
+
+    /** 内容指纹变化时 soft-reload；播放中延后到暂停，避免中途闪屏。 */
+    useEffect(() => {
+      if (paused || !ready) return;
+      if (!prevFingerprintRef.current || prevFingerprintRef.current === timelineFingerprint) {
+        return;
+      }
+
+      let cancelled = false;
+      let deferTimer: ReturnType<typeof setInterval> | null = null;
+
+      /** 将最新 timeline 热更新进已挂载的 EditorCore。 */
+      const applySoftReload = async () => {
+        if (cancelled) return;
+        prevFingerprintRef.current = timelineFingerprint;
+        bootstrapTimelineRef.current = timeline;
+
+        const cached = getSvfBridgeCache(compositeId)?.base;
+        if (cached && buildTimelineFingerprint(cached) === timelineFingerprint) {
+          const issues = getMediaHydrationIssues(getSvfProjectMediaCache(compositeId));
+          setHydrationMessageKeys(listMediaHydrationMessageKeys(issues));
+          return;
+        }
+
+        try {
+          await reloadClassicFromApi(projectId, scriptId, timeline);
+          if (cancelled) return;
+          const issues = getMediaHydrationIssues(getSvfProjectMediaCache(compositeId));
+          setHydrationMessageKeys(listMediaHydrationMessageKeys(issues));
+        } catch (e) {
+          if (!cancelled) {
+            setError(e instanceof Error ? e.message : String(e));
+            setReady(false);
+          }
+        }
+      };
+
+      void (async () => {
+        const { editor } = await getPlaybackApi();
+        if (cancelled) return;
+        if (editor.playback.getIsPlaying()) {
+          deferTimer = setInterval(() => {
+            if (cancelled) return;
+            if (!editor.playback.getIsPlaying()) {
+              if (deferTimer) clearInterval(deferTimer);
+              deferTimer = null;
+              void applySoftReload();
+            }
+          }, 250);
+          return;
+        }
+        await applySoftReload();
+      })();
+
+      return () => {
+        cancelled = true;
+        if (deferTimer) clearInterval(deferTimer);
+      };
+    }, [paused, ready, timelineFingerprint, timeline, projectId, scriptId, compositeId]);
+
     useEffect(() => {
       if (paused) {
         setReady(false);
@@ -236,6 +334,7 @@ export const OpenCutPreviewPane = forwardRef<OpenCutPreviewPaneHandle, OpenCutPr
             markSvfProjectLoaded(compositeId);
             acquireSvfEditorSession(projectId, scriptId);
             sessionHeldRef.current = true;
+            prevFingerprintRef.current = latestFingerprintRef.current;
             const issues = getMediaHydrationIssues(getSvfProjectMediaCache(compositeId));
             if (!cancelled) {
               setHydrationMessageKeys(listMediaHydrationMessageKeys(issues));
@@ -259,7 +358,8 @@ export const OpenCutPreviewPane = forwardRef<OpenCutPreviewPaneHandle, OpenCutPr
           sessionHeldRef.current = false;
         }
       };
-    }, [projectId, scriptId, compositeId, retryKey, paused, holdSessionOnPause, timelineFingerprint]);
+      // 指纹变化走 soft-reload；此处仅处理项目切换 / 重试 / 暂停恢复。
+    }, [projectId, scriptId, compositeId, retryKey, paused, holdSessionOnPause]);
 
     if (paused) {
       return (

@@ -73,6 +73,8 @@ export interface SvfDesktopApi {
   onUpdateState: (callback: (state: DesktopUpdateState) => void) => () => void;
   /** 通知主进程生成任务是否进行中。 */
   setGenerationBusy: (busy: boolean) => Promise<void>;
+  /** 用系统默认浏览器打开 http(s) 外链。 */
+  openExternalUrl: (url: string) => Promise<{ ok: boolean; message?: string }>;
 }
 
 declare global {

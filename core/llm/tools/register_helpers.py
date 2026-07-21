@@ -23,6 +23,7 @@ from core.llm.tools.output_schemas import (
     read_only_items_output_schema,
     read_webpage_output_schema,
     refine_plan_output_schema,
+    refine_prerequisites_output_schema,
     scan_text_assets_output_schema,
     script_mutation_output_schema,
     search_images_output_schema,
@@ -43,6 +44,7 @@ from core.llm.tools.spec import ToolKind, ToolSpec
 
 # 分镜复核 tool 显式 output schema（须先于 startswith 启发式匹配）
 _STORYBOARD_REFINE_OUTPUT: dict[str, Callable[[], dict[str, Any]]] = {
+    "check_refine_prerequisites": refine_prerequisites_output_schema,
     "get_shot_details": shot_details_query_output_schema,
     "get_shot_asset_timing": shot_asset_timing_output_schema,
     "sync_actual_assets": shot_sync_output_schema,

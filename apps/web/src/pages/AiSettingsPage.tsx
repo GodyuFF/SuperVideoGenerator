@@ -337,7 +337,7 @@ export function AiSettingsPage({
 
   // Bailian fields
   const [bailianWorkspaceId, setBailianWorkspaceId] = useState("");
-  const [bailianTxt2imgModel, setBailianTxt2imgModel] = useState("wanx2.5-t2i-turbo");
+  const [bailianTxt2imgModel, setBailianTxt2imgModel] = useState("qwen-image-2.0-pro");
   const [bailianImg2imgModel, setBailianImg2imgModel] = useState("qwen-image-2.0-pro");
 
   // Test image
@@ -440,7 +440,7 @@ export function AiSettingsPage({
     setSdNegativePrompt(img.sd_negative_prompt ?? "");
     // Bailian fields
     setBailianWorkspaceId(img.bailian_workspace_id ?? "");
-    setBailianTxt2imgModel(img.bailian_txt2img_model ?? "wanx2.5-t2i-turbo");
+    setBailianTxt2imgModel(img.bailian_txt2img_model ?? "qwen-image-2.0-pro");
     setBailianImg2imgModel(img.bailian_img2img_model ?? "qwen-image-2.0-pro");
 
     const vid = config.video;
@@ -1116,7 +1116,7 @@ export function AiSettingsPage({
                           type="text"
                           value={bailianTxt2imgModel}
                           onChange={(e) => setBailianTxt2imgModel(e.target.value)}
-                          placeholder="wanx2.5-t2i-turbo"
+                          placeholder="qwen-image-2.0-pro"
                         />
                       </label>
                       <label className="settings-field">

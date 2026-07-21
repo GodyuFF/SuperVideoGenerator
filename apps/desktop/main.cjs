@@ -2,7 +2,7 @@
  * Electron 主进程：无菜单栏窗口 + 自动拉起 API/Vite + 加载前端。
  */
 
-const { app, BrowserWindow, Menu, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require("electron");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
@@ -15,6 +15,7 @@ const { ensureDevServers } = require("./devServers.cjs");
 const { resolveUserDataRoot } = require("./userDataPaths.cjs");
 const { ensureProdApi, resolveRuntimeRoot } = require("./prodServers.cjs");
 const { initUpdater } = require("./updater.cjs");
+const { isAllowedExternalUrl } = require("./openExternal.cjs");
 
 /** 仓库根目录（apps/desktop 的上两级）。 */
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -96,6 +97,24 @@ function errorPageHtml(detail = "") {
 }
 
 /**
+ * 用系统默认浏览器打开外链。
+ * @param {string} url
+ * @returns {Promise<{ ok: boolean, message?: string }>}
+ */
+async function openExternalUrl(url) {
+  if (!isAllowedExternalUrl(url)) {
+    return { ok: false, message: "仅支持 http(s) 外链" };
+  }
+  try {
+    await shell.openExternal(url);
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, message };
+  }
+}
+
+/**
  * 创建无菜单栏主窗口。
  * @returns {BrowserWindow}
  */
@@ -135,6 +154,12 @@ function createWindow() {
 
   win.once("ready-to-show", reveal);
   setTimeout(reveal, 800);
+
+  // target=_blank / window.open → 系统浏览器，禁止在壳内新开窗口
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    void openExternalUrl(url);
+    return { action: "deny" };
+  });
 
   win.webContents.on(
     "did-fail-load",
@@ -188,6 +213,10 @@ function registerMediaIpc() {
     repoRoot: app.isPackaged ? "" : REPO_ROOT,
     appVersion: app.getVersion(),
   }));
+
+  ipcMain.handle("desktop:openExternalUrl", async (_event, url) =>
+    openExternalUrl(String(url || "")),
+  );
 }
 
 /**

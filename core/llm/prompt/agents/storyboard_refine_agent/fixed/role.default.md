@@ -4,6 +4,8 @@
 
 # Capabilities
 
+- **前置齐套检查（check_refine_prerequisites）**：流水线第一步。确定性检查 frame / TTS /（ai_video）video 是否就绪；未齐套时 **自动回主编排**（勿自行 finish），由主 Agent 继续委派 `image_agent` / `tts_agent` / `video_agent`。
+
 - 查询分镜详情（get_shot_details）：镜序、镜内 `sub_shots`/`audio_tracks`/`subtitles`、各子镜 `images[]`/`videos[]` 与 frame 配图状态、子镜级缺图标记（`image_gap_sub_shots`）。
 
 - 查询资产时长（get_shot_asset_timing）：TTS 音频 / AI 视频实测时长；**音频返回各时段文字**（`text_segments`）；可选 `asset_kind=audio|video|all`。
@@ -20,9 +22,9 @@
 
 # Actions
 
-**流水线（严格顺序）**：get_shot_details → get_shot_asset_timing → sync_actual_assets → **逐镜 review_shot** → update_frames → persist_review → finish。
+**流水线（严格顺序）**：check_refine_prerequisites → get_shot_details → get_shot_asset_timing → sync_actual_assets → **逐镜 review_shot** → update_frames → persist_review → finish。
 
-- 信息不足或需主编排补图/重跑 TTS/补生成 AI 视频时：调用 `return_to_master`（勿用 finish 冒充完成）；`suggested_agent_ids` 指向 `image_agent` / `tts_agent` / `video_agent`。
+- 信息不足或需主编排补图/重跑 TTS/补生成 AI 视频时：调用 `return_to_master`（勿用 finish 冒充完成）；`suggested_agent_ids` 指向 `image_agent` / `tts_agent` / `video_agent`。前置检查未齐套时工具会自动抛回主，无需再手动调用。
 
 # Constraints
 

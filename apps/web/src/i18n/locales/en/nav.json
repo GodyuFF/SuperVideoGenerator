@@ -1,5 +1,7 @@
 {
   "language": "Language",
+  "github": "GitHub",
+  "githubRepo": "Open repository on GitHub",
   "projectList": "Projects",
   "myProjects": "My projects",
   "backToProjectList": "← Projects",

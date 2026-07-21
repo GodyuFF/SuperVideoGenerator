@@ -34,7 +34,9 @@ export function EditorProvider({
 	const [error, setError] = useState<string | null>(null);
 	const { setLoadingProject } = useKeybindingsStore();
 
-	const showLoadingShell = isLoading || projectLoading;
+	const showLoadingShell = embedded
+		? !activeProject && (isLoading || projectLoading)
+		: isLoading || projectLoading;
 
 	useEffect(() => {
 		setLoadingProject(showLoadingShell);
@@ -46,7 +48,10 @@ export function EditorProvider({
 
 		const loadProject = async (allowRetry: boolean) => {
 			try {
-				setIsLoading(true);
+				// 嵌入模式已有项目时保持画面，避免 soft-reload 闪加载壳。
+				if (!(embedded && editor.project.getActiveOrNull())) {
+					setIsLoading(true);
+				}
 				setError(null);
 				await initializeGpuRenderer();
 				if (!alive) return;

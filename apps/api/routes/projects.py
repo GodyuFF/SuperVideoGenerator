@@ -834,7 +834,7 @@ def get_asset_lineage(project_id: str, asset_id: str):
 
 @router.get("/projects/{project_id}/assets/{asset_id}/resolved-prompt")
 def get_resolved_prompt(project_id: str, asset_id: str):
-    """返回与生图/生视频一致的实际生成提示词（含关联资产上下文，只读）。"""
+    """返回与生图/生视频一致的实际生成提示词（含参考图说明，只读）。"""
     from core.assets.resolved_prompt import (
         ResolvedPromptNotFoundError,
         ResolvedPromptUnsupportedError,

@@ -133,7 +133,7 @@ class ImageGenSettings(BaseSettings):
 
     # 百炼 DashScope 参数
     bailian_workspace_id: str = ""
-    bailian_txt2img_model: str = "wanx2.5-t2i-turbo"
+    bailian_txt2img_model: str = "qwen-image-2.0-pro"
     bailian_img2img_model: str = "qwen-image-2.0-pro"
     fallback_provider: str = ""
     fallback_model: str = ""

@@ -92,7 +92,9 @@ class AppState:
             emit_ws_events=False,
         )
         from core.interaction_log.async_writer import configure_interaction_log_writer
+        from core.interaction_log.media_log import bind_media_interaction_recorder
 
+        bind_media_interaction_recorder(self.interaction_recorder)
         with PerfSpan("startup", "configure_interaction_log_writer", logger=perf_logger):
             configure_interaction_log_writer(
                 self.interaction_log_store,

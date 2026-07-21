@@ -541,6 +541,8 @@ GET_SHOT_ASSET_TIMING_SCHEMA: dict[str, Any] = merge_plan_tracking(
 
 SYNC_SCHEMA: dict[str, Any] = merge_plan_tracking(dict(OBSERVATION_ONLY))
 
+CHECK_PREREQUISITES_SCHEMA: dict[str, Any] = merge_plan_tracking(dict(OBSERVATION_ONLY))
+
 ANALYZE_AV_SYNC_SCHEMA: dict[str, Any] = merge_plan_tracking(
     {
         "type": "object",
@@ -569,6 +571,8 @@ UPDATE_FRAMES_SCHEMA: dict[str, Any] = merge_plan_tracking(dict(OBSERVATION_ONLY
 
 
 STORYBOARD_REFINE_SCHEMAS: dict[str, dict[str, Any]] = {
+
+    "check_refine_prerequisites": CHECK_PREREQUISITES_SCHEMA,
 
     "sync_actual_assets": SYNC_SCHEMA,
 

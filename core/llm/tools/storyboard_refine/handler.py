@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from core.edit.refine_prerequisites import (
+    build_return_to_master_payload,
+    evaluate_refine_prerequisites,
+)
 from core.edit.shot_detail_sync import (
     apply_shot_detail_patches,
     sync_actual_assets,
@@ -13,6 +17,7 @@ from core.edit.shot_detail_sync import (
 from core.edit.shot_query import build_shot_asset_timing_query, build_shot_details_query
 from core.edit.storyboard_restructure import apply_restructure_ops
 from core.llm.agent.react_core import AgentRunContext
+from core.llm.hook.return_to_master import ReturnToMasterError
 from core.llm.tools.result import ToolResult
 from core.llm.tools.storyboard_refine.validate import validate_refine_mutation_input, validate_review_shot_input
 from core.models.entities import VideoPlan
@@ -124,6 +129,44 @@ def _apply_refine_mutation(
     return ToolResult(
         observation=f"{summary}\n\n{json.dumps(structured, ensure_ascii=False, indent=2)}",
         structured=structured,
+    )
+
+
+def handle_check_refine_prerequisites(
+    store: MemoryStore, ctx: AgentRunContext, args: dict[str, Any]
+) -> ToolResult:
+    """检查 frame/TTS/(ai_video)video 是否齐套；未齐套则抛回主编排。"""
+    style_mode = ctx.work_context.get("style_mode")
+    try:
+        evaluation = evaluate_refine_prerequisites(
+            store,
+            ctx.script_id,
+            style_mode=str(style_mode) if style_mode is not None else None,
+        )
+    except ValueError as exc:
+        return _validation_error(str(exc))
+
+    if not evaluation.get("ready"):
+        observation, structured = build_return_to_master_payload(
+            evaluation,
+            agent_name=ctx.agent_name,
+            step_id=ctx.step_id,
+            script_id=ctx.script_id,
+        )
+        raise ReturnToMasterError(
+            "check_refine_prerequisites",
+            observation,
+            reason="missing_upstream",
+            structured=structured,
+        )
+
+    obs_prefix = str(args.get("observation", "")).strip() or (
+        f"复核前置齐套：{evaluation.get('shot_count', 0)} 镜，"
+        f"style_mode={evaluation.get('style_mode')}。"
+    )
+    return ToolResult(
+        observation=f"{obs_prefix}\n\n{json.dumps(evaluation, ensure_ascii=False, indent=2)}",
+        structured=evaluation,
     )
 
 
@@ -382,6 +425,7 @@ def handle_get_plan(
 
 
 HANDLERS = {
+    "check_refine_prerequisites": handle_check_refine_prerequisites,
     "get_shot_details": handle_get_shot_details,
     "get_shot_asset_timing": handle_get_shot_asset_timing,
     "get_refine_plan": handle_get_plan,

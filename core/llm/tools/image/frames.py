@@ -172,9 +172,9 @@ def resolve_frame_generation_prompt(
     project_style: StyleConfig | None = None,
 ) -> str:
     """
-    生图用最终提示词：用户/锁存 image_prompt + 关联资产动态上下文。
+    生图用最终提示词：用户/锁存 image_prompt + 参考图说明置顶。
 
-    无 image_prompt 时走 compose_frame_image_prompt（已含关联块）。
+    无 image_prompt 时走 compose_frame_image_prompt（已含参考块 merge）。
     """
     authored = str(content.get("image_prompt", "")).strip()
     if not authored:

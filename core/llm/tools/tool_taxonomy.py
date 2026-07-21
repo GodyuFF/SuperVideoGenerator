@@ -67,6 +67,11 @@ _ACTION_TAXONOMY: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {
         "跨范围只读。查询：镜头关联音频/视频实测时长与旁白 text_segments。",
     ),
     "get_refine_plan": (("plan", "storyboard"), ("read",), "读取复核计划"),
+    "check_refine_prerequisites": (
+        ("shot", "image", "audio", "video"),
+        ("analyze", "control"),
+        "检查复核前置媒体齐套；未齐套则 return_to_master",
+    ),
     "sync_actual_assets": (("shot", "audio", "video", "image"), ("sync",), "同步实际资产到计划稿"),
     "analyze_av_sync": (("shot", "audio", "video"), ("analyze", "sync"), "音画时长分层协调分析/应用"),
     "review_and_restructure": (("storyboard", "shot", "plan"), ("update", "analyze"), "批量复核并重构分镜结构"),

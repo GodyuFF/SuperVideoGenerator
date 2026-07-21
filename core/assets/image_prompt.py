@@ -222,13 +222,6 @@ def compose_frame_image_prompt(
     if legacy_comp and legacy_comp not in authored:
         parts.append(legacy_comp)
 
-    if store is not None:
-        from core.assets.linked_assets_prompt import build_linked_assets_aux_prompt
-
-        aux = build_linked_assets_aux_prompt(store, content)
-        if aux:
-            parts.append(aux)
-
     if project_style:
         parts.append(f"aspect ratio {project_style.aspect_ratio}")
         mode_key = (
@@ -240,7 +233,12 @@ def compose_frame_image_prompt(
         if mode_label:
             parts.append(mode_label)
 
+    # 先拼正向正文，再由 merge 置顶【参考图说明】（勿把分区块塞进 _join_parts）
     image_prompt = _join_parts(parts)
+    if store is not None:
+        from core.assets.linked_assets_prompt import merge_prompt_with_linked_assets
+
+        image_prompt = merge_prompt_with_linked_assets(image_prompt, store, content)
     negative = f"{_DEFAULT_NEGATIVE}, {_FRAME_NEGATIVE}"
     return image_prompt, negative
 

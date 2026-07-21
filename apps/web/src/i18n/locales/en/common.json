@@ -86,7 +86,7 @@
   "resolvedPrompt": {
     "viewAria": "View resolved generation prompt",
     "title": "Resolved generation prompt",
-    "hintDiffers": "Includes linked-asset context; not written back to the asset",
+    "hintDiffers": "Includes reference-image notes; not written back to the asset",
     "hintSame": "Same as the stored prompt",
     "loadFailed": "Failed to load",
     "copied": "Copied",

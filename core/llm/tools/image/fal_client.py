@@ -119,9 +119,21 @@ async def fal_txt2img(
         "Content-Type": "application/json",
     }
     url = _fal_endpoint(s.base_url, model_path)
+    from core.interaction_log.media_log import logged_media_request
+
     try:
-        async with httpx.AsyncClient(timeout=s.timeout_sec, trust_env=s.trust_env) as client:
-            resp = await client.post(url, headers=headers, json=payload)
+        resp = await logged_media_request(
+            media_kind="image",
+            provider="fal",
+            model=model_path,
+            method="POST",
+            url=url,
+            headers=headers,
+            json_body=payload,
+            timeout=s.timeout_sec,
+            trust_env=s.trust_env,
+            phase="create",
+        )
     except httpx.HTTPError as e:
         raise FalImageGenerationError(f"fal.ai 网络错误：{e}") from e
 
@@ -175,9 +187,21 @@ async def fal_img2img(
         "Content-Type": "application/json",
     }
     url = _fal_endpoint(s.base_url, model_path)
+    from core.interaction_log.media_log import logged_media_request
+
     try:
-        async with httpx.AsyncClient(timeout=s.timeout_sec, trust_env=s.trust_env) as client:
-            resp = await client.post(url, headers=headers, json=payload)
+        resp = await logged_media_request(
+            media_kind="image",
+            provider="fal",
+            model=model_path,
+            method="POST",
+            url=url,
+            headers=headers,
+            json_body=payload,
+            timeout=s.timeout_sec,
+            trust_env=s.trust_env,
+            phase="edit",
+        )
     except httpx.HTTPError as e:
         raise FalImageGenerationError(f"fal.ai 网络错误：{e}") from e
 

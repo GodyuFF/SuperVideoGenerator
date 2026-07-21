@@ -98,7 +98,13 @@ def classify_image_gen_error(
         return "content_policy"
     if code in {"invalid_api_key", "authentication_error", "permission_denied"}:
         return "auth"
-    if code in {"rate_limit_exceeded", "insufficient_quota"} or "rate limit" in msg_l:
+    if (
+        http_status == 429
+        or code in {"rate_limit_exceeded", "insufficient_quota", "throttling.ratequota"}
+        or "rate limit" in msg_l
+        or "throttling" in msg_l
+        or "ratequota" in code.replace("_", "").replace(".", "")
+    ):
         return "rate_limit"
     if err_type == "invalid_request_error" and param_l == "prompt":
         return "invalid_prompt"

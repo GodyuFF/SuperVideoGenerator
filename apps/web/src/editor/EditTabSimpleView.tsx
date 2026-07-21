@@ -1,11 +1,18 @@
 /** 剪辑 Tab 简易视图：OpenCut 预览、播放与打开专业剪辑弹窗（成片导出仅在剪辑器内）。 */
 
-import { Component, type ErrorInfo, type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  Component,
+  type ErrorInfo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useAppTranslation } from "../i18n/useAppTranslation";
 import { fetchEditCapabilities } from "./adapter/capabilitiesAdapter";
 import { bindEditWsEvents, unbindEditWsEvents } from "./editWsBinding";
 import { prefetchClassicStudio } from "./classicPrefetch";
-import { reloadClassicFromApi } from "./classicAgentBridge";
 import { svfProjectKey } from "./adapter/svfProjectAdapter";
 import {
   getSvfProjectMediaCache,
@@ -91,6 +98,16 @@ function formatMonitorTimecode(ms: number): string {
   return `${m}:${s.toFixed(2).padStart(5, "0")}`;
 }
 
+/** 将监视器时码写入 DOM，避免播放逐帧 setState 触发整页重渲染。 */
+function writeMonitorTimecode(
+  el: HTMLElement | null,
+  playheadMs: number,
+  durationMs: number,
+): void {
+  if (!el) return;
+  el.textContent = `${formatMonitorTimecode(playheadMs)} / ${formatMonitorTimecode(durationMs)}`;
+}
+
 /** 剪辑 Tab 简易预览；支持 Tab 内浏览器导出与实时监视器时码。 */
 function EditTabSimpleViewInner({
   projectId,
@@ -101,8 +118,9 @@ function EditTabSimpleViewInner({
 }: EditTabSimpleViewProps) {
   const { t } = useAppTranslation(["editor", "common"]);
   const previewRef = useRef<OpenCutPreviewPaneHandle>(null);
-  const [playheadMs, setPlayheadMs] = useState(0);
-  const [durationMs, setDurationMs] = useState(0);
+  const timecodeRef = useRef<HTMLSpanElement>(null);
+  const playheadMsRef = useRef(0);
+  const durationMsRef = useRef(0);
   const [playing, setPlaying] = useState(false);
   const [exportHost, setExportHost] = useState<HTMLDivElement | null>(null);
   const [capabilities, setCapabilities] = useState<EditCapabilities | null>(null);
@@ -129,14 +147,11 @@ function EditTabSimpleViewInner({
 
   useEffect(() => {
     bindEditWsEvents(projectId, scriptId);
+    /** Agent/WS 热更新：只同步 React timeline，由内容指纹 soft-reload，禁止硬重挂。 */
     const onReload = (ev: Event) => {
       const detail = (ev as CustomEvent).detail as { scriptId?: string };
       if (detail?.scriptId && detail.scriptId !== scriptId) return;
-      void (async () => {
-        await fetchTimeline({ silent: true });
-        await reloadClassicFromApi(projectId, scriptId);
-        setRefreshKey((k) => k + 1);
-      })();
+      void fetchTimeline({ silent: true });
     };
     window.addEventListener("svg:edit-timeline-reloaded", onReload);
     return () => {
@@ -148,25 +163,44 @@ function EditTabSimpleViewInner({
   const classicExportEnabled = capabilities?.classic_export_enabled !== false;
   const noTimelineHint = error || t("editor:noTimelineHint");
   const hasTimeline = Boolean(timeline && !loading);
-  const displayDurationMs = durationMs > 0 ? durationMs : (timeline?.duration_ms ?? 0);
+  const fallbackDurationMs = timeline?.duration_ms ?? 0;
 
-  const handlePlaybackChange = (state: {
-    playheadMs: number;
-    durationMs: number;
-    playing: boolean;
-  }) => {
-    setPlayheadMs(state.playheadMs);
-    setDurationMs(state.durationMs);
-    setPlaying(state.playing);
-  };
+  useEffect(() => {
+    if (!hasTimeline) return;
+    if (durationMsRef.current <= 0 && fallbackDurationMs > 0) {
+      durationMsRef.current = fallbackDurationMs;
+    }
+    writeMonitorTimecode(
+      timecodeRef.current,
+      playheadMsRef.current,
+      durationMsRef.current > 0 ? durationMsRef.current : fallbackDurationMs,
+    );
+  }, [hasTimeline, fallbackDurationMs, timeline?.revision]);
+
+  /** 播放头走 DOM；仅 playing 变化时触发 React 重渲染（更新播放按钮文案）。 */
+  const handlePlaybackChange = useCallback(
+    (state: { playheadMs: number; durationMs: number; playing: boolean }) => {
+      playheadMsRef.current = state.playheadMs;
+      if (state.durationMs > 0) {
+        durationMsRef.current = state.durationMs;
+      }
+      writeMonitorTimecode(
+        timecodeRef.current,
+        state.playheadMs,
+        durationMsRef.current > 0 ? durationMsRef.current : fallbackDurationMs,
+      );
+      setPlaying((prev) => (prev === state.playing ? prev : state.playing));
+    },
+    [fallbackDurationMs],
+  );
 
   return (
     <div className="edit-cinema">
       <header className="edit-cinema-header">
         <div className="edit-cinema-toolbar-left">
           {hasTimeline ? (
-            <span className="edit-cinema-timecode">
-              {formatMonitorTimecode(playheadMs)} / {formatMonitorTimecode(displayDurationMs)}
+            <span ref={timecodeRef} className="edit-cinema-timecode">
+              {formatMonitorTimecode(0)} / {formatMonitorTimecode(fallbackDurationMs)}
             </span>
           ) : (
             <span className="muted edit-cinema-timecode">{noTimelineHint}</span>

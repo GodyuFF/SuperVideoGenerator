@@ -65,4 +65,10 @@ contextBridge.exposeInMainWorld("svfDesktop", {
    */
   setGenerationBusy: (busy) =>
     ipcRenderer.invoke("desktop:setGenerationBusy", busy),
+  /**
+   * 用系统默认浏览器打开 http(s) 外链（不在壳内导航）。
+   * @param {string} url
+   * @returns {Promise<{ ok: boolean, message?: string }>}
+   */
+  openExternalUrl: (url) => ipcRenderer.invoke("desktop:openExternalUrl", url),
 });

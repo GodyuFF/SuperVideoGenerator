@@ -60,3 +60,19 @@ export async function checkDesktopUpdates(): Promise<DesktopUpdateCheckResult | 
   if (!api) return null;
   return api.checkForUpdates();
 }
+
+/**
+ * 在系统浏览器中打开外链。
+ * 桌面壳走 shell.openExternal；普通 Web 用 window.open 新标签。
+ */
+export async function openInSystemBrowser(url: string): Promise<void> {
+  const api = getSvfDesktop();
+  if (api?.openExternalUrl) {
+    const result = await api.openExternalUrl(url);
+    if (!result.ok) {
+      throw new Error(result.message || "无法打开外链");
+    }
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}

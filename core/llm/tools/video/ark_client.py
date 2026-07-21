@@ -156,9 +156,21 @@ async def create_ark_video_task_async(
     except ValueError as e:
         raise ArkVideoGenerationError(str(e)) from e
     url = _tasks_url(s.base_url or DEFAULT_ARK_BASE_URL)
+    from core.interaction_log.media_log import logged_media_request
+
     try:
-        async with httpx.AsyncClient(timeout=60.0, trust_env=s.trust_env) as client:
-            resp = await client.post(url, headers=ark_auth_headers(key), json=payload)
+        resp = await logged_media_request(
+            media_kind="video",
+            provider="volcengine",
+            model=str(payload.get("model") or ""),
+            method="POST",
+            url=url,
+            headers=ark_auth_headers(key),
+            json_body=payload,
+            timeout=60.0,
+            trust_env=s.trust_env,
+            phase="create",
+        )
     except httpx.HTTPError as e:
         raise ArkVideoGenerationError(f"SeedDance 网络错误：{e}") from e
     if resp.status_code >= 400:

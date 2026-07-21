@@ -234,7 +234,16 @@ async def generate_one_video_clip(
     spec: ShotVideoGenSpec,
 ) -> None:
     """供生成队列串行调用的单条 video_clip 生成入口。"""
+    from core.interaction_log.media_log import media_log_scope
+
     semaphore = asyncio.Semaphore(1)
-    _clip, err = await _generate_one_clip(store, ctx, spec, semaphore=semaphore)
+    with media_log_scope(
+        project_id=str(ctx.project_id or ctx.work_context.get("project_id") or ""),
+        script_id=str(ctx.script_id or ""),
+        agent_name=str(ctx.agent_name or ""),
+        step_id=str(ctx.step_id or ""),
+        asset_id=str(spec.video_clip_asset_id or spec.shot_id or ""),
+    ):
+        _clip, err = await _generate_one_clip(store, ctx, spec, semaphore=semaphore)
     if err:
         raise RuntimeError(err)

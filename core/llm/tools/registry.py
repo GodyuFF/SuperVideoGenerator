@@ -15,6 +15,7 @@ from core.llm.hook.react_guard import (
 )
 from core.execution.cancel import ExecutionCancelledError
 from core.llm.hook.return_to_master import ReturnToMasterError
+from core.llm.model.plan_context import coerce_plan_tracking_arguments
 from core.llm.tools.result import ToolResult
 from core.llm.tools.spec import ToolKind, ToolSpec
 from core.llm.tools.validators import validate_against_schema
@@ -81,6 +82,7 @@ class ToolRegistry:
                 structured={"error": f"unknown tool {name}", "valid": False},
                 ok=False,
             )
+        arguments = coerce_plan_tracking_arguments(dict(arguments))
         try:
             validate_against_schema(
                 arguments, spec.input_schema, label="输入", tool_name=name
@@ -93,7 +95,7 @@ class ToolRegistry:
             )
         before_outputs = len(ctx.outputs)
         try:
-            result = spec.handler(store, ctx, dict(arguments))
+            result = spec.handler(store, ctx, arguments)
             if inspect.isawaitable(result):
                 result = await result
         except ImageGenerationAbortError:

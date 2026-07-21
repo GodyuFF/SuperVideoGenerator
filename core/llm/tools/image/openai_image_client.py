@@ -87,9 +87,21 @@ async def _post_openai_image(
         "Content-Type": "application/json",
     }
     url = _images_url(settings.base_url or DEFAULT_OPENAI_BASE_URL)
+    from core.interaction_log.media_log import logged_media_request
+
     try:
-        async with httpx.AsyncClient(timeout=settings.timeout_sec, trust_env=settings.trust_env) as client:
-            resp = await client.post(url, headers=headers, json=payload)
+        resp = await logged_media_request(
+            media_kind="image",
+            provider="openai",
+            model=str(payload.get("model") or ""),
+            method="POST",
+            url=url,
+            headers=headers,
+            json_body=payload,
+            timeout=settings.timeout_sec,
+            trust_env=settings.trust_env,
+            phase="create",
+        )
     except httpx.HTTPError as e:
         raise OpenAIImageGenerationError(f"OpenAI 网络错误：{e}") from e
 

@@ -12,6 +12,18 @@ from core.llm.tools.storyboard_refine.handler import HANDLERS as REFINE_HANDLERS
 
 _STORYBOARD_REFINE_META: dict[str, tuple[str, str, str, str]] = {
 
+    "check_refine_prerequisites": (
+
+        "storyboard_refine_agent",
+
+        "write_pipeline",
+
+        "storyboard_refine.check_refine_prerequisites",
+
+        "检查 frame/TTS/(ai_video)video 是否齐套；未齐套则回主编排",
+
+    ),
+
     "get_shot_details": (
 
         "storyboard_refine_agent",

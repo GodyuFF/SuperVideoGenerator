@@ -54,7 +54,9 @@ def repair_json_string_literals(text: str) -> str:
 
 
 def _coerce_nested_json_strings(data: dict[str, Any]) -> dict[str, Any]:
-    """将顶层 content 等字段中嵌套的 JSON 字符串解析为对象。"""
+    """将顶层 content / remaining_plan 等字段中嵌套的 JSON 字符串解析为对象或数组。"""
+    from core.llm.model.plan_context import coerce_plan_tracking_arguments
+
     out = dict(data)
     content = out.get("content")
     if isinstance(content, str):
@@ -66,7 +68,7 @@ def _coerce_nested_json_strings(data: dict[str, Any]) -> dict[str, Any]:
                 nested = None
             if isinstance(nested, dict):
                 out["content"] = nested
-    return out
+    return coerce_plan_tracking_arguments(out)
 
 
 def parse_llm_json_object(content: str) -> dict[str, Any]:

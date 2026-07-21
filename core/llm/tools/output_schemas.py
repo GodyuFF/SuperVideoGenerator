@@ -624,6 +624,23 @@ def shot_persist_output_schema() -> dict[str, Any]:
     )
 
 
+def refine_prerequisites_output_schema() -> dict[str, Any]:
+    """check_refine_prerequisites 成功输出 schema（未齐套走 ReturnToMaster，不经此校验）。"""
+    return _object_schema(
+        {
+            "ready": {"type": "boolean"},
+            "style_mode": {"type": "string"},
+            "shot_count": {"type": "integer"},
+            "plan_id": {"type": "string"},
+            "checks": {"type": "object"},
+            "missing_items": {"type": "array"},
+            "suggested_agent_ids": {"type": "array", "items": {"type": "string"}},
+            "resume_hint": {"type": "string"},
+        },
+        required=["ready", "style_mode", "shot_count", "checks"],
+    )
+
+
 def refine_plan_output_schema() -> dict[str, Any]:
     """get_refine_plan 输出 schema（含 shot_detail，不含 action）。"""
     return _object_schema(

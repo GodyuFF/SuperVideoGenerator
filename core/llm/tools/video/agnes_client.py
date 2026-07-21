@@ -233,9 +233,21 @@ async def create_video_task_async(
     async with _create_lock:
         for attempt in range(max_attempts):
             await _wait_create_spacing(min_interval)
+            from core.interaction_log.media_log import logged_media_request
+
             try:
-                async with httpx.AsyncClient(timeout=60.0, trust_env=s.trust_env) as client:
-                    resp = await client.post(url, headers=headers, json=payload)
+                resp = await logged_media_request(
+                    media_kind="video",
+                    provider="agnes",
+                    model=str(payload.get("model") or ""),
+                    method="POST",
+                    url=url,
+                    headers=headers,
+                    json_body=payload,
+                    timeout=60.0,
+                    trust_env=s.trust_env,
+                    phase="create",
+                )
             except httpx.HTTPError as e:
                 raise AgnesVideoGenerationError(f"Agnes 视频网络错误：{e}") from e
             finally:

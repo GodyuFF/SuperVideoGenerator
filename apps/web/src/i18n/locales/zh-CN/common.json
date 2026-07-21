@@ -86,7 +86,7 @@
   "resolvedPrompt": {
     "viewAria": "查看实际生成提示词",
     "title": "实际生成提示词",
-    "hintDiffers": "含关联资产上下文等，未写回资产字段",
+    "hintDiffers": "含参考图说明等，未写回资产字段",
     "hintSame": "与存档提示词一致",
     "loadFailed": "加载失败",
     "copied": "已复制",

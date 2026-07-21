@@ -1,5 +1,7 @@
 {
   "language": "界面语言",
+  "github": "GitHub",
+  "githubRepo": "在 GitHub 打开本仓库",
   "projectList": "项目列表",
   "myProjects": "我的项目",
   "backToProjectList": "← 项目列表",

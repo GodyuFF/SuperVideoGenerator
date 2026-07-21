@@ -109,6 +109,12 @@ _ACTION_DATA_SCOPE: dict[str, ToolDataScope] = {
     "get_shot_details": _read("分镜计划稿·镜头", "文字资产", "数字媒体资产"),
     "get_shot_asset_timing": _read("分镜计划稿·镜头", "数字媒体资产"),
     "get_refine_plan": _read("分镜计划稿"),
+    "check_refine_prerequisites": _write(
+        "编排层",
+        (),
+        reads=("分镜计划稿·镜头", "文字资产", "数字媒体资产"),
+        note="未齐套时抛 ReturnToMaster，不写资产表",
+    ),
     "sync_actual_assets": _write(
         "分镜计划层",
         ("分镜计划稿·镜头",),

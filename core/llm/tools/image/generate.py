@@ -668,6 +668,10 @@ async def _generate_one_item(
                         image_prompt = modified
                         item["image_prompt"] = modified
                 if attempt < IMAGE_GEN_MAX_ATTEMPTS:
+                    # 限流类错误：上层再等一会，避免客户端退避后仍瞬时打满
+                    if error_cat == "rate_limit":
+                        wait_sec = min(60.0, 10.0 * (2 ** (attempt - 1)))
+                        await asyncio.sleep(wait_sec)
                     await _emit_image_gen_progress(
                         ctx,
                         total=total,
@@ -850,18 +854,29 @@ async def generate_one_image_item(
     *,
     index: int = 0,
     total: int = 1,
-) -> None:
-    """供生成队列串行调用的单条生图入口。"""
+) -> dict[str, Any]:
+    """供生成队列串行调用的单条生图入口；成功时返回含 media_id 的 item。"""
+    from core.interaction_log.media_log import media_log_scope
+
     settings = get_image_gen_settings()
     semaphore = asyncio.Semaphore(1)
-    _result, failure = await _generate_one_item(
-        store,
-        ctx,
-        item,
-        index=index,
-        total=total,
-        settings=settings,
-        semaphore=semaphore,
-    )
+    with media_log_scope(
+        project_id=str(ctx.project_id or ctx.work_context.get("project_id") or ""),
+        script_id=str(ctx.script_id or ""),
+        agent_name=str(ctx.agent_name or ""),
+        step_id=str(ctx.step_id or ""),
+        asset_id=str(item.get("source_text_asset_id") or item.get("asset_id") or ""),
+        variant_id=str(item.get("variant_id") or "") or None,
+    ):
+        result, failure = await _generate_one_item(
+            store,
+            ctx,
+            item,
+            index=index,
+            total=total,
+            settings=settings,
+            semaphore=semaphore,
+        )
     if failure is not None:
         raise RuntimeError(failure.error_message)
+    return result or dict(item)

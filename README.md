@@ -17,7 +17,9 @@
 
 **成片演示（女娲补天）：**
 
-[![成片预览 — 点击观看 MP4](site/assets/demo-final-poster.jpg)](site/assets/demo-final.mp4)
+<a href="site/assets/demo-final.mp4">
+  <img src="site/assets/demo-final-poster.jpg" alt="成片预览 — 点击观看 MP4" width="720" />
+</a>
 
 > GitHub README 无法内嵌播放本地视频；点击上方封面图即可打开 [`demo-final.mp4`](site/assets/demo-final.mp4) 在线观看。
 

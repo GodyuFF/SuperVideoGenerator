@@ -12,7 +12,7 @@ class InteractionRecord(BaseModel):
 
     id: str = Field(default_factory=lambda: new_id("ilog"))
     created_at: str = ""
-    kind: str  # llm_request | llm_response | llm_error | conversation_token_round | agent_action | api_request
+    kind: str  # llm_request | llm_response | llm_error | conversation_token_round | agent_action | api_request | media_http
     source: str = ""  # llm | agent | http
     project_id: str = ""
     script_id: str = ""

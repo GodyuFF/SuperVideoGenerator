@@ -349,8 +349,27 @@ export function useWebSocket(
       ackResolvers.current.clear();
     };
 
+    /** 关闭并丢弃当前套接字，避免 StrictMode/重连留下孤儿连接重复投递。 */
+    const discardSocket = (socket: WebSocket | null) => {
+      if (!socket) return;
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onerror = null;
+      socket.onclose = null;
+      if (
+        socket.readyState === WebSocket.CONNECTING ||
+        socket.readyState === WebSocket.OPEN
+      ) {
+        socket.close();
+      }
+    };
+
     const connect = () => {
       if (!shouldConnectRef.current) return;
+
+      // 先丢弃旧连接，防止 React StrictMode / 竞态重连时多路 WS 同时 onmessage
+      discardSocket(wsRef.current);
+      wsRef.current = null;
 
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(
@@ -359,10 +378,13 @@ export function useWebSocket(
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (wsRef.current !== ws) return;
         reconnectAttemptRef.current = 0;
       };
 
       ws.onmessage = (ev) => {
+        // 仅处理当前活跃套接字，忽略已被替换的孤儿连接
+        if (wsRef.current !== ws) return;
         const data = JSON.parse(ev.data) as WsEvent;
         eventHandlerRef?.current?.(data);
 
@@ -384,6 +406,8 @@ export function useWebSocket(
       };
 
       ws.onclose = () => {
+        // 非当前套接字的 close（已被 discard / 替换）不得清空 ref 或触发重连
+        if (wsRef.current !== ws) return;
         wsRef.current = null;
         if (!shouldConnectRef.current) return;
         const delay = Math.min(30_000, 500 * 2 ** reconnectAttemptRef.current);
@@ -392,6 +416,7 @@ export function useWebSocket(
       };
 
       ws.onerror = () => {
+        if (wsRef.current !== ws) return;
         ws.close();
       };
     };
@@ -405,8 +430,9 @@ export function useWebSocket(
         reconnectTimerRef.current = null;
       }
       rejectPendingAcks("WebSocket 已断开");
-      wsRef.current?.close();
+      const current = wsRef.current;
       wsRef.current = null;
+      discardSocket(current);
     };
   }, [enabled, projectId, scriptId, eventHandlerRef]);
 

@@ -58,6 +58,54 @@ def _extract_image_url(data: dict[str, Any]) -> str:
     raise AgnesImageGenerationError("Agnes 响应未包含 url 或 b64_json")
 
 
+async def _post_agnes_images(
+    *,
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    settings: ImageGenSettings,
+    error_prefix: str,
+) -> str:
+    """POST Agnes 生图并解析图片 URL（写入媒体交互日志）。"""
+    from core.interaction_log.media_log import logged_media_request
+
+    try:
+        resp = await logged_media_request(
+            media_kind="image",
+            provider="agnes",
+            model=str(payload.get("model") or ""),
+            method="POST",
+            url=url,
+            headers=headers,
+            json_body=payload,
+            timeout=settings.timeout_sec,
+            trust_env=settings.trust_env,
+            phase="create",
+        )
+    except httpx.HTTPError as e:
+        raise AgnesImageGenerationError(f"Agnes 网络错误：{e}") from e
+
+    if resp.status_code >= 400:
+        body = resp.text[:2000]
+        parsed = parse_agnes_api_error_body(resp.status_code, body)
+        raise AgnesImageGenerationError(
+            f"{error_prefix} {resp.status_code}: {parsed['message']}",
+            http_status=resp.status_code,
+            error_code=parsed["error_code"],
+            error_type=parsed["error_type"],
+            param=parsed["param"],
+            api_message=parsed["message"],
+        )
+
+    try:
+        body = resp.json()
+    except ValueError as e:
+        raise AgnesImageGenerationError("Agnes 响应不是有效 JSON") from e
+    if not isinstance(body, dict):
+        raise AgnesImageGenerationError("Agnes 响应格式无效")
+    return _extract_image_url(body)
+
+
 async def generate_text_to_image_async(
     prompt: str,
     *,
@@ -86,32 +134,13 @@ async def generate_text_to_image_async(
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
-    url = _images_url(s.base_url)
-    try:
-        async with httpx.AsyncClient(timeout=s.timeout_sec, trust_env=s.trust_env) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-    except httpx.HTTPError as e:
-        raise AgnesImageGenerationError(f"Agnes 网络错误：{e}") from e
-
-    if resp.status_code >= 400:
-        body = resp.text[:2000]
-        parsed = parse_agnes_api_error_body(resp.status_code, body)
-        raise AgnesImageGenerationError(
-            f"Agnes API 错误 {resp.status_code}: {parsed['message']}",
-            http_status=resp.status_code,
-            error_code=parsed["error_code"],
-            error_type=parsed["error_type"],
-            param=parsed["param"],
-            api_message=parsed["message"],
-        )
-
-    try:
-        body = resp.json()
-    except ValueError as e:
-        raise AgnesImageGenerationError("Agnes 响应不是有效 JSON") from e
-    if not isinstance(body, dict):
-        raise AgnesImageGenerationError("Agnes 响应格式无效")
-    return _extract_image_url(body)
+    return await _post_agnes_images(
+        url=_images_url(s.base_url),
+        headers=headers,
+        payload=payload,
+        settings=s,
+        error_prefix="Agnes API 错误",
+    )
 
 
 async def generate_images_with_references_async(
@@ -153,33 +182,13 @@ async def generate_images_with_references_async(
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
-    url = _images_url(s.base_url)
-    try:
-        async with httpx.AsyncClient(timeout=s.timeout_sec, trust_env=s.trust_env) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-    except httpx.HTTPError as e:
-        raise AgnesImageGenerationError(f"Agnes 网络错误：{e}") from e
-
-    if resp.status_code >= 400:
-        body = resp.text[:2000]
-        parsed = parse_agnes_api_error_body(resp.status_code, body)
-        raise AgnesImageGenerationError(
-            f"Agnes 多参考图生图 API 错误 {resp.status_code}: {parsed['message']}",
-            http_status=resp.status_code,
-            error_code=parsed["error_code"],
-            error_type=parsed["error_type"],
-            param=parsed["param"],
-            api_message=parsed["message"],
-        )
-
-    try:
-        body = resp.json()
-    except ValueError as e:
-        raise AgnesImageGenerationError("Agnes 响应不是有效 JSON") from e
-    if not isinstance(body, dict):
-        raise AgnesImageGenerationError("Agnes 响应格式无效")
-    return _extract_image_url(body)
-
+    return await _post_agnes_images(
+        url=_images_url(s.base_url),
+        headers=headers,
+        payload=payload,
+        settings=s,
+        error_prefix="Agnes 多参考图生图 API 错误",
+    )
 
 async def generate_image_with_reference_async(
     prompt: str,

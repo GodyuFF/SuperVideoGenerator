@@ -19,6 +19,7 @@ ONE_TIME_COMPLETED_ACTIONS = frozenset(
         "create_frames",
         "create_video_clips",
         "persist_plan",
+        "check_refine_prerequisites",
         "sync_actual_assets",
         "update_frames",
         "persist_review",

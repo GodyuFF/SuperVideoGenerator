@@ -160,9 +160,21 @@ async def _post_image_generation(
     base = settings.base_url or DEFAULT_ARK_BASE_URL
     url = _images_url(base)
     t = float(timeout if timeout is not None else settings.timeout_sec or 120.0)
+    from core.interaction_log.media_log import logged_media_request
+
     try:
-        async with httpx.AsyncClient(timeout=t, trust_env=settings.trust_env) as client:
-            resp = await client.post(url, headers=ark_auth_headers(key), json=payload)
+        resp = await logged_media_request(
+            media_kind="image",
+            provider="volcengine",
+            model=str(payload.get("model") or ""),
+            method="POST",
+            url=url,
+            headers=ark_auth_headers(key),
+            json_body=payload,
+            timeout=t,
+            trust_env=settings.trust_env,
+            phase="create",
+        )
     except httpx.HTTPError as e:
         raise ArkImageGenerationError(f"SeedDream 网络错误：{e}") from e
     if resp.status_code >= 400:

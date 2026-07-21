@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -83,13 +84,20 @@ def build_plan_slice_for_step(
 
 
 def normalize_remaining_plan(value: Any) -> list[str]:
-    """将 remaining_plan 规范为字符串列表。"""
+    """将 remaining_plan 规范为字符串列表（兼容 JSON 数组字符串与换行分隔文本）。"""
     if value is None:
         return []
     if isinstance(value, str):
         text = value.strip()
         if not text:
             return []
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                return normalize_remaining_plan(parsed)
         lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
         return lines or [text]
     if isinstance(value, list):
@@ -103,6 +111,18 @@ def normalize_remaining_plan(value: Any) -> list[str]:
         return out
     text = str(value).strip()
     return [text] if text else []
+
+
+def coerce_plan_tracking_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """将 plan_status / remaining_plan 规范为 schema 期望类型，容错 LLM 把数组写成 JSON 字符串。"""
+    out = dict(arguments or {})
+    if "remaining_plan" in out:
+        out["remaining_plan"] = normalize_remaining_plan(out.get("remaining_plan"))
+    if "plan_status" in out and out["plan_status"] is not None and not isinstance(
+        out["plan_status"], str
+    ):
+        out["plan_status"] = str(out["plan_status"]).strip()
+    return out
 
 
 def extract_plan_update(action_input: dict[str, Any] | None) -> PlanUpdate | None:
