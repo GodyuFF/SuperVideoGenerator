@@ -34,13 +34,13 @@ jobs:
          github.event.inputs.platform == 'windows'))
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~\AppData\Local\pip\Cache
@@ -48,14 +48,14 @@ jobs:
           restore-keys: |
             pip-win-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: apps/web/node_modules
           key: web-nm-${{ hashFiles('apps/web/package-lock.json') }}
           restore-keys: |
             web-nm-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: apps/desktop/node_modules
           key: desktop-nm-${{ hashFiles('apps/desktop/package-lock.json') }}
@@ -83,7 +83,7 @@ jobs:
             "- ``$($_.Name)``: $mb MB" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: win-x64
           path: |
@@ -102,27 +102,27 @@ jobs:
          github.event.inputs.platform == 'macos-x64'))
     runs-on: macos-13
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: pip-macos-${{ hashFiles('requirements-desktop.txt', 'apps/desktop/packaging/python-version.txt') }}
           restore-keys: |
             pip-macos-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: apps/web/node_modules
           key: web-nm-${{ hashFiles('apps/web/package-lock.json') }}
           restore-keys: |
             web-nm-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: apps/desktop/node_modules
           key: desktop-nm-${{ hashFiles('apps/desktop/package-lock.json') }}
@@ -151,7 +151,7 @@ jobs:
             find apps/desktop/dist -maxdepth 1 -type f -exec ls -lh {} \;
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: macos-x64
           path: |
@@ -171,27 +171,27 @@ jobs:
          github.event.inputs.platform == 'macos-arm64'))
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: pip-macos-${{ hashFiles('requirements-desktop.txt', 'apps/desktop/packaging/python-version.txt') }}
           restore-keys: |
             pip-macos-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: apps/web/node_modules
           key: web-nm-${{ hashFiles('apps/web/package-lock.json') }}
           restore-keys: |
             web-nm-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: apps/desktop/node_modules
           key: desktop-nm-${{ hashFiles('apps/desktop/package-lock.json') }}
@@ -220,7 +220,7 @@ jobs:
             find apps/desktop/dist -maxdepth 1 -type f -exec ls -lh {} \;
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: macos-arm64
           path: |
@@ -245,7 +245,7 @@ jobs:
       ) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: release-assets
           pattern: "*"

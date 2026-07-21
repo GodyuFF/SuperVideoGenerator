@@ -2,7 +2,7 @@
 # Reuses existing runtime when python.exe is present; otherwise runs full prepare-runtime.
 
 param(
-    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path,
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path,
     [switch]$SkipPrepare,
     [switch]$PackOnly
 )

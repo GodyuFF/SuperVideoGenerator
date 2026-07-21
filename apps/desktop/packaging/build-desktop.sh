@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 DESKTOP_DIR="$REPO_ROOT/apps/desktop"
 RUNTIME_PYTHON="$DESKTOP_DIR/runtime/python/bin/python3"
 PREPARE_SCRIPT="$SCRIPT_DIR/prepare-runtime.sh"

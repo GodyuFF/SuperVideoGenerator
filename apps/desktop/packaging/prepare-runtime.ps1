@@ -13,7 +13,7 @@
 # Success criterion: `import whisperx` works (CPU fallback when no GPU).
 
 param(
-    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path,
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path,
     [string]$OutDir = "",
     [switch]$SkipTorch,
     [switch]$SkipPip,
