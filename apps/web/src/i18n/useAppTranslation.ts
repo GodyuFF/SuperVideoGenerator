@@ -7,6 +7,7 @@ import { useTranslation, type UseTranslationOptions } from "react-i18next";
 export type AppNamespace =
   | "common"
   | "nav"
+  | "plan"
   | "board"
   | "chat"
   | "settings"

@@ -2,13 +2,111 @@
  * 执行计划面板：展示 PlanDocument、AI 回写的 plan_status / remaining_plan 与步骤进度。
  */
 
-import { memo } from "react";
+import { memo, useEffect, useId, useState } from "react";
 import { MediaPreview } from "./MediaPreview";
 import { ImageGenProgressInline } from "./ImageGenProgressInline";
 import { useAppTranslation } from "../i18n/useAppTranslation";
-import type { PlanViewState } from "../types";
+import type { PlanViewState, StepOutput } from "../types";
 import { planProgress, scriptStatusLabel, stepStatusLabel, effectiveScriptStatus, displayStepStatus } from "../utils/planLabels";
 import { resolveMediaPlayUrl } from "../utils/mediaUrl";
+import { summarizePlanOutputs } from "../utils/planOutputSummary";
+
+/** 单步产出：默认按状态折叠为一行摘要，可展开完整列表。 */
+function PlanStepOutputs({
+  outputs,
+  shownStatus,
+  stepId,
+  projectId,
+  scriptId,
+}: {
+  outputs: StepOutput[];
+  shownStatus: string;
+  stepId: string;
+  projectId?: string | null;
+  scriptId?: string | null;
+}) {
+  const { t } = useAppTranslation(["common", "plan"]);
+  const listId = useId();
+  const defaultExpanded =
+    shownStatus === "running" || shownStatus === "awaiting_confirmation";
+  const defaultKey = `${stepId}:${shownStatus}`;
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [boundKey, setBoundKey] = useState(defaultKey);
+
+  useEffect(() => {
+    if (boundKey !== defaultKey) {
+      setBoundKey(defaultKey);
+      setExpanded(defaultExpanded);
+    }
+  }, [boundKey, defaultKey, defaultExpanded]);
+
+  if (!outputs.length) return null;
+
+  const summary = summarizePlanOutputs(outputs, {
+    kindImage: t("plan:outputsSummary.image"),
+    kindVideo: t("plan:outputsSummary.video"),
+    kindAudio: t("plan:outputsSummary.audio"),
+    kindText: t("plan:outputsSummary.text"),
+    labelNames: {
+      character: t("plan:outputsSummary.labels.character"),
+      prop: t("plan:outputsSummary.labels.prop"),
+      scene: t("plan:outputsSummary.labels.scene"),
+      plot: t("plan:outputsSummary.labels.plot"),
+      video_plan: t("plan:outputsSummary.labels.video_plan"),
+    },
+  });
+
+  const scrollable = outputs.length > 8;
+
+  return (
+    <div className="plan-step-outputs-wrap">
+      <button
+        type="button"
+        className="plan-step-outputs-toggle"
+        aria-expanded={expanded}
+        aria-controls={listId}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span className="plan-step-outputs-chevron" aria-hidden>
+          {expanded ? "▼" : "▶"}
+        </span>
+        <span className="plan-step-outputs-summary">
+          {summary || t("plan:outputsToggle")}
+        </span>
+      </button>
+      {expanded && (
+        <ul
+          id={listId}
+          className={`plan-step-outputs${scrollable ? " plan-step-outputs--scroll" : ""}`}
+        >
+          {outputs.map((o) => {
+            const playUrl = resolveMediaPlayUrl(o.url, projectId, scriptId);
+            return (
+              <li key={o.asset_id} className={`plan-step-output kind-${o.kind}`}>
+                <span className="plan-step-output-label">{o.label}</span>
+                {o.kind === "audio" && playUrl ? (
+                  <MediaPreview
+                    kind="audio"
+                    url={playUrl}
+                    projectId={projectId}
+                    scriptId={scriptId}
+                    className="plan-step-audio-preview"
+                  />
+                ) : playUrl ? (
+                  <a className="media-link" href={playUrl} target="_blank" rel="noreferrer">
+                    {t("common:actions.open")}
+                  </a>
+                ) : o.url ? (
+                  <span className="muted">{o.url}</span>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 interface PlanPanelProps {
   plan: PlanViewState;
@@ -166,36 +264,13 @@ export const PlanPanel = memo(function PlanPanel({
                   />
                 )}
                 {(step.outputs?.length ?? 0) > 0 && (
-                  <ul className="plan-step-outputs">
-                    {step.outputs!.map((o) => {
-                      const playUrl = resolveMediaPlayUrl(o.url, projectId, scriptId);
-                      return (
-                        <li key={o.asset_id} className={`plan-step-output kind-${o.kind}`}>
-                          <span className="plan-step-output-label">{o.label}</span>
-                          {o.kind === "audio" && playUrl ? (
-                            <MediaPreview
-                              kind="audio"
-                              url={playUrl}
-                              projectId={projectId}
-                              scriptId={scriptId}
-                              className="plan-step-audio-preview"
-                            />
-                          ) : playUrl ? (
-                            <a
-                              className="media-link"
-                              href={playUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {t("common:actions.open")}
-                            </a>
-                          ) : o.url ? (
-                            <span className="muted">{o.url}</span>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
+                  <PlanStepOutputs
+                    outputs={step.outputs!}
+                    shownStatus={shownStatus}
+                    stepId={step.id}
+                    projectId={projectId}
+                    scriptId={scriptId}
+                  />
                 )}
               </div>
             </li>

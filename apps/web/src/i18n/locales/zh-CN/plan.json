@@ -26,5 +26,19 @@
     "superseded": "已恢复",
     "awaiting_confirmation": "待确认"
   },
-  "supersededStepNote": "该步骤失败后已由后续重试成功覆盖"
+  "supersededStepNote": "该步骤失败后已由后续重试成功覆盖",
+  "outputsToggle": "步骤产出",
+  "outputsSummary": {
+    "image": "图片",
+    "video": "视频",
+    "audio": "音频",
+    "text": "文字",
+    "labels": {
+      "character": "角色",
+      "prop": "道具",
+      "scene": "场景",
+      "plot": "情节",
+      "video_plan": "视频计划"
+    }
+  }
 }
