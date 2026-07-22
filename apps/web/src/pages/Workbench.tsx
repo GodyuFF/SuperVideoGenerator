@@ -96,6 +96,7 @@ interface WorkbenchProps {
   needsAiConfig: boolean;
   onOpenSettings: () => void;
   onOpenAgents: () => void;
+  onOpenSkills?: () => void;
   onOpenLogs: () => void;
   onBackHome: () => void;
   onNavigateToProject: (projectId: string, scriptId?: string | null) => void;
@@ -119,6 +120,7 @@ function WorkbenchPage({
   needsAiConfig,
   onOpenSettings,
   onOpenAgents,
+  onOpenSkills,
   onOpenLogs,
   onBackHome,
   onNavigateToProject,
@@ -236,6 +238,16 @@ function WorkbenchPage({
     () =>
       skillPickerQuery === null ? [] : filterSkills(skills, skillPickerQuery),
     [skills, skillPickerQuery]
+  );
+  /** 当前对话激活的 Skill（跨轮保持） */
+  const activeSkillId = useMemo(() => {
+    if (!activeConversationId) return "";
+    const row = conversationList.find((c) => c.id === activeConversationId);
+    return (row?.active_skill_id || "").trim();
+  }, [activeConversationId, conversationList]);
+  const activeSkillMeta = useMemo(
+    () => skills.find((s) => s.id === activeSkillId) || null,
+    [skills, activeSkillId]
   );
   const skillPickerOpen =
     skillPickerQuery !== null && skills.length > 0 && !inputBlocked;
@@ -445,11 +457,18 @@ function WorkbenchPage({
   }, [projectId]);
 
   const loadSkills = useCallback(async () => {
-    const r = await fetch(`${API}/skills`);
+    const profile =
+      styleModeOptions.find((m) => m.id === styleMode)?.default_prompt_profile ||
+      String(styleMode);
+    const qs = new URLSearchParams({
+      profile,
+      agent: "super_video_master",
+    });
+    const r = await fetch(`${API}/skills?${qs}`);
     if (!r.ok) return;
     const list = (await r.json()) as SkillMeta[];
     setSkills(Array.isArray(list) ? list : []);
-  }, []);
+  }, [styleMode, styleModeOptions]);
 
   const handleExecutionModeChange = useCallback(
     async (mode: ExecutionMode) => {
@@ -659,6 +678,10 @@ function WorkbenchPage({
           if (data.conversation_id) {
             setActiveConversationId(String(data.conversation_id));
           }
+        } else {
+          // 切换剧本后必须按当前剧本活跃态校正，避免上一剧本 isRunning 残留锁死输入/编辑
+          setIsRunning(false);
+          clearAborting();
         }
       } catch {
         /* 恢复执行态失败不阻断页面 */
@@ -667,7 +690,7 @@ function WorkbenchPage({
     return () => {
       cancelled = true;
     };
-  }, [projectId, scriptId, workspaceMode]);
+  }, [projectId, scriptId, workspaceMode, clearAborting]);
 
   useEffect(() => {
     void loadSkills();
@@ -708,6 +731,10 @@ function WorkbenchPage({
       chatRoundRef.current = 0;
       stepMasterIteration.current.clear();
       stepMasterRound.current.clear();
+      // 先本地解锁；随后由 executions/active 按新剧本校正真实执行态
+      setIsRunning(false);
+      clearAborting();
+      setScriptStatus("draft");
     }
 
     let cancelled = false;
@@ -1129,6 +1156,9 @@ function WorkbenchPage({
                   return;
                 }
                 chatAbortRef.current?.abort();
+                setIsRunning(false);
+                clearAborting();
+                setScriptStatus("draft");
                 enterScript(pid, sid, meta);
                 onNavigateToProject(pid, sid);
                 setBoardTab("script_details");
@@ -1144,6 +1174,7 @@ function WorkbenchPage({
         trail={
           <AppNavTrail
             onOpenAgents={onOpenAgents}
+            onOpenSkills={onOpenSkills}
             onOpenLogs={onOpenLogs}
             onOpenSettings={onOpenSettings}
           />
@@ -1195,6 +1226,11 @@ function WorkbenchPage({
                     onClick={() => void loadConversationMessages(c.id)}
                   >
                     <span className="conversation-title">{c.title || "新对话"}</span>
+                    {c.active_skill_id ? (
+                      <span className="conversation-summary muted">
+                        Skill: /{c.active_skill_id}
+                      </span>
+                    ) : null}
                     {c.last_summary && (
                       <span className="conversation-summary muted">{c.last_summary}</span>
                     )}
@@ -1211,8 +1247,20 @@ function WorkbenchPage({
           <p className="muted chat-hint">
             首次发送将绑定视频风格并生成剧本；风格锁定后不可更改。
             {skills.length > 0 && (
-              <> 输入 <code>/</code> 可选择 Skill，或 <code>/skillId 你的需求</code>（如 /thriller）。</>
+              <>
+                {" "}
+                输入 <code>/</code> 可选择 Skill，或{" "}
+                <code>/skillId 你的需求</code>（如 /short_drama）。
+                Skill 会跨轮保持；详文由 Agent 按需读取，不会一次灌入全文。
+              </>
             )}
+            {activeSkillMeta ? (
+              <>
+                {" "}
+                当前激活：
+                <code>/{activeSkillMeta.id}</code>（{activeSkillMeta.title}）
+              </>
+            ) : null}
           </p>
           <div className="config-bar">
             <label className="goal-mode-toggle">

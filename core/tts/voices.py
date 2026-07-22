@@ -155,6 +155,23 @@ def _gender_prefers_female(gender: str) -> bool | None:
     return None
 
 
+_OPENAI_FEMALE_VOICES = ("nova", "shimmer", "coral")
+_OPENAI_MALE_VOICES = ("onyx", "echo", "fable", "alloy")
+
+
+def _voices_matching_gender(candidates: list[str], prefers_female: bool) -> list[str]:
+    """从候选列表中筛出匹配性别的音色（含 OpenAI 无后缀名）。"""
+    if prefers_female:
+        tagged = [c for c in candidates if c.endswith("-Female")]
+        if tagged:
+            return tagged
+        return [c for c in candidates if c in _OPENAI_FEMALE_VOICES]
+    tagged = [c for c in candidates if c.endswith("-Male")]
+    if tagged:
+        return tagged
+    return [c for c in candidates if c in _OPENAI_MALE_VOICES]
+
+
 def resolve_character_tts_voice(
     voice_name: str | None,
     *,
@@ -171,34 +188,32 @@ def resolve_character_tts_voice(
             provider, default_voice, locale or "zh-CN"
         )
 
-    if voice and voice in candidates:
-        return voice
-
-    fallback = (
-        default_voice
-        if default_voice in candidates
-        else candidates[0]
+    prefers_female = _gender_prefers_female(gender)
+    gender_pool = (
+        _voices_matching_gender(candidates, prefers_female)
+        if prefers_female is not None
+        else []
     )
 
-    if voice:
-        return fallback
+    if voice and voice in candidates:
+        if gender_pool and voice not in gender_pool:
+            return gender_pool[0]
+        return voice
 
-    prefers_female = _gender_prefers_female(gender)
-    if prefers_female is True:
-        for candidate in candidates:
-            if candidate.endswith("-Female"):
-                return candidate
-        for candidate in candidates:
-            if candidate in ("nova", "shimmer", "coral"):
-                return candidate
-    elif prefers_female is False:
-        for candidate in candidates:
-            if candidate.endswith("-Male"):
-                return candidate
-        for candidate in candidates:
-            if candidate in ("onyx", "echo", "fable", "alloy"):
-                return candidate
-    return fallback
+    if prefers_female is not None:
+        if gender_pool:
+            return gender_pool[0]
+        # 男角色绝不回落女声 default_voice
+        if prefers_female is False:
+            non_female = [c for c in candidates if not c.endswith("-Female")]
+            if non_female:
+                return non_female[0]
+            return candidates[0]
+        return candidates[0]
+
+    if default_voice and default_voice in candidates:
+        return default_voice
+    return candidates[0]
 
 
 def get_all_voices(locale: str | None = None) -> list[str]:
@@ -239,17 +254,14 @@ def is_no_voice(voice_name: str | None) -> bool:
 
 
 def resolve_default_voice(provider: str, default_voice: str, default_language: str) -> str:
+    """解析旁白默认音色；未配置时取当前 locale 稳定排序后的首个候选，不偏爱女声。"""
     voice = (default_voice or "").strip()
     if voice:
         return voice
     lang = (default_language or "zh-CN").strip()
     if provider == "openai":
         return "alloy"
-    candidates = get_all_azure_voices([lang])
+    candidates = get_voices_for_provider(provider, lang)
     if candidates:
-        for preferred in ("XiaoxiaoNeural", "YunxiNeural"):
-            for candidate in candidates:
-                if preferred in candidate:
-                    return candidate
         return candidates[0]
     return "zh-CN-XiaoxiaoNeural-Female"

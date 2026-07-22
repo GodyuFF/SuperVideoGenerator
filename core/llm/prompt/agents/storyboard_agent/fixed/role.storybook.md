@@ -10,6 +10,6 @@
   - `sub_shots[]`：`start_ms`/`end_ms`（相对镜起点，时段须落在 `duration_ms` 内）、`description`、`camera_motion`、`element_refs`（`character`/`scene`/`prop` 键）、`produce_mode`（静图运镜→`still`；文生→`text2video`；图生→`img2video`）、可选 `produce_rationale`
   - 多画面时 `images[]` 须填 `start_ms`/`end_ms`（落在子镜时段内）；省略则等于子镜起止
   - `audio_tracks[].clips[]`：**按说话人拆分**——`text`（该 clip 朗读全文）、`start_ms`/`end_ms`、**`character_ref`**（角色对白填 `load_context.characters[].id`；旁白留空）；句级字幕写入 `subtitles[]`，文本拼接须与 voice clip `text` 一致
-  - `duration_ms` 按旁白约 3–4 字/秒估算（单镜 5–20s）；须 ≥ 镜内各片段 `end_ms` 最大值
+  - `duration_ms` 按旁白约 3–4 字/秒估算后再加呼吸空隙（单镜约 5–20s）；须 ≥ 末 clip `end_ms + 500`；首 clip `start_ms ≥ 300`；相邻 clip 间隙 ≥ 400ms；禁止 clip 铺满整镜
 - `load_context` 返回的 `narration_assets` **仅供参考**；须将旁白写入镜内 `audio_tracks`，系统不会从剧本旁白资产自动回填。
 - camera_motion 仅用 canonical：`ken_burns_in`、`ken_burns_out`、`ken_burns_pan`、`pan_right`、`static`。

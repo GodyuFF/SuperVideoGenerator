@@ -25,7 +25,7 @@ from core.llm.tools.image.errors import (
 from core.llm.agent.react_core import MasterRunContext, ReActDecision, ToolCallDecision
 from core.llm.agent.registry import AgentRegistry
 from core.constants import MAX_REACT_ITERATIONS
-from core.conversation import ConversationStore
+from core.conversation import ConversationIndex, ConversationStore
 from core.execution.cancel import ExecutionCancelledError, check_cancelled, wait_or_cancel
 from core.events.emitter import EventEmitter
 from core.llm.client import LLMClient
@@ -97,7 +97,9 @@ class MasterReActEngine:
         confirmation: ConfirmationManager,
         llm_config: LLMConfigManager,
         llm_client: LLMClient,
+        conversation_index: ConversationIndex | None = None,
     ) -> None:
+        """初始化主编排 ReAct 引擎。"""
         self._store = store
         self._emitter = emitter
         self._registry = registry
@@ -105,7 +107,11 @@ class MasterReActEngine:
         self._confirmation = confirmation
         self._llm_config = llm_config
         self._llm_client = llm_client
-        self._tool_executor = MasterToolExecutor(store)
+        self._conversation_index = conversation_index or ConversationIndex()
+        self._tool_executor = MasterToolExecutor(
+            store,
+            self._conversation_index,
+        )
         self._stream_delta_drains: dict[str, Any] = {}
 
     async def _emit(self, script_id: str, event_type: str, payload: dict[str, Any]) -> None:
@@ -564,12 +570,15 @@ class MasterReActEngine:
 
                 try:
                     check_cancelled(script_id)
-                    decision = await decide_master_session(
-                        self._llm_client,
-                        self._llm_config,
-                        session,
-                        self._conversations,
-                        on_delta=on_delta,
+                    decision = await wait_or_cancel(
+                        script_id,
+                        decide_master_session(
+                            self._llm_client,
+                            self._llm_config,
+                            session,
+                            self._conversations,
+                            on_delta=on_delta,
+                        ),
                     )
                 except ExecutionCancelledError:
                     user_aborted = True
@@ -897,6 +906,8 @@ class MasterReActEngine:
                                 call.action,
                                 script_id,
                                 call.action_input,
+                                session=session,
+                                conversation_id=conversation_id,
                             )
                             return call.action, call.tool_call_id, obs
                         except Exception as e:
@@ -946,6 +957,8 @@ class MasterReActEngine:
                             decision.action,
                             script_id,
                             decision.action_input,
+                            session=session,
+                            conversation_id=conversation_id,
                         )
                     except Exception as e:
                         observation = f"工具 {decision.action} 执行失败：{e}"
@@ -1082,34 +1095,41 @@ class MasterReActEngine:
                     and uses_image_text_pipeline(style_mode)
                     and should_prompt_image_source(image_text_cfg, style_mode)
                 ):
-                    source_response = await self._confirmation.request(
-                        kind="image_source",
-                        title="选择图片来源",
-                        description=(
-                            "即将为角色、道具、场景文字资产批量配图。"
-                            "请选择 AI 生图或搜索配图。"
-                        ),
-                        components=[
-                            A2UIComponent(
-                                id="image_source",
-                                component="select",
-                                label="图片来源",
-                                value=ImageSourceMode.GENERATE.value,
-                                options=[
-                                    {
-                                        "label": "AI 批量生图",
-                                        "value": ImageSourceMode.GENERATE.value,
-                                    },
-                                    {
-                                        "label": "搜索配图",
-                                        "value": ImageSourceMode.SEARCH.value,
-                                    },
+                    try:
+                        source_response = await wait_or_cancel(
+                            script_id,
+                            self._confirmation.request(
+                                kind="image_source",
+                                title="选择图片来源",
+                                description=(
+                                    "即将为角色、道具、场景文字资产批量配图。"
+                                    "请选择 AI 生图或搜索配图。"
+                                ),
+                                components=[
+                                    A2UIComponent(
+                                        id="image_source",
+                                        component="select",
+                                        label="图片来源",
+                                        value=ImageSourceMode.GENERATE.value,
+                                        options=[
+                                            {
+                                                "label": "AI 批量生图",
+                                                "value": ImageSourceMode.GENERATE.value,
+                                            },
+                                            {
+                                                "label": "搜索配图",
+                                                "value": ImageSourceMode.SEARCH.value,
+                                            },
+                                        ],
+                                        required=True,
+                                    ),
                                 ],
-                                required=True,
+                                conversation_id=conversation_id,
                             ),
-                        ],
-                        conversation_id=conversation_id,
-                    )
+                        )
+                    except ExecutionCancelledError:
+                        user_aborted = True
+                        break
                     if not source_response.approved:
                         observation = "用户取消图片素材步骤。"
                         ctx.observations.append(observation)
@@ -1162,12 +1182,19 @@ class MasterReActEngine:
 
                 if not goal_mode and decision.action in CONFIRM_BEFORE_ACTION:
                     gate = CONFIRM_BEFORE_ACTION[decision.action]
-                    response = await self._confirmation.request(
-                        kind="generic",
-                        title=gate.title,
-                        description=gate.description,
-                        conversation_id=conversation_id,
-                    )
+                    try:
+                        response = await wait_or_cancel(
+                            script_id,
+                            self._confirmation.request(
+                                kind="generic",
+                                title=gate.title,
+                                description=gate.description,
+                                conversation_id=conversation_id,
+                            ),
+                        )
+                    except ExecutionCancelledError:
+                        user_aborted = True
+                        break
                     if not response.approved:
                         observation = f"用户取消执行 {decision.action}。"
                         ctx.observations.append(observation)
@@ -1235,8 +1262,19 @@ class MasterReActEngine:
                     "user_message": ctx.user_message,
                     "plan_slice": plan_slice.model_dump(),
                 }
-                if skill_overlay:
-                    work_context["skill_overlay"] = skill_overlay
+                if session.extra.get("skill_overlay"):
+                    from core.llm.agent.config_manager import get_agent_config_manager
+                    from core.llm.prompt.skills.allowlist import skill_overlay_for_agent
+
+                    mgr = get_agent_config_manager()
+                    filtered = skill_overlay_for_agent(
+                        session.extra.get("skill_overlay"),
+                        profile_id=session._profile_id(),
+                        agent_name=agent.name,
+                        skill_allowlists_by_profile=mgr.get_data().skill_allowlists_by_profile,
+                    )
+                    if filtered:
+                        work_context["skill_overlay"] = filtered
                 if uses_image_text_pipeline(style_mode):
                     work_context["image_text_config"] = image_text_cfg.model_dump()
                     if step_type == "image_gen":

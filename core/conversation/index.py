@@ -78,6 +78,7 @@ class ConversationIndex:
         title: str | None = None,
         last_summary: str | None = None,
     ) -> Conversation | None:
+        """更新对话时间戳与可选标题/摘要。"""
         conv = self.get(conversation_id)
         if not conv:
             return None
@@ -86,6 +87,19 @@ class ConversationIndex:
             conv.title = title[:80]
         if last_summary is not None:
             conv.last_summary = last_summary
+        return conv
+
+    def set_active_skill(
+        self,
+        conversation_id: str,
+        skill_id: str | None,
+    ) -> Conversation | None:
+        """设置或清除对话当前激活的 Skill id。"""
+        conv = self.get(conversation_id)
+        if not conv:
+            return None
+        conv.active_skill_id = (skill_id or "").strip().lower()
+        conv.updated_at = _utc_now()
         return conv
 
     def record_token_round(

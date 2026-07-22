@@ -487,7 +487,7 @@ MASTER_STATE_INSTRUCTIONS = """说明（每轮决策前必读）：
 
 SUB_AGENT_STATE_INSTRUCTIONS = """说明（每轮决策前必读）：
 1. **必须通过 tool_calls 调用且只能调用**下方 JSON 的 `available_actions` 中提供的 function。
-2. `completed_actions` 记录已成功执行过的行动；**一次性步骤**（如 `parse_brief`）完成后不会出现在 `available_actions` 中；**可重复步骤**（如 `create_plot`、`create_character`、`update_*`、`list_text_assets`）仍可多次选用。
+2. `completed_actions` 记录已成功执行过的行动；**一次性步骤**（如 `parse_brief`）完成后不会出现在 `available_actions` 中；**可重复步骤**（如 `create_plot`、`create_character`、`update_*`、`list_text_assets`、`list_project_shared_assets`）仍可多次选用。
 3. 当本子 Agent 流水线任务已完成时，应选择 `finish` 交还主编排。
 4. `plan_slice` / `project_context` 由系统注入，勿重复编造已完成步骤。"""
 

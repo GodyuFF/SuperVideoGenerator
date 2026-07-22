@@ -453,6 +453,38 @@ def build_list_text_assets_input_schema() -> dict[str, Any]:
     )
 
 
+def build_list_project_shared_assets_input_schema() -> dict[str, Any]:
+    """list_project_shared_assets：项目共享池 character/scene/prop。"""
+    return _object_schema(
+        {
+            "observation": _OBSERVATION,
+            "query": {
+                "type": "string",
+                "description": (
+                    "可选：按名称或设定关键词检索共享池。"
+                    "有 Embedding 时语义排序；无 Embedding 时名称精确/包含匹配，无命中则回退全量"
+                ),
+            },
+            "types": {
+                "type": "array",
+                "description": "可选：仅返回指定共享类型（默认 character/scene/prop）",
+                "items": {
+                    "type": "string",
+                    "enum": ["character", "scene", "prop"],
+                },
+            },
+            "include_content": {
+                "type": "boolean",
+                "description": "是否返回完整 content（默认 true）；false 时仅摘要预览以节省 token",
+                "default": True,
+            },
+        },
+        required=["observation"],
+        description="列出或检索项目共享图文资产（角色/空镜/道具），含是否已关联当前剧本",
+        additional_properties=False,
+    )
+
+
 def _shot_element_refs_schema() -> dict[str, Any]:
     """子镜元素引用 schema（桶与资产类型一一对应）。"""
     return {

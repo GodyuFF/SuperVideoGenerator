@@ -55,6 +55,7 @@ class Conversation(BaseModel):
     last_summary: str = ""
     last_round_token_usage: dict[str, Any] = Field(default_factory=dict)
     total_token_usage: dict[str, Any] = Field(default_factory=dict)
+    active_skill_id: str = ""
 
 
 class AssetStatus(str, Enum):

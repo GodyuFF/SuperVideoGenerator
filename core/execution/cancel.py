@@ -51,6 +51,11 @@ class ExecutionCancelRegistry:
             self._cancelled.discard(script_id)
             self._active.pop(script_id, None)
 
+    def release_active(self, script_id: str) -> None:
+        """中止后立即摘掉 active，允许新消息；保留 cancelled 供收尾任务退出。"""
+        with self._lock:
+            self._active.pop(script_id, None)
+
 
 _registry = ExecutionCancelRegistry()
 

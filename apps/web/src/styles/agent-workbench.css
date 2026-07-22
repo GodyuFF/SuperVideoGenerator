@@ -941,6 +941,210 @@
   border-top: 1px solid var(--aw-frame);
 }
 
+.aw-agent-skills-section {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--aw-frame);
+}
+
+.aw-skill-linked-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.aw-skill-linked-row {
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--aw-frame);
+  border-radius: var(--svf-radius-sm, 6px);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--aw-panel, #12151c) 90%, transparent);
+}
+
+.aw-skill-linked-row .aw-tool-row-main {
+  padding: 0.65rem 0.75rem;
+}
+
+.aw-skill-linked-sprocket,
+.aw-skill-pick-sprocket {
+  width: 10px;
+  flex-shrink: 0;
+  background:
+    repeating-linear-gradient(
+      180deg,
+      var(--svf-void, #080a0f) 0 5px,
+      var(--aw-frame) 5px 9px,
+      var(--svf-void, #080a0f) 9px 14px
+    );
+}
+
+.aw-skill-slash {
+  font-family: var(--svf-font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  color: var(--svf-accent, #e0634a);
+}
+
+.aw-skill-purpose {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--svf-text-soft, #b8c0d0);
+}
+
+.aw-skill-highlights {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.aw-skill-highlights li,
+.aw-skill-effect-chip {
+  font-family: var(--svf-font-mono, ui-monospace, monospace);
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  padding: 0.18rem 0.4rem;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--svf-accent, #e0634a) 35%, var(--aw-frame));
+  color: var(--svf-text-soft, #b8c0d0);
+  background: color-mix(in srgb, var(--svf-accent, #e0634a) 8%, transparent);
+}
+
+.aw-skill-picker-thesis {
+  margin: 0.55rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border-left: 2px solid var(--svf-accent, #e0634a);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--svf-text-soft, #b8c0d0);
+  background: color-mix(in srgb, var(--svf-accent, #e0634a) 6%, transparent);
+}
+
+.aw-skill-pick-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.aw-skill-pick-card {
+  width: 100%;
+  display: flex;
+  text-align: left;
+  appearance: none;
+  border: 1px solid var(--aw-frame);
+  border-radius: var(--svf-radius, 10px);
+  background: var(--svf-surface, #12151c);
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.aw-skill-pick-card:hover {
+  border-color: color-mix(in srgb, var(--svf-accent, #e0634a) 50%, var(--aw-frame));
+  box-shadow: var(--svf-shadow-accent, 0 0 0 2px color-mix(in srgb, var(--svf-accent) 18%, transparent));
+}
+
+.aw-skill-pick-card:focus-visible {
+  outline: 2px solid var(--svf-accent, #e0634a);
+  outline-offset: 2px;
+}
+
+.aw-skill-pick-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.85rem 0.95rem 0.75rem;
+}
+
+.aw-skill-pick-top {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.aw-skill-pick-title {
+  font-family: var(--svf-font-body, Outfit, sans-serif);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--svf-text, #e8ecf4);
+}
+
+.aw-skill-pick-slashes {
+  font-family: var(--svf-font-mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  color: var(--svf-accent, #e0634a);
+}
+
+.aw-skill-pick-purpose {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--svf-text-soft, #b8c0d0);
+}
+
+.aw-skill-pick-purpose-muted {
+  color: var(--svf-muted, #8e9aaf);
+}
+
+.aw-skill-pick-effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.aw-skill-pick-cta {
+  margin-top: 0.35rem;
+  font-family: var(--svf-font-mono, ui-monospace, monospace);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--svf-accent, #e0634a);
+}
+
+.aw-text-link {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--svf-accent, #e0634a);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.aw-skill-source {
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  border: 1px solid var(--aw-frame);
+  color: var(--svf-text-soft, #b8c0d0);
+}
+
+.aw-skill-source-user {
+  border-color: color-mix(in srgb, var(--aw-accent) 40%, var(--aw-frame));
+  color: var(--aw-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aw-skill-pick-card {
+    transition: none;
+  }
+}
+
 .aw-section-head {
   margin-bottom: 0.75rem;
 }

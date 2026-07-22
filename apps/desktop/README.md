@@ -57,7 +57,9 @@ npm start
 
 正式发布：`git tag vX.Y.Z && git push origin vX.Y.Z`（触发 CI 构建 Win + Mac 并上传 Release）。
 
-未签名安装包在部分环境可能被 SmartScreen / Gatekeeper 拦截，属预期行为；可从发布页下载后按系统提示允许运行。
+`electron-builder.yml` 的 `files` 为白名单：主进程 `require("./xxx.cjs")` 的模块必须显式列入，否则安装包会在启动时报 `Cannot find module`。可用 `npm run test:paths`（含 `packagingFiles.test.cjs`）校验。
+
+未签名安装包在部分环境可能被 SmartScreen / Gatekeeper 拦截，属预期行为；可从发布页下载后按系统提示允许运行。macOS 若提示「已损坏」，对 `.app` 执行 `xattr -cr /Applications/SuperVideoGenerator.app` 清除隔离属性后再打开（详见用户手册 FAQ）。
 
 ---
 

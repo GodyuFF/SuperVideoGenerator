@@ -15,7 +15,7 @@ from core.models.entities import Shot, ShotAudioClip
 from core.store.memory import MemoryStore
 from core.tts.clip_voice import resolve_voice_act_voice_name
 from core.tts.duration import duration_ms_from_target
-from core.tts.engine import TtsRuntimeConfig, build_runtime_config, synthesize_speech
+from core.tts.engine import TtsRuntimeConfig, synthesize_speech
 from core.tts.silent import generate_silent_audio
 from core.tts.subtitle import normalize_non_overlapping_cues, subtitle_cues_from_submaker
 
@@ -23,6 +23,11 @@ logger = logging.getLogger("core.tts.planned_synthesis")
 
 TOLERANCE_MS = 150
 MAX_RATE_ATTEMPTS = 3
+
+# 镜内配音最少呼吸空隙（毫秒）
+LEAD_IN_MS = 300
+INTER_CLIP_MS = 400
+TAIL_MS = 500
 
 
 @dataclass
@@ -47,6 +52,34 @@ def _voice_clips(shot: Shot) -> list[ShotAudioClip]:
 def _shot_voice_text(shot: Shot) -> str:
     """拼接镜内 voice clip 文案。"""
     return "".join(c.text.strip() for c in _voice_clips(shot) if c.text.strip())
+
+
+def ensure_breathing_timeline(
+    clips: list[ShotAudioClip],
+    *,
+    shot_duration_ms: int = 0,
+) -> tuple[list[ShotAudioClip], int]:
+    """保证 voice clip 具备最少头/句间/尾静音；返回调整后的 clips 与规划总时长。"""
+    if not clips:
+        return [], max(0, int(shot_duration_ms or 0))
+
+    ordered = sorted(clips, key=lambda c: int(c.start_ms or 0))
+    out: list[ShotAudioClip] = []
+    prev_end = 0
+
+    for idx, clip in enumerate(ordered):
+        speech_ms = max(int(clip.end_ms or 0) - int(clip.start_ms or 0), 1)
+        planned_start = int(clip.start_ms or 0)
+        if idx == 0:
+            start = max(planned_start, LEAD_IN_MS)
+        else:
+            start = max(planned_start, prev_end + INTER_CLIP_MS)
+        end = start + speech_ms
+        out.append(clip.model_copy(update={"start_ms": start, "end_ms": end}))
+        prev_end = end
+
+    planned_total = max(int(shot_duration_ms or 0), prev_end + TAIL_MS)
+    return out, planned_total
 
 
 def _synthesize_segment_with_rate(
@@ -95,7 +128,6 @@ def _synthesize_segment_with_rate(
 
 def _concat_audio_files(segment_files: list[Path], output_path: Path) -> int:
     """使用 ffmpeg 拼接多段 mp3 并返回总时长毫秒。"""
-    from core.tts.duration import duration_ms_from_target
     from core.tts.ffmpeg_util import resolve_ffmpeg_binary
 
     valid = [p for p in segment_files if p.is_file() and p.stat().st_size > 0]
@@ -130,57 +162,15 @@ def _concat_audio_files(segment_files: list[Path], output_path: Path) -> int:
     return duration_ms_from_target(output_path)
 
 
-def synthesize_shot_with_plan(
-    shot: Shot,
+def _synthesize_clips_with_timeline(
+    voice_clips: list[ShotAudioClip],
+    planned_total: int,
     output_path: Path,
     runtime: TtsRuntimeConfig,
     *,
     store: MemoryStore | None = None,
 ) -> PlannedSynthesisResult:
-    """按镜内 voice 音频 clip 合成单镜配音（多段则按时间窗拼接静音间隔）。"""
-    voice_clips = [c for c in _voice_clips(shot) if c.text.strip()]
-    if not voice_clips:
-        text = _shot_voice_text(shot)
-        sub = synthesize_speech(text, str(output_path), runtime)
-        duration_ms = duration_ms_from_target(sub or output_path)
-        cues = normalize_non_overlapping_cues(
-            subtitle_cues_from_submaker(sub) if sub else []
-        )
-        return PlannedSynthesisResult(
-            duration_ms=duration_ms,
-            subtitle_cues=cues,
-            used_planned_timeline=False,
-        )
-
-    # 单段：直接合成，cue 用 clip 文本
-    if len(voice_clips) == 1:
-        clip = voice_clips[0]
-        voice_name = resolve_voice_act_voice_name(store, clip, runtime)
-        sub = synthesize_speech(
-            clip.text.strip(),
-            str(output_path),
-            runtime,
-            voice_name=voice_name,
-        )
-        duration_ms = duration_ms_from_target(sub or output_path)
-        cues = [
-            {
-                "start_ms": 0,
-                "end_ms": duration_ms,
-                "text": clip.text.strip(),
-                "character": "",
-                "color": "",
-                "source": "clip",
-            }
-        ]
-        return PlannedSynthesisResult(
-            duration_ms=duration_ms,
-            subtitle_cues=cues,
-            used_planned_timeline=True,
-        )
-
-    # 多段：按 clip 时间窗拼接（含段间静音），cue 用各 clip 区间
-    planned_total = max(c.end_ms for c in voice_clips)
+    """按已校正的 clip 时间窗拼接合成（含段前静音与镜尾静音）。"""
     segment_files: list[Path] = []
     subtitle_cues: list[dict[str, Any]] = []
     tmp_dir = Path(tempfile.mkdtemp(prefix="svf_tts_plan_"))
@@ -188,14 +178,13 @@ def synthesize_shot_with_plan(
         cursor = 0
         seg_index = 0
         for clip in voice_clips:
-            # 段前静音
             if clip.start_ms > cursor:
                 gap_path = tmp_dir / f"gap_{seg_index}.mp3"
                 generate_silent_audio((clip.start_ms - cursor) / 1000.0, str(gap_path))
                 segment_files.append(gap_path)
                 seg_index += 1
             seg_path = tmp_dir / f"seg_{seg_index}.mp3"
-            target_ms = max(clip.end_ms - clip.start_ms, 0)
+            target_ms = max(int(clip.end_ms) - int(clip.start_ms), 0)
             voice_name = resolve_voice_act_voice_name(store, clip, runtime)
             _synthesize_segment_with_rate(
                 clip.text.strip(),
@@ -217,7 +206,13 @@ def synthesize_shot_with_plan(
                     "source": "clip",
                 }
             )
-            cursor = clip.end_ms
+            cursor = int(clip.end_ms)
+
+        tail_ms = max(0, int(planned_total) - cursor)
+        if tail_ms > 0:
+            tail_path = tmp_dir / f"gap_tail_{seg_index}.mp3"
+            generate_silent_audio(tail_ms / 1000.0, str(tail_path))
+            segment_files.append(tail_path)
 
         _concat_audio_files(segment_files, output_path)
         duration_ms = duration_ms_from_target(output_path)
@@ -240,6 +235,41 @@ def synthesize_shot_with_plan(
             tmp_dir.rmdir()
         except OSError:
             pass
+
+
+def synthesize_shot_with_plan(
+    shot: Shot,
+    output_path: Path,
+    runtime: TtsRuntimeConfig,
+    *,
+    store: MemoryStore | None = None,
+) -> PlannedSynthesisResult:
+    """按镜内 voice 音频 clip 合成单镜配音（含呼吸空隙静音）。"""
+    voice_clips = [c for c in _voice_clips(shot) if c.text.strip()]
+    if not voice_clips:
+        text = _shot_voice_text(shot)
+        sub = synthesize_speech(text, str(output_path), runtime)
+        duration_ms = duration_ms_from_target(sub or output_path)
+        cues = normalize_non_overlapping_cues(
+            subtitle_cues_from_submaker(sub) if sub else []
+        )
+        return PlannedSynthesisResult(
+            duration_ms=duration_ms,
+            subtitle_cues=cues,
+            used_planned_timeline=False,
+        )
+
+    adjusted, planned_total = ensure_breathing_timeline(
+        voice_clips,
+        shot_duration_ms=int(shot.duration_ms or 0),
+    )
+    return _synthesize_clips_with_timeline(
+        adjusted,
+        planned_total,
+        output_path,
+        runtime,
+        store=store,
+    )
 
 
 def build_voice_segments_from_shot(shot: Shot) -> list[dict[str, Any]]:

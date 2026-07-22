@@ -7,9 +7,9 @@ from core.llm.tools.script import handler as script_handler
 _SCRIPT_META: dict[str, tuple[str, str, str, str]] = {
     "parse_brief": ("script_agent", "write_pipeline", "script.parse_brief", "解析任务简报并通过 LLM 设计/写入剧本正文"),
     "create_plot": ("script_agent", "write_pipeline", "script.create_plot", "创建剧情文字资产"),
-    "create_character": ("script_agent", "write_pipeline", "script.create_character", "创建人物共享资产"),
-    "create_scene": ("script_agent", "write_pipeline", "script.create_scene", "创建空镜背景板共享资产"),
-    "create_prop": ("script_agent", "write_pipeline", "script.create_prop", "创建道具共享资产"),
+    "create_character": ("script_agent", "write_pipeline", "script.create_character", "创建人物共享资产，或 reuse_asset_id 显式复用"),
+    "create_scene": ("script_agent", "write_pipeline", "script.create_scene", "创建空镜背景板共享资产，或 reuse_asset_id 显式复用"),
+    "create_prop": ("script_agent", "write_pipeline", "script.create_prop", "创建道具共享资产，或 reuse_asset_id 显式复用"),
     "update_script": ("script_agent", "write_ad_hoc", "script.update_script", "更新剧本标题或 Markdown 正文"),
     "update_plot": ("script_agent", "write_ad_hoc", "script.update_plot", "更新剧情文字资产（需 asset_id）"),
     "update_character": ("script_agent", "write_ad_hoc", "script.update_character", "更新人物资产（需 asset_id）"),
@@ -20,10 +20,17 @@ _SCRIPT_META: dict[str, tuple[str, str, str, str]] = {
     "delete_scene": ("script_agent", "write_ad_hoc", "script.delete_scene", "删除场景资产（需 asset_id）"),
     "delete_prop": ("script_agent", "write_ad_hoc", "script.delete_prop", "删除道具资产（需 asset_id）"),
     "list_text_assets": ("script_agent", "read", "script.list_text_assets", "列出剧本相关文字资产及完整 content JSON"),
+    "list_project_shared_assets": (
+        "script_agent",
+        "read",
+        "script.list_project_shared_assets",
+        "列出或按 query 检索项目共享图文资产，供 create_* 填 reuse_asset_id",
+    ),
 }
 
 SCRIPT_HANDLERS = {
     "list_text_assets": script_handler.handle_list_text_assets,
+    "list_project_shared_assets": script_handler.handle_list_project_shared_assets,
     "parse_brief": script_handler.handle_parse_brief,
     "update_script": script_handler.handle_update_script,
     "create_plot": script_handler.handle_create_plot,

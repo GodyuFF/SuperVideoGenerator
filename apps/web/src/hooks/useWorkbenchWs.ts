@@ -325,6 +325,13 @@ export function useWorkbenchWs(options: UseWorkbenchWsOptions) {
         opt.beginAborting();
       }
 
+      if (e.type === "chat_background_finished") {
+        // 后台 chat 任务收尾：只解锁输入，不覆盖已由 react_finished 写入的 scriptStatus
+        opt.setIsRunning(false);
+        opt.clearAborting();
+        opt.chatAbortRef.current = null;
+      }
+
       if (
         e.type === "execution_aborted" ||
         e.type === "execution_failed" ||

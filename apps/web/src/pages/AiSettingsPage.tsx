@@ -494,7 +494,7 @@ export function AiSettingsPage({
       const voices = (data.voices as string[]) ?? [];
       setTtsVoices(voices);
       if (voices.length > 0 && !voices.includes(ttsVoice)) {
-        setTtsVoice(voices.find((v) => v.includes("Xiaoxiao")) ?? voices[0]);
+        setTtsVoice(voices[0]);
       }
     } catch {
       /* ignore */

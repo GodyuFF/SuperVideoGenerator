@@ -29,6 +29,7 @@ class UpdateAgentConfigRequest(BaseModel):
     custom_agents: list[CustomAgentDefinition] | None = None
     profile_agents: dict[str, list[str]] | None = None
     tool_overrides_by_profile: dict[str, dict[str, AgentToolOverride]] | None = None
+    skill_allowlists_by_profile: dict[str, dict[str, list[str]]] | None = None
 
 
 class UpdateProjectAgentRequest(BaseModel):
@@ -118,6 +119,7 @@ def patch_agent_config(body: UpdateAgentConfigRequest):
             custom_agents=body.custom_agents,
             profile_agents=body.profile_agents,
             tool_overrides_by_profile=body.tool_overrides_by_profile,
+            skill_allowlists_by_profile=body.skill_allowlists_by_profile,
         )
         state.reload_agent_config()
         return data.model_dump()

@@ -14,6 +14,8 @@ export const GITHUB_REPO_URL = "https://github.com/GodyuFF/SuperVideoGenerator";
 export interface AppNavTrailProps {
   /** 打开 Agent 配置页。 */
   onOpenAgents?: () => void;
+  /** 打开 Skill 库管理页。 */
+  onOpenSkills?: () => void;
   /** 打开交互日志页。 */
   onOpenLogs?: () => void;
   /** 打开 EditTimeline 可视化调试页。 */
@@ -25,6 +27,7 @@ export interface AppNavTrailProps {
 /** 渲染顶栏右侧的标准导航按钮组。 */
 export function AppNavTrail({
   onOpenAgents,
+  onOpenSkills,
   onOpenLogs,
   onOpenEditTimelineViz,
   onOpenSettings,
@@ -64,6 +67,11 @@ export function AppNavTrail({
       </a>
       <ThemeToggle />
       <LocaleSwitcher />
+      {onOpenSkills && (
+        <button type="button" className="btn-secondary btn-config" onClick={onOpenSkills}>
+          {t("skillLibrary", { ns: "nav" })}
+        </button>
+      )}
       {onOpenAgents && (
         <button type="button" className="btn-secondary btn-config" onClick={onOpenAgents}>
           {t("agentConfig", { ns: "nav" })}

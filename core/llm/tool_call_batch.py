@@ -31,6 +31,7 @@ SUB_AGENT_PARALLEL_SAFE_PREFIXES = ("create_", "update_", "delete_")
 SUB_AGENT_PARALLEL_SAFE_NAMES = frozenset(
     {
         "list_text_assets",
+        "list_project_shared_assets",
         "get_text_asset",
         "list_assets",
         "get_asset",

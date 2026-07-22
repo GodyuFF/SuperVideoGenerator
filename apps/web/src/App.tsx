@@ -8,6 +8,7 @@ import { useAppRoute } from "./hooks/useAppRoute";
 import { useAiConfig } from "./hooks/useAiConfig";
 import { AgentSettingsPage } from "./pages/AgentSettingsPage";
 import { AiSettingsPage } from "./pages/AiSettingsPage";
+import { SkillsPage } from "./pages/SkillsPage";
 import { LogsPage } from "./pages/LogsPage";
 import { EditorStudioPage } from "./pages/EditorStudioPage";
 import { EditTimelineVizPage } from "./pages/EditTimelineVizPage";
@@ -32,7 +33,19 @@ export default function App() {
   let content: ReactNode;
 
   if (route === "agents") {
-    content = <AgentSettingsPage onBack={() => navigate("home")} />;
+    content = (
+      <AgentSettingsPage
+        onBack={() => navigate("home")}
+        onOpenSkills={() => navigate("skills")}
+      />
+    );
+  } else if (route === "skills") {
+    content = (
+      <SkillsPage
+        onBack={() => navigate("home")}
+        onOpenAgents={() => navigate("agents")}
+      />
+    );
   } else if (route === "settings") {
     content = (
       <AiSettingsPage
@@ -83,6 +96,7 @@ export default function App() {
         needsAiConfig={ai.needsAiConfig}
         onOpenSettings={() => navigate("settings")}
         onOpenAgents={() => navigate("agents")}
+        onOpenSkills={() => navigate("skills")}
         onOpenLogs={() => navigateToLogs(projectId, scriptId)}
         onBackHome={navigateHome}
         onNavigateToProject={navigateToProject}
@@ -94,6 +108,7 @@ export default function App() {
         onOpenProject={(id) => navigateToProject(id)}
         onOpenSettings={() => navigate("settings")}
         onOpenAgents={() => navigate("agents")}
+        onOpenSkills={() => navigate("skills")}
         onOpenLogs={() => navigateToLogs()}
         onOpenEditTimelineViz={() => navigateToEditTimelineViz()}
       />

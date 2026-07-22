@@ -20,6 +20,8 @@ interface ProjectHomePageProps {
   onOpenSettings: () => void;
   /** 打开 Agent 配置页。 */
   onOpenAgents: () => void;
+  /** 打开 Skill 库管理页。 */
+  onOpenSkills?: () => void;
   /** 打开交互日志页。 */
   onOpenLogs: () => void;
   /** 可选：打开剪辑时间轴可视化页。 */
@@ -41,6 +43,7 @@ export function ProjectHomePage({
   onOpenProject,
   onOpenSettings,
   onOpenAgents,
+  onOpenSkills,
   onOpenLogs,
   onOpenEditTimelineViz,
 }: ProjectHomePageProps) {
@@ -142,6 +145,7 @@ export function ProjectHomePage({
       trail={
         <AppNavTrail
           onOpenAgents={onOpenAgents}
+          onOpenSkills={onOpenSkills}
           onOpenLogs={onOpenLogs}
           onOpenEditTimelineViz={onOpenEditTimelineViz}
           onOpenSettings={onOpenSettings}

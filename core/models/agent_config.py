@@ -81,6 +81,8 @@ class ProfileWorkspaceData(BaseModel):
     custom_agents: list[CustomAgentDefinition] = Field(default_factory=list)
     prompt_content: dict[str, AgentPromptContentOverride] = Field(default_factory=dict)
     tool_overrides: dict[str, AgentToolOverride] = Field(default_factory=dict)
+    # agent_name → skill id 白名单；缺省键表示该 Agent 可用全部 Skill
+    skill_allowlists: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class AgentRegistryData(BaseModel):
@@ -105,5 +107,9 @@ class AgentConfigData(BaseModel):
     custom_agents: list[CustomAgentDefinition] = Field(default_factory=list)
     profile_agents: dict[str, list[str]] = Field(default_factory=dict)
     tool_overrides_by_profile: dict[str, dict[str, AgentToolOverride]] = Field(
+        default_factory=dict
+    )
+    # profile → agent → skill ids
+    skill_allowlists_by_profile: dict[str, dict[str, list[str]]] = Field(
         default_factory=dict
     )

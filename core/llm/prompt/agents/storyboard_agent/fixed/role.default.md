@@ -13,7 +13,7 @@
 **故事书流水线**：load_context → create_shots → create_frames → persist_plan → finish。
 **AI 视频流水线**：load_context → create_shots → create_video_clips → persist_plan → finish。
 （无依赖的 create_frames / create_video_clips 条目可同轮并行多个 tool_calls。）
-只读：get_plan。
+只读：get_plan；若任务含 Skill 参考索引，可 list_skill_refs / read_skill_ref 按需拉取。
 
 - 信息不足或需主编排/用户补数据时：调用 `return_to_master`（勿用 finish 冒充完成）。
 
@@ -38,3 +38,8 @@
 - **角色对白**：镜内人物开口说的话 → `character_ref` **必填**为 `load_context.characters[].id`。
 - 同一镜内若既有旁白又有对白，须拆成**多条 clip**（各自 start_ms/end_ms），禁止在单条 text 内混写多角色。
 - 示例：clip1 `{text:"清晨，小镇尚未苏醒。", character_ref:""}` + clip2 `{text:"今天一定行！", character_ref:"txt_hero"}`。
+
+# 配音呼吸空隙（强制）
+- 朗读估算约 3–4 字/秒；`duration_ms` 须 **大于** 纯朗读时长，预留头/句间/尾静音。
+- 最少空隙：首 clip `start_ms ≥ 300`；相邻 clip `next.start_ms - prev.end_ms ≥ 400`；末 clip `end_ms ≤ duration_ms - 500`。
+- **禁止**单 clip 写成 `start_ms=0` 且 `end_ms=duration_ms` 铺满整镜；头尾须留白，画面可长于说话。

@@ -107,6 +107,7 @@ def aggregate_config(
     """将 registry + 各 Profile 工作区聚合为 API 兼容结构。"""
     prompt_content: dict[str, dict] = {}
     tool_overrides_by_profile: dict[str, dict] = {}
+    skill_allowlists_by_profile: dict[str, dict[str, list[str]]] = {}
     profile_agents: dict[str, list[str]] = {}
     custom_agents_union: dict[str, object] = {}
 
@@ -115,6 +116,9 @@ def aggregate_config(
         profile_agents[profile_id] = roster
         tool_overrides_by_profile[profile_id] = {
             agent: ov for agent, ov in ws.tool_overrides.items()
+        }
+        skill_allowlists_by_profile[profile_id] = {
+            agent: list(ids) for agent, ids in ws.skill_allowlists.items()
         }
         for agent, ov in ws.prompt_content.items():
             prompt_content.setdefault(agent, {})[profile_id] = ov
@@ -130,6 +134,7 @@ def aggregate_config(
         custom_agents=list(custom_agents_union.values()),
         profile_agents=profile_agents,
         tool_overrides_by_profile=tool_overrides_by_profile,
+        skill_allowlists_by_profile=skill_allowlists_by_profile,
     )
 
 
@@ -147,6 +152,7 @@ def split_config_to_storage(
     profile_ids.add(DEFAULT_PROFILE_ID)
     profile_ids.update(data.profile_agents.keys())
     profile_ids.update(data.tool_overrides_by_profile.keys())
+    profile_ids.update(data.skill_allowlists_by_profile.keys())
     for agent_map in data.prompt_content.values():
         profile_ids.update(agent_map.keys())
     for cp in data.custom_profiles:
@@ -173,6 +179,12 @@ def split_config_to_storage(
                 for ov in [pmap[profile_id]]
             },
             tool_overrides=dict(data.tool_overrides_by_profile.get(profile_id, {})),
+            skill_allowlists={
+                agent: list(ids)
+                for agent, ids in (
+                    data.skill_allowlists_by_profile.get(profile_id) or {}
+                ).items()
+            },
         )
         workspaces[profile_id] = ws
     return registry, workspaces

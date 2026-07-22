@@ -17,6 +17,7 @@ import type {
   StyleModeOption,
   StyleVideoGenMode,
   PromptProfileOption,
+  SkillMetaItem,
 } from "../types/agentConfig";
 import { LocaleSwitcher } from "../i18n/LocaleSwitcher";
 import { ThemeToggle } from "../components/theme/ThemeToggle";
@@ -28,8 +29,12 @@ import { useResizableDrawerWidth } from "../hooks/useResizableDrawerWidth";
 import { ToolSchemaDetailPanel } from "../components/agentWorkbench/ToolSchemaDetailPanel";
 import "../styles/agent-workbench.css";
 
+const API = "/api";
+
 interface AgentSettingsPageProps {
   onBack: () => void;
+  /** 打开 Skill 库管理页。 */
+  onOpenSkills?: () => void;
 }
 
 type WorkbenchTab = "modes" | "agents";
@@ -70,7 +75,7 @@ function agentVisual(name: string) {
 }
 
 /** Agent 配置页：全局提示词、风格与工具管理。 */
-export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
+export function AgentSettingsPage({ onBack, onOpenSkills }: AgentSettingsPageProps) {
   const { t } = useTranslation();
   const { projectId } = useProject();
   const {
@@ -99,6 +104,10 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
   const [toolOverridesByProfile, setToolOverridesByProfile] = useState<
     Record<string, Record<string, AgentToolOverride>>
   >({});
+  const [skillAllowlistsByProfile, setSkillAllowlistsByProfile] = useState<
+    Record<string, Record<string, string[]>>
+  >({});
+  const [skillCatalog, setSkillCatalog] = useState<SkillMetaItem[]>([]);
 
   const [selectedProfile, setSelectedProfile] = useState<string>("");
   const [agentsForProfile, setAgentsForProfile] = useState<AgentInfo[]>([]);
@@ -119,6 +128,8 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
   const [newAgentBasedOn, setNewAgentBasedOn] = useState<string>(CLONABLE_AGENT_TEMPLATES[0]);
   const [showNewAgentModal, setShowNewAgentModal] = useState(false);
   const [showToolPicker, setShowToolPicker] = useState(false);
+  const [showSkillPicker, setShowSkillPicker] = useState(false);
+  const [skillSearchQuery, setSkillSearchQuery] = useState("");
   const [inspectedTool, setInspectedTool] = useState<AgentToolOption | null>(null);
   const [toolSearchQuery, setToolSearchQuery] = useState("");
   const [newAgentModalTab, setNewAgentModalTab] = useState<"builtin" | "custom">("builtin");
@@ -193,12 +204,27 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
     setProfileAgents({ ...config.profile_agents });
     setPromptContent(JSON.parse(JSON.stringify(config.prompt_content)));
     setToolOverridesByProfile(JSON.parse(JSON.stringify(config.tool_overrides_by_profile ?? {})));
+    setSkillAllowlistsByProfile(
+      JSON.parse(JSON.stringify(config.skill_allowlists_by_profile ?? {})),
+    );
     setSelectedProfile((current) => {
       if (current) return current;
       const preferred = config.available_profiles.find((p) => p.editable !== false);
       return preferred?.id ?? config.available_profiles[0]?.id ?? "";
     });
   }, [config]);
+
+  /** 加载全部 Skill（含用户导入），供 Agent 勾选。 */
+  const loadSkillCatalog = useCallback(async () => {
+    const r = await fetch(`${API}/skills`);
+    if (!r.ok) return;
+    const list = (await r.json()) as SkillMetaItem[];
+    setSkillCatalog(Array.isArray(list) ? list : []);
+  }, []);
+
+  useEffect(() => {
+    void loadSkillCatalog();
+  }, [loadSkillCatalog]);
 
   useEffect(() => {
     if (!selectedProfile) {
@@ -349,6 +375,7 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
         custom_agents: customAgents,
         profile_agents: profileAgents,
         tool_overrides_by_profile: toolOverridesByProfile,
+        skill_allowlists_by_profile: skillAllowlistsByProfile,
       };
       await update(patch);
       setSaveMsg(t("agent.workbench.saved", { ns: "settings" }));
@@ -507,6 +534,172 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
 
   function getToolOverride(agentName: string): AgentToolOverride {
     return toolOverridesByProfile[selectedProfile]?.[agentName] ?? {};
+  }
+
+  /** 当前 Agent 已显式配置的 Skill 白名单；undefined 表示尚未配置（视为全选）。 */
+  function getConfiguredSkillAllowlist(agentName: string): string[] | undefined {
+    const byAgent = skillAllowlistsByProfile[selectedProfile];
+    if (!byAgent || !(agentName in byAgent)) return undefined;
+    return byAgent[agentName] ?? [];
+  }
+
+  /** 当前 Agent 勾选态：未配置时默认全选目录中的 Skill。 */
+  function getSelectedSkillIds(agentName: string): string[] {
+    const configured = getConfiguredSkillAllowlist(agentName);
+    if (configured === undefined) {
+      return skillCatalog.map((s) => s.id);
+    }
+    return configured;
+  }
+
+  /** 写入某 Agent 的 Skill 白名单。 */
+  function setSkillAllowlist(agentName: string, skillIds: string[]) {
+    if (!selectedProfile || profileReadOnly) return;
+    setSkillAllowlistsByProfile((prev) => {
+      const profileMap = { ...(prev[selectedProfile] ?? {}) };
+      profileMap[agentName] = [...skillIds];
+      return { ...prev, [selectedProfile]: profileMap };
+    });
+  }
+
+  /** 确保使用显式 Skill 白名单（从默认「全部」切入增删模式）。 */
+  function ensureSkillAllowlist(agentName: string): string[] {
+    const configured = getConfiguredSkillAllowlist(agentName);
+    if (configured !== undefined) return [...configured];
+    return skillCatalog.map((s) => s.id);
+  }
+
+  /** 从已关联 Skill 中移除一项。 */
+  function removeSelectedSkill(agentName: string, skillId: string) {
+    const next = ensureSkillAllowlist(agentName).filter((id) => id !== skillId);
+    setSkillAllowlist(agentName, next);
+  }
+
+  /** 向已关联 Skill 中添加一项。 */
+  function addSelectedSkill(agentName: string, skillId: string) {
+    const next = new Set(ensureSkillAllowlist(agentName));
+    next.add(skillId);
+    setSkillAllowlist(agentName, [...next]);
+  }
+
+  /** 可添加到当前 Agent 的 Skill（排除已选，支持搜索）。 */
+  const addableSkills = useMemo(() => {
+    if (!selectedAgent) return [] as SkillMetaItem[];
+    const selected = new Set(getSelectedSkillIds(selectedAgent));
+    const q = skillSearchQuery.trim().toLowerCase();
+    return skillCatalog.filter((skill) => {
+      if (selected.has(skill.id)) return false;
+      if (!q) return true;
+      return (
+        skill.id.toLowerCase().includes(q) ||
+        (skill.title || "").toLowerCase().includes(q) ||
+        (skill.description || "").toLowerCase().includes(q) ||
+        (skill.aliases || []).some((a) => a.toLowerCase().includes(q))
+      );
+    });
+  }, [skillCatalog, selectedAgent, skillSearchQuery, skillAllowlistsByProfile, selectedProfile]);
+
+  /** 关闭 Skill 选择抽屉。 */
+  function closeSkillPicker() {
+    setShowSkillPicker(false);
+    setSkillSearchQuery("");
+  }
+
+  /** Esc 关闭 Skill 选择抽屉。 */
+  useEffect(() => {
+    if (!showSkillPicker) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeSkillPicker();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showSkillPicker]);
+
+  /** 渲染当前 Agent 的 Skill 关联（与工具区相同的增删列表 + 抽屉）。 */
+  function renderSkillSection(agentName: string) {
+    const selectedIds = getSelectedSkillIds(agentName);
+    const selectedSkills = selectedIds
+      .map((id) => skillCatalog.find((s) => s.id === id))
+      .filter((s): s is SkillMetaItem => Boolean(s));
+    return (
+      <div className="aw-tools-manage aw-skills-manage">
+        {!profileReadOnly && (
+          <div className="aw-tools-manage-head">
+            <button
+              type="button"
+              className="aw-btn-add aw-btn-add-compact"
+              onClick={() => {
+                setSkillSearchQuery("");
+                setShowSkillPicker(true);
+              }}
+            >
+              + {t("agent.workbench.addSkill", { ns: "settings" })}
+            </button>
+            {onOpenSkills && (
+              <button type="button" className="aw-btn-ghost aw-btn-add-compact" onClick={onOpenSkills}>
+                {t("agent.workbench.openSkillLibrary", { ns: "settings" })}
+              </button>
+            )}
+          </div>
+        )}
+        {selectedSkills.length === 0 ? (
+          <p className="aw-tools-empty">
+            {skillCatalog.length === 0
+              ? t("agent.workbench.skillsEmpty", { ns: "settings" })
+              : t("agent.workbench.skillsNoneLinked", { ns: "settings" })}
+            {skillCatalog.length === 0 && onOpenSkills ? (
+              <>
+                {" "}
+                <button type="button" className="aw-text-link" onClick={onOpenSkills}>
+                  {t("agent.workbench.openSkillLibrary", { ns: "settings" })}
+                </button>
+              </>
+            ) : null}
+          </p>
+        ) : (
+          <div className="aw-tools-list-scroll">
+            <ul className="aw-tools-list aw-skill-linked-list">
+              {selectedSkills.map((skill) => (
+                <li key={skill.id} className="aw-tool-row aw-skill-linked-row">
+                  <div className="aw-skill-linked-sprocket" aria-hidden />
+                  <div className="aw-tool-row-main">
+                    <div className="aw-tool-main">
+                      <span className="aw-tool-name">{skill.title || skill.id}</span>
+                      <span className="aw-skill-slash">/{skill.id}</span>
+                      {skill.source ? (
+                        <span className={`aw-skill-source aw-skill-source-${skill.source}`}>
+                          {skill.source}
+                        </span>
+                      ) : null}
+                    </div>
+                    {skill.description ? (
+                      <p className="aw-skill-purpose">{skill.description}</p>
+                    ) : null}
+                    {skill.highlights && skill.highlights.length > 0 ? (
+                      <ul className="aw-skill-highlights">
+                        {skill.highlights.map((h) => (
+                          <li key={h}>{h}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                  {!profileReadOnly && (
+                    <button
+                      type="button"
+                      className="aw-btn-ghost aw-tool-remove"
+                      onClick={() => removeSelectedSkill(agentName, skill.id)}
+                      aria-label={t("agent.workbench.removeSkill", { ns: "settings" })}
+                    >
+                      ×
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
   }
 
   /** 当前 Agent 已选中的非 system 工具 action 列表。 */
@@ -1055,6 +1248,11 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
       delete next[profileId];
       return next;
     });
+    setSkillAllowlistsByProfile((prev) => {
+      const next = { ...prev };
+      delete next[profileId];
+      return next;
+    });
 
     if (selectedProfile === profileId) {
       setSelectedProfile(fallback);
@@ -1076,6 +1274,11 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
         <>
           <ThemeToggle />
           <LocaleSwitcher />
+          {onOpenSkills && (
+            <button type="button" className="btn-secondary btn-config" onClick={onOpenSkills}>
+              {t("skillLibrary", { ns: "nav" })}
+            </button>
+          )}
         </>
       }
     >
@@ -1391,6 +1594,13 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
                           <strong>effective</strong> {getSelectedToolActions(selectedAgentInfo).join(" · ")}
                         </p>
                       </div>
+                      <div className="aw-agent-skills-section">
+                        <div className="aw-section-head">
+                          <h3 className="aw-section-title">{t("agent.workbench.skillsSection", { ns: "settings" })}</h3>
+                          <p className="aw-section-desc">{t("agent.workbench.skillsHint", { ns: "settings" })}</p>
+                        </div>
+                        {renderSkillSection(selectedAgentInfo.name)}
+                      </div>
                     </div>
                   ) : (
                     <p className="aw-empty-hint aw-editor-empty">
@@ -1601,6 +1811,126 @@ export function AgentSettingsPage({ onBack }: AgentSettingsPageProps) {
             </div>
             <footer className="aw-tool-picker-foot">
               <button type="button" className="aw-save-btn aw-modal-submit" onClick={closeToolPicker}>
+                {t("agent.workbench.addToolDrawerDone", { ns: "settings" })}
+              </button>
+            </footer>
+          </aside>
+        </div>
+      )}
+
+      {showSkillPicker && selectedAgentInfo && (
+        <div
+          className="aw-tool-picker-backdrop"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeSkillPicker();
+          }}
+        >
+          <aside
+            className="aw-tool-picker-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="aw-skill-picker-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="aw-tool-picker-head">
+              <div className="aw-tool-picker-head-main">
+                <p className="aw-modal-eyebrow">{selectedAgentInfo.display_name}</p>
+                <h2 id="aw-skill-picker-title" className="aw-modal-title">
+                  {t("agent.workbench.addSkillModalTitle", { ns: "settings" })}
+                </h2>
+                <p className="aw-modal-desc">{t("agent.workbench.addSkillModalDesc", { ns: "settings" })}</p>
+                <p className="aw-skill-picker-thesis">
+                  {t("agent.workbench.addSkillThesis", { ns: "settings" })}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="aw-btn-ghost aw-tool-picker-close"
+                onClick={closeSkillPicker}
+                aria-label={t("actions.cancel", { ns: "common" })}
+              >
+                ×
+              </button>
+            </header>
+            <div className="aw-tool-picker-toolbar">
+              <input
+                className="aw-tool-search"
+                placeholder={t("agent.workbench.searchSkills", { ns: "settings" })}
+                value={skillSearchQuery}
+                onChange={(e) => setSkillSearchQuery(e.target.value)}
+              />
+              <span className="aw-tool-picker-count">
+                {t("agent.workbench.skillPickerCount", {
+                  ns: "settings",
+                  count: addableSkills.length,
+                })}
+              </span>
+            </div>
+            <div className="aw-tool-picker-layout">
+              <div className="aw-tool-picker-body">
+                {addableSkills.length === 0 ? (
+                  <p className="aw-tools-empty">
+                    {t("agent.workbench.noSkillsToAdd", { ns: "settings" })}
+                  </p>
+                ) : (
+                  <ul className="aw-skill-pick-list">
+                    {addableSkills.map((skill) => (
+                      <li key={skill.id}>
+                        <button
+                          type="button"
+                          className="aw-skill-pick-card"
+                          onClick={() => addSelectedSkill(selectedAgentInfo.name, skill.id)}
+                        >
+                          <span className="aw-skill-pick-sprocket" aria-hidden />
+                          <span className="aw-skill-pick-body">
+                            <span className="aw-skill-pick-top">
+                              <span className="aw-skill-pick-title">{skill.title || skill.id}</span>
+                              {skill.source ? (
+                                <span className={`aw-skill-source aw-skill-source-${skill.source}`}>
+                                  {skill.source}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="aw-skill-pick-slashes">
+                              {[skill.id, ...(skill.aliases || [])]
+                                .slice(0, 4)
+                                .map((a) => `/${a}`)
+                                .join(" · ")}
+                            </span>
+                            {skill.description ? (
+                              <span className="aw-skill-pick-purpose">{skill.description}</span>
+                            ) : (
+                              <span className="aw-skill-pick-purpose aw-skill-pick-purpose-muted">
+                                {t("agent.workbench.skillNoPurpose", { ns: "settings" })}
+                              </span>
+                            )}
+                            <span className="aw-skill-pick-effects">
+                              {(skill.highlights && skill.highlights.length > 0
+                                ? skill.highlights
+                                : [
+                                    t("agent.workbench.skillEffectInject", { ns: "settings" }),
+                                    t("agent.workbench.skillEffectRefs", { ns: "settings" }),
+                                  ]
+                              ).map((h) => (
+                                <span key={h} className="aw-skill-effect-chip">
+                                  {h}
+                                </span>
+                              ))}
+                            </span>
+                            <span className="aw-skill-pick-cta">
+                              {t("agent.workbench.addSkillToAgent", { ns: "settings" })}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+            <footer className="aw-tool-picker-foot">
+              <button type="button" className="aw-save-btn aw-modal-submit" onClick={closeSkillPicker}>
                 {t("agent.workbench.addToolDrawerDone", { ns: "settings" })}
               </button>
             </footer>

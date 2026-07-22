@@ -23,6 +23,8 @@ from core.super_video_master.clarification import (
 )
 from core.llm.execution_mode import is_goal_mode
 from core.llm.prompt.skills import load_skill, parse_skill_command
+from core.llm.prompt.skills.allowlist import is_skill_allowed_for_agent
+from core.llm.agent.prompt_resolver import resolve_prompt_profile
 from core.llm.client import LLMClient
 from core.llm.client.settings import LLMConfigManager
 from core.models.entities import ExecutionMode, GenerationMode, ScriptStatus, VideoStyleMode
@@ -77,6 +79,7 @@ class SuperVideoMaster:
             confirmation_manager,
             self._llm_config,
             self._llm_client,
+            conversation_index=self._conversation_index,
         )
 
     def rebind_conversation_stores(
@@ -85,9 +88,16 @@ class SuperVideoMaster:
         conversation_index: ConversationIndex,
     ) -> None:
         """重绑对话仓储引用，使编排链路与 AppState 使用同一 ConversationStore。"""
+        from core.llm.master.tools import MasterToolExecutor
+
         self._conversations = conversations
         self._conversation_index = conversation_index
         self._react._conversations = conversations
+        self._react._conversation_index = conversation_index
+        self._react._tool_executor = MasterToolExecutor(
+            self._store,
+            conversation_index,
+        )
         for agent in self._registry._agents.values():
             agent._conversations = conversations
 
@@ -180,12 +190,42 @@ class SuperVideoMaster:
         if not script or not project:
             raise ValueError("项目或剧本不存在")
         if script.status == ScriptStatus.EXECUTING:
-            raise ValueError("剧本正在执行中，请稍候")
+            # 无活跃取消注册视为僵尸 executing（崩溃/未收尾），恢复后允许重入
+            from core.execution.cancel import get_execution_cancel_registry
+
+            if get_execution_cancel_registry().is_active(script_id):
+                raise ValueError("剧本正在执行中，请稍候")
+            script.status = ScriptStatus.FAILED
 
         run_start = time.perf_counter()
         user_text = message.strip()
         parsed_skill_id, parsed_rest = parse_skill_command(user_text)
-        active_skill_id = skill_id or parsed_skill_id
+        if user_text.startswith("/") and not (skill_id or parsed_skill_id):
+            token = (
+                user_text[1:].strip().split(None, 1)[0].lower()
+                if user_text[1:].strip()
+                else ""
+            )
+            if token:
+                err = f"未知 Skill「{token}」，请使用 /skillId 或查看可用 Skill 列表。"
+                conversation_id = self._ensure_conversation(
+                    project_id,
+                    script_id,
+                    conversation_id,
+                    title=user_text[:48],
+                )
+                self._conversations.add_assistant_summary(
+                    conversation_id, project_id, script_id, err
+                )
+                return conversation_id, err
+
+        explicit_skill_id = skill_id or parsed_skill_id
+        persisted_skill_id = None
+        if conversation_id:
+            conv = self._conversation_index.get(conversation_id)
+            if conv and (conv.active_skill_id or "").strip():
+                persisted_skill_id = conv.active_skill_id.strip().lower()
+        active_skill_id = explicit_skill_id or persisted_skill_id
         skill_bundle = load_skill(active_skill_id) if active_skill_id else None
         if active_skill_id and skill_bundle is None:
             err = f"未知 Skill「{active_skill_id}」，请使用 /skillId 或查看可用 Skill 列表。"
@@ -200,20 +240,45 @@ class SuperVideoMaster:
             )
             return conversation_id, err
 
-        if user_text.startswith("/") and not active_skill_id:
-            token = user_text[1:].strip().split(None, 1)[0].lower() if user_text[1:].strip() else ""
-            if token:
-                err = f"未知 Skill「{token}」，请使用 /skillId 或查看可用 Skill 列表。"
-                conversation_id = self._ensure_conversation(
-                    project_id,
-                    script_id,
-                    conversation_id,
-                    title=user_text[:48],
-                )
-                self._conversations.add_assistant_summary(
-                    conversation_id, project_id, script_id, err
-                )
-                return conversation_id, err
+        if skill_bundle is not None:
+            style_for_profile = (
+                requested_style
+                or getattr(script, "style_mode", None)
+                or project.config.style.mode
+            )
+            profile_id = resolve_prompt_profile(
+                "super_video_master",
+                style_mode=style_for_profile,
+                global_profiles=self._agent_config.get_profiles(),
+                project=project,
+                config=self._agent_config,
+            )
+            allowlists = self._agent_config.get_data().skill_allowlists_by_profile
+            if not is_skill_allowed_for_agent(
+                skill_bundle.meta.id,
+                profile_id=profile_id,
+                agent_name="super_video_master",
+                skill_allowlists_by_profile=allowlists,
+            ):
+                if explicit_skill_id:
+                    err = (
+                        f"Skill「{skill_bundle.meta.id}」未对本主编排开放，"
+                        "请在 Agent 配置页勾选后再启用。"
+                    )
+                    conversation_id = self._ensure_conversation(
+                        project_id,
+                        script_id,
+                        conversation_id,
+                        title=user_text[:48],
+                    )
+                    self._conversations.add_assistant_summary(
+                        conversation_id, project_id, script_id, err
+                    )
+                    return conversation_id, err
+                # 持久化 Skill 已不在白名单：清除并继续无 Skill
+                skill_bundle = None
+                if conversation_id:
+                    self._conversation_index.set_active_skill(conversation_id, None)
 
         if skill_bundle:
             rest = parsed_rest if parsed_skill_id else user_text
@@ -232,6 +297,10 @@ class SuperVideoMaster:
             conversation_id,
             title=conversation_title,
         )
+        if explicit_skill_id and skill_bundle:
+            self._conversation_index.set_active_skill(
+                conversation_id, skill_bundle.meta.id
+            )
 
         # 1. A2UI 需求补全（已有剧本正文，或风格+时长已知时可跳过）
         style_known = (
@@ -362,24 +431,7 @@ class SuperVideoMaster:
                 conversation_id=conversation_id,
                 execution_mode=execution_mode,
                 skill_overlay=(
-                    {
-                        "id": skill_bundle.meta.id,
-                        "title": skill_bundle.meta.title,
-                        "agent_overlays": dict(skill_bundle.agent_overlays),
-                        "tool_manifest": (
-                            skill_bundle.tool_manifest.to_dict()
-                            if skill_bundle.tool_manifest
-                            else None
-                        ),
-                        "mcp_servers": (
-                            list(skill_bundle.tool_manifest.mcp_servers)
-                            if skill_bundle.tool_manifest
-                            and skill_bundle.tool_manifest.mcp_servers
-                            else []
-                        ),
-                    }
-                    if skill_bundle
-                    else None
+                    skill_bundle.to_overlay_dict() if skill_bundle else None
                 ),
             )
         except Exception as e:

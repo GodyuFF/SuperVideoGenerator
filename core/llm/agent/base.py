@@ -69,8 +69,33 @@ class ReActAgent:
         overlay = ctx.work_context.get("skill_overlay") or {}
         agent_overlays = overlay.get("agent_overlays") or {}
         snippet = str(agent_overlays.get(self.name, "")).strip()
+        parts: list[str] = []
         if snippet:
-            role = f"{role}\n\n## Skill 补充\n{snippet}"
+            parts.append(f"## Skill 补充\n{snippet}")
+        ref_index = overlay.get("ref_index") or []
+        ref_lines: list[str] = []
+        for raw in ref_index:
+            if not isinstance(raw, dict):
+                continue
+            agents = raw.get("agents") or []
+            if agents and self.name not in agents:
+                continue
+            ref_id = str(raw.get("id", "")).strip()
+            title = str(raw.get("title", "")).strip() or ref_id
+            summary = str(raw.get("summary", "")).strip() or "（无摘要）"
+            agent_hint = (
+                f"（agents: {', '.join(str(a) for a in agents)}）" if agents else ""
+            )
+            if ref_id:
+                ref_lines.append(f"- {ref_id}：{title} — {summary}{agent_hint}")
+        if ref_lines:
+            parts.append(
+                "## Skill 参考索引\n"
+                + "\n".join(ref_lines)
+                + "\n需要细节时先 list_skill_refs，再 read_skill_ref(ref_id=…)。"
+            )
+        if parts:
+            role = f"{role}\n\n" + "\n\n".join(parts)
         return role
 
     def resolve_action_system_prompt(self, ctx: AgentRunContext) -> str:

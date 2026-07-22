@@ -286,6 +286,12 @@ class AgentConfigManager:
 
             changed = True
 
+        if DEFAULT_PROFILE_ID in self._data.skill_allowlists_by_profile:
+
+            del self._data.skill_allowlists_by_profile[DEFAULT_PROFILE_ID]
+
+            changed = True
+
         if self._data.profile_agents.get(DEFAULT_PROFILE_ID):
 
             self._data.profile_agents[DEFAULT_PROFILE_ID] = []
@@ -336,6 +342,8 @@ class AgentConfigManager:
 
         profile_agents: dict[str, list[str]] | None = None,
 
+        skill_allowlists_by_profile: dict[str, dict[str, list[str]]] | None = None,
+
     ) -> None:
 
         """拒绝任何对 default Profile 工作区的写入。"""
@@ -361,6 +369,16 @@ class AgentConfigManager:
             existing = self._data.tool_overrides_by_profile.get(DEFAULT_PROFILE_ID, {})
 
             incoming = tool_overrides_by_profile[DEFAULT_PROFILE_ID]
+
+            if incoming != existing:
+
+                raise ValueError("default Profile 配置禁止修改")
+
+        if skill_allowlists_by_profile and DEFAULT_PROFILE_ID in skill_allowlists_by_profile:
+
+            existing = self._data.skill_allowlists_by_profile.get(DEFAULT_PROFILE_ID, {})
+
+            incoming = skill_allowlists_by_profile[DEFAULT_PROFILE_ID]
 
             if incoming != existing:
 
@@ -466,6 +484,10 @@ class AgentConfigManager:
 
             del self._data.tool_overrides_by_profile[profile_id]
 
+        if profile_id in self._data.skill_allowlists_by_profile:
+
+            del self._data.skill_allowlists_by_profile[profile_id]
+
         if is_profile_deletable(profile_id):
 
             delete_profile_workspace(profile_id)
@@ -528,6 +550,11 @@ class AgentConfigManager:
             self._data.tool_overrides_by_profile[target_id] = {
                 agent: ov.model_copy(deep=True) for agent, ov in source_tools.items()
             }
+        source_skills = self._data.skill_allowlists_by_profile.get(source_id, {})
+        if source_skills:
+            self._data.skill_allowlists_by_profile[target_id] = {
+                agent: list(ids) for agent, ids in source_skills.items()
+            }
         self._data.profile_agents[target_id] = list(
             self._data.profile_agents.get(source_id) or default_agent_roster()
         )
@@ -554,6 +581,8 @@ class AgentConfigManager:
 
         tool_overrides_by_profile: dict[str, dict[str, AgentToolOverride]] | None = None,
 
+        skill_allowlists_by_profile: dict[str, dict[str, list[str]]] | None = None,
+
     ) -> AgentConfigData:
 
         """批量更新配置字段并持久化到分 Profile 目录。"""
@@ -565,6 +594,8 @@ class AgentConfigManager:
             tool_overrides_by_profile=tool_overrides_by_profile,
 
             profile_agents=profile_agents,
+
+            skill_allowlists_by_profile=skill_allowlists_by_profile,
 
         )
 
@@ -761,6 +792,23 @@ class AgentConfigManager:
 
             self._data.tool_overrides_by_profile = cleaned
 
+        if skill_allowlists_by_profile is not None:
+
+            from core.llm.prompt.skills.allowlist import normalize_skill_ids
+
+            cleaned_skills: dict[str, dict[str, list[str]]] = {}
+
+            for profile_id, agents in skill_allowlists_by_profile.items():
+
+                PromptProfileRegistry.validate_profile_id(profile_id, config=self)
+
+                cleaned_skills[profile_id] = {
+                    agent: normalize_skill_ids(ids)
+                    for agent, ids in (agents or {}).items()
+                }
+
+            self._data.skill_allowlists_by_profile = cleaned_skills
+
         for added_id in new_profile_ids:
 
             if added_id != DEFAULT_PROFILE_ID:
@@ -813,6 +861,8 @@ class AgentConfigManager:
                 del self._data.prompt_content[agent]
         if profile_id in self._data.tool_overrides_by_profile:
             del self._data.tool_overrides_by_profile[profile_id]
+        if profile_id in self._data.skill_allowlists_by_profile:
+            del self._data.skill_allowlists_by_profile[profile_id]
 
     def _apply_builtin_profile_seed(self, profile_id: str) -> None:
         """将内置风格 Profile 内存与磁盘状态重置为 seed（不持久化）。"""
@@ -1297,6 +1347,14 @@ class AgentConfigManager:
                 profile: {agent: ov.model_dump() for agent, ov in agents.items()}
 
                 for profile, agents in data.tool_overrides_by_profile.items()
+
+            },
+
+            "skill_allowlists_by_profile": {
+
+                profile: {agent: list(ids) for agent, ids in agents.items()}
+
+                for profile, agents in data.skill_allowlists_by_profile.items()
 
             },
 

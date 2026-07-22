@@ -201,9 +201,26 @@ class AppState:
         """登记后台 chat 任务，便于查询活跃执行态。"""
         self._chat_tasks[script_id] = task
 
-    def clear_chat_task(self, script_id: str) -> None:
-        """后台 chat 结束后移除任务登记。"""
+    def clear_chat_task(
+        self, script_id: str, task: asyncio.Task[None] | None = None
+    ) -> None:
+        """后台 chat 结束后移除任务登记。
+
+        若传入 ``task``，仅当它仍是当前登记任务时才移除，避免中止后新 chat
+        已被登记时被旧任务的 finally 误清。
+        """
+        current = self._chat_tasks.get(script_id)
+        if task is not None and current is not task:
+            return
         self._chat_tasks.pop(script_id, None)
+
+    def cancel_chat_task(self, script_id: str) -> bool:
+        """对仍在运行的后台 chat 任务发出 asyncio.cancel，促使尽快收尾。"""
+        task = self._chat_tasks.get(script_id)
+        if task is None or task.done():
+            return False
+        task.cancel()
+        return True
 
     def reload_agent_config(self) -> None:
         """从磁盘重载 Agent 配置，并同步到主编排与子 Agent 实例。"""

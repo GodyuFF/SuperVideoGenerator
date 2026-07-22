@@ -82,4 +82,6 @@ export interface ConversationSummary {
   script_id?: string | null;
   last_summary?: string;
   last_round_token_usage?: { total_tokens?: number };
+  /** 当前对话激活的 Skill id（跨轮保持） */
+  active_skill_id?: string;
 }

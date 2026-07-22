@@ -1,0 +1,4 @@
+# 内置 Skill 内容勿与本目录 .py 混放
+# 包文件 → builtin/<id>/
+# 运行产生的 __pycache__/ 可随时删除，已在仓库根 .gitignore
+__pycache__/
