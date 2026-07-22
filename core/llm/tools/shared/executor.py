@@ -1,7 +1,10 @@
 """子 Agent 工具执行器：只读查询与列表类工具。"""
 
 from core.llm.agent.react_core import AgentRunContext
-from core.llm.tools.script.list import format_text_assets_list
+from core.llm.tools.script.list import (
+    format_project_shared_assets_list,
+    format_text_assets_list,
+)
 from core.llm.tools.shared.media_list import (
     build_media_list_payload,
     format_media_list_summary,
@@ -23,6 +26,8 @@ class AgentToolExecutor:
 
         if action == "list_text_assets":
             return self._list_text_assets(script_id)
+        if action == "list_project_shared_assets":
+            return self._list_project_shared_assets(script_id)
         if action == "list_images":
             return self._list_media(project_id, script_id, MediaAssetType.IMAGE)
         if action == "get_plan":
@@ -38,6 +43,10 @@ class AgentToolExecutor:
 
     def _list_text_assets(self, script_id: str) -> str:
         return format_text_assets_list(self._store, script_id)
+
+    def _list_project_shared_assets(self, script_id: str) -> str:
+        """列出项目共享池资产 observation。"""
+        return format_project_shared_assets_list(self._store, script_id)
 
     def _list_media(
         self, project_id: str, script_id: str, media_type: MediaAssetType

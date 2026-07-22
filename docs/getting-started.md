@@ -1,6 +1,6 @@
 # 快速开始
 
-> 更新日期：2026-07-21
+> 更新日期：2026-07-22
 
 Language: **中文** | [English](getting-started.en.md)
 
@@ -20,7 +20,7 @@ Language: **中文** | [English](getting-started.en.md)
 2. 按系统提示安装并启动应用。
 3. 打开 [用户手册 · 从零到成片](user-guide/01-first-video.md)；API Key 在应用内 **「AI 配置」** 中填写（自备 Key；仅保存在本机）。
 
-安装包默认**未代码签名**。Windows SmartScreen 或 macOS Gatekeeper 可能提示拦截，属预期；按系统提示允许运行即可。更多说明见 [apps/desktop/README.md](../apps/desktop/README.md)。
+安装包默认**未代码签名**。Windows SmartScreen 或 macOS Gatekeeper 可能提示拦截，属预期；按系统提示允许运行即可。若 macOS 提示「已损坏，无法打开」，见 [FAQ](user-guide/07-faq.md) 中的 `xattr` 解除隔离步骤。更多说明见 [apps/desktop/README.md](../apps/desktop/README.md)。
 
 ## 路径二：从仓库启动桌面开发壳
 

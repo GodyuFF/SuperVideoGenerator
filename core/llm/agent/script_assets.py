@@ -55,11 +55,11 @@ _ACTION_TO_TYPE: dict[str, TextAssetType] = {
 
 @dataclass
 class CreateTextAssetOutcome:
-    """文字资产创建或 RAG 复用结果。"""
+    """文字资产创建或显式复用结果。"""
 
     asset: TextAsset
-    rag_decision: str | None = None
-    rag_reason: str = ""
+    reused: bool = False
+    reason: str = ""
 
 
 def action_to_asset_type(action: str) -> TextAssetType | None:
@@ -91,6 +91,38 @@ def link_script_asset(
         script_id=script_id,
     )
     return store.add_reference(ref)
+
+
+def link_existing_shared_asset(
+    store: MemoryStore,
+    *,
+    action: str,
+    project_id: str,
+    script_id: str,
+    reuse_asset_id: str,
+) -> CreateTextAssetOutcome:
+    """将已有项目共享资产关联到当前剧本（显式复用，不改设定）。"""
+    expected = _ACTION_TO_TYPE.get(action)
+    if expected is None or action not in SHARED_CREATE_ACTIONS:
+        raise ValueError(f"行动 {action} 不支持 reuse_asset_id")
+    asset = store.get_text_asset(reuse_asset_id)
+    if asset is None:
+        raise ValueError(f"资产 {reuse_asset_id} 不存在")
+    if asset.project_id != project_id:
+        raise ValueError(f"资产 {reuse_asset_id} 不属于当前项目")
+    if asset.scope != AssetScope.PROJECT_SHARED:
+        raise ValueError(f"资产 {reuse_asset_id} 非项目共享，无法复用")
+    if asset.type != expected:
+        raise ValueError(
+            f"资产 {reuse_asset_id} 类型为 {asset.type.value}，与行动 {action} 不匹配"
+        )
+    link_script_asset(store, script_id, asset.id, relation=RelationType.USES)
+    reason = f"显式复用共享资产「{asset.name}」({asset.id})"
+    return CreateTextAssetOutcome(
+        asset=asset,
+        reused=True,
+        reason=reason,
+    )
 
 
 def unlink_script_asset(store: MemoryStore, script_id: str, asset_id: str) -> bool:
@@ -205,21 +237,7 @@ def create_text_asset_for_action(
     content: Any,
     observation: str,
 ) -> CreateTextAssetOutcome:
-    """创建文字资产；共享图文类型走 RAG 按需复用。"""
-    if action in SHARED_CREATE_ACTIONS:
-        project = store.get_project(project_id)
-        if project is not None and project.config.rag.enabled:
-            from core.rag.resolver import resolve_shared_text_asset_sync
-
-            return resolve_shared_text_asset_sync(
-                store,
-                action=action,
-                project_id=project_id,
-                script_id=script_id,
-                asset_name=asset_name,
-                content=content,
-                observation=observation,
-            )
+    """创建文字资产并关联剧本；不做 Embedding/同名自动复用。"""
     asset = _create_new_text_asset(
         store,
         action=action,
@@ -229,7 +247,7 @@ def create_text_asset_for_action(
         content=content,
         observation=observation,
     )
-    return CreateTextAssetOutcome(asset=asset)
+    return CreateTextAssetOutcome(asset=asset, reused=False)
 
 
 def update_text_asset_for_action(

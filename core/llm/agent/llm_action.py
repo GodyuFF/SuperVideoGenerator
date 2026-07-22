@@ -19,6 +19,7 @@ from core.llm.tools.shared.executor import AgentToolExecutor
 from core.llm.agent.script_assets import (
     create_text_asset_for_action,
     delete_text_asset_for_action,
+    link_existing_shared_asset,
     update_text_asset_for_action,
 )
 from core.llm.prompt.config import ASSET_SUMMARY_MAX, IMAGE_PROMPT_SUMMARY_MAX, SCRIPT_MD_CONTEXT_MAX
@@ -1279,66 +1280,115 @@ def apply_action_result(
             observation = f"已创建剧情资产 {plot.id}，并关联到剧本。"
 
     elif action == "create_character":
-        outcome = create_text_asset_for_action(
-            store,
-            action=action,
-            project_id=project_id,
-            script_id=script_id,
-            asset_name=str(data.get("asset_name", "主角")),
-            content=extract_llm_content_field(data, action),
-            observation=observation,
-        )
-        character = outcome.asset
-        ctx.outputs.append(
-            StepOutput(kind="json", label="character", asset_id=character.id)
-        )
-        if not observation:
-            if outcome.rag_decision == "reuse":
-                observation = f"已复用人物资产 {character.id}（{character.name}）。{outcome.rag_reason}"
-            elif outcome.rag_decision == "fork":
-                observation = f"已 fork 人物资产 {character.id}。{outcome.rag_reason}"
+        reuse_id = str(data.get("reuse_asset_id") or "").strip()
+        try:
+            if reuse_id:
+                outcome = link_existing_shared_asset(
+                    store,
+                    action=action,
+                    project_id=project_id,
+                    script_id=script_id,
+                    reuse_asset_id=reuse_id,
+                )
             else:
-                observation = f"已创建人物资产 {character.id}，并关联到剧本。"
+                content = extract_llm_content_field(data, action)
+                if not content:
+                    raise ValueError("创建人物须提供 content，或传 reuse_asset_id 复用共享资产")
+                outcome = create_text_asset_for_action(
+                    store,
+                    action=action,
+                    project_id=project_id,
+                    script_id=script_id,
+                    asset_name=str(data.get("asset_name", "主角")),
+                    content=content,
+                    observation=observation,
+                )
+            character = outcome.asset
+            ctx.outputs.append(
+                StepOutput(kind="json", label="character", asset_id=character.id)
+            )
+            if not observation:
+                if outcome.reused:
+                    observation = (
+                        f"已复用人物资产 {character.id}（{character.name}）。"
+                        f"{outcome.reason}"
+                    )
+                else:
+                    observation = f"已创建人物资产 {character.id}，并关联到剧本。"
+        except ValueError as e:
+            observation = observation or f"创建人物失败：{e}"
 
     elif action == "create_scene":
-        outcome = create_text_asset_for_action(
-            store,
-            action=action,
-            project_id=project_id,
-            script_id=script_id,
-            asset_name=str(data.get("asset_name", "场景")),
-            content=extract_llm_content_field(data, action),
-            observation=observation,
-        )
-        scene = outcome.asset
-        ctx.outputs.append(StepOutput(kind="json", label="scene", asset_id=scene.id))
-        if not observation:
-            if outcome.rag_decision == "reuse":
-                observation = f"已复用场景资产 {scene.id}（{scene.name}）。{outcome.rag_reason}"
-            elif outcome.rag_decision == "fork":
-                observation = f"已 fork 场景资产 {scene.id}。{outcome.rag_reason}"
+        reuse_id = str(data.get("reuse_asset_id") or "").strip()
+        try:
+            if reuse_id:
+                outcome = link_existing_shared_asset(
+                    store,
+                    action=action,
+                    project_id=project_id,
+                    script_id=script_id,
+                    reuse_asset_id=reuse_id,
+                )
             else:
-                observation = f"已创建场景资产 {scene.id}，并关联到剧本。"
+                content = extract_llm_content_field(data, action)
+                if not content:
+                    raise ValueError("创建空镜须提供 content，或传 reuse_asset_id 复用共享资产")
+                outcome = create_text_asset_for_action(
+                    store,
+                    action=action,
+                    project_id=project_id,
+                    script_id=script_id,
+                    asset_name=str(data.get("asset_name", "场景")),
+                    content=content,
+                    observation=observation,
+                )
+            scene = outcome.asset
+            ctx.outputs.append(StepOutput(kind="json", label="scene", asset_id=scene.id))
+            if not observation:
+                if outcome.reused:
+                    observation = (
+                        f"已复用场景资产 {scene.id}（{scene.name}）。{outcome.reason}"
+                    )
+                else:
+                    observation = f"已创建场景资产 {scene.id}，并关联到剧本。"
+        except ValueError as e:
+            observation = observation or f"创建空镜失败：{e}"
 
     elif action == "create_prop":
-        outcome = create_text_asset_for_action(
-            store,
-            action=action,
-            project_id=project_id,
-            script_id=script_id,
-            asset_name=str(data.get("asset_name", "道具")),
-            content=extract_llm_content_field(data, action),
-            observation=observation,
-        )
-        prop = outcome.asset
-        ctx.outputs.append(StepOutput(kind="json", label="prop", asset_id=prop.id))
-        if not observation:
-            if outcome.rag_decision == "reuse":
-                observation = f"已复用道具资产 {prop.id}（{prop.name}）。{outcome.rag_reason}"
-            elif outcome.rag_decision == "fork":
-                observation = f"已 fork 道具资产 {prop.id}。{outcome.rag_reason}"
+        reuse_id = str(data.get("reuse_asset_id") or "").strip()
+        try:
+            if reuse_id:
+                outcome = link_existing_shared_asset(
+                    store,
+                    action=action,
+                    project_id=project_id,
+                    script_id=script_id,
+                    reuse_asset_id=reuse_id,
+                )
             else:
-                observation = f"已创建道具资产 {prop.id}，并关联到剧本。"
+                content = extract_llm_content_field(data, action)
+                if not content:
+                    raise ValueError("创建道具须提供 content，或传 reuse_asset_id 复用共享资产")
+                outcome = create_text_asset_for_action(
+                    store,
+                    action=action,
+                    project_id=project_id,
+                    script_id=script_id,
+                    asset_name=str(data.get("asset_name", "道具")),
+                    content=content,
+                    observation=observation,
+                )
+            prop = outcome.asset
+            ctx.outputs.append(StepOutput(kind="json", label="prop", asset_id=prop.id))
+            if not observation:
+                if outcome.reused:
+                    observation = (
+                        f"已复用道具资产 {prop.id}（{prop.name}）。{outcome.reason}"
+                    )
+                else:
+                    observation = f"已创建道具资产 {prop.id}，并关联到剧本。"
+        except ValueError as e:
+            observation = observation or f"创建道具失败：{e}"
 
     elif action in (
         "update_plot",

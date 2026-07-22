@@ -14,7 +14,11 @@
 
 ## 开发文档
 
-开发手册（Agent / prompt / API / 扩展）**后续补充**。当前技术参考见仓库内 `docs/superpowers/reference/`（面向贡献者，非终端用户必读）。
+| 文档 | 说明 |
+|------|------|
+| [Skill 渐进加载](dev/skills-progressive-loading.md) | 三层披露、目录约定、激活与 ReAct 工具 |
+
+开发手册（Agent / prompt / API / 扩展）持续补充。其它技术参考见仓库内 `docs/superpowers/reference/`（面向贡献者，非终端用户必读）。
 
 仓库根目录 [README.md](../README.md) / [README.en.md](../README.en.md) 提供对外简介：界面截图旅程、从零到成片摘要、风格对照与文档导航。参与贡献见 [CONTRIBUTING.md](../CONTRIBUTING.md)，安全报告见 [SECURITY.md](../SECURITY.md)。
 

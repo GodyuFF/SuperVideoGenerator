@@ -20,6 +20,10 @@ TOOL_LABELS: dict[str, str] = {
     "tool_get_plan_summary": "调用工具 · 查询计划摘要",
     "tool_list_assets": "调用工具 · 查询资产清单",
     "tool_read_webpage": "调用工具 · 读取网页",
+    "tool_list_skills": "调用工具 · 列出 Skill",
+    "tool_list_skill_refs": "调用工具 · Skill 参考索引",
+    "tool_read_skill_ref": "调用工具 · 读取 Skill 参考",
+    "tool_switch_skill": "调用工具 · 切换 Skill",
 }
 
 

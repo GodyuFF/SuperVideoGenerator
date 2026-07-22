@@ -1,0 +1,60 @@
+{
+  "refs": [
+    {
+      "id": "genre-guide",
+      "title": "题材指南",
+      "path": "genre-guide.md",
+      "summary": "13种题材核心要素、标志桥段、节奏模板与出海映射",
+      "agents": ["script_agent", "super_video_master"]
+    },
+    {
+      "id": "opening-rules",
+      "title": "开篇黄金法则",
+      "path": "opening-rules.md",
+      "summary": "开篇30秒法则、开场模式、前3集结构公式",
+      "agents": ["script_agent", "super_video_master"]
+    },
+    {
+      "id": "rhythm-curve",
+      "title": "节奏曲线",
+      "path": "rhythm-curve.md",
+      "summary": "四段式节奏、集数配比、单集微结构与情绪波形",
+      "agents": ["script_agent", "super_video_master"]
+    },
+    {
+      "id": "hook-design",
+      "title": "钩子设计",
+      "path": "hook-design.md",
+      "summary": "五种钩子类型、组合策略与使用频率",
+      "agents": ["script_agent", "super_video_master"]
+    },
+    {
+      "id": "paywall-design",
+      "title": "付费卡点",
+      "path": "paywall-design.md",
+      "summary": "付费墙位置、情绪峰值与转化策略",
+      "agents": ["script_agent", "super_video_master"]
+    },
+    {
+      "id": "satisfaction-matrix",
+      "title": "爽感矩阵",
+      "path": "satisfaction-matrix.md",
+      "summary": "爽感要素定义、题材配比与密度计算",
+      "agents": ["script_agent", "super_video_master"]
+    },
+    {
+      "id": "villain-design",
+      "title": "反派设计体系",
+      "path": "villain-design.md",
+      "summary": "四层反派递进、可恨手段、伏笔与揭露节奏",
+      "agents": ["script_agent", "super_video_master"]
+    },
+    {
+      "id": "compliance-checklist",
+      "title": "合规清单",
+      "path": "compliance-checklist.md",
+      "summary": "红线、高风险内容与修改建议",
+      "agents": ["script_agent", "super_video_master"]
+    }
+  ]
+}

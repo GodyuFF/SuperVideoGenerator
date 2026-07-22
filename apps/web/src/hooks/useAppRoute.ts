@@ -8,6 +8,7 @@ export type AppRoute =
   | "edit"
   | "settings"
   | "agents"
+  | "skills"
   | "logs"
   | "edit_timeline_viz";
 
@@ -24,6 +25,9 @@ function parseHash(): AppRouteState {
   }
   if (raw === "agents") {
     return { route: "agents", projectId: null, scriptId: null };
+  }
+  if (raw === "skills") {
+    return { route: "skills", projectId: null, scriptId: null };
   }
   const scriptLogsMatch = raw.match(/^project\/([^/]+)\/script\/([^/]+)\/logs$/);
   if (scriptLogsMatch) {
@@ -112,9 +116,11 @@ export function useAppRoute() {
         ? "#/settings"
         : target === "agents"
           ? "#/agents"
-          : target === "logs"
-            ? "#/logs"
-            : "#/";
+          : target === "skills"
+            ? "#/skills"
+            : target === "logs"
+              ? "#/logs"
+              : "#/";
     window.location.hash = hash;
   }, []);
 

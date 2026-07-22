@@ -103,6 +103,8 @@ export interface AgentConfigResponse {
   custom_agents: CustomAgentDefinition[];
   profile_agents: Record<string, string[]>;
   tool_overrides_by_profile: Record<string, Record<string, AgentToolOverride>>;
+  /** profile → agent → 可用 skill id；缺省 agent 键表示可用全部 */
+  skill_allowlists_by_profile?: Record<string, Record<string, string[]>>;
   available_profiles: PromptProfileOption[];
   config_path?: string;
   agents: AgentInfo[];
@@ -117,6 +119,19 @@ export interface AgentConfigPatch {
   custom_agents?: CustomAgentDefinition[];
   profile_agents?: Record<string, string[]>;
   tool_overrides_by_profile?: Record<string, Record<string, AgentToolOverride>>;
+  skill_allowlists_by_profile?: Record<string, Record<string, string[]>>;
+}
+
+/** Skill 列表项（配置页 / Workbench） */
+export interface SkillMetaItem {
+  id: string;
+  title: string;
+  description?: string;
+  aliases?: string[];
+  /** 作用亮点（添加抽屉突出展示） */
+  highlights?: string[];
+  source?: string;
+  deletable?: boolean;
 }
 
 export interface AgentPromptResponse {

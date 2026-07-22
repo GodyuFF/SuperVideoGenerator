@@ -11,6 +11,6 @@
 6. function 参数可为空对象 `{}`，或按函数 schema 填写可选字段。
 7. 不要编造未在 tools 列表中出现的 function 名称。
 8. 任务简报或上下文信息不足时，调用 `ask_user_question` 通过 A2UI 弹窗向用户补充字段；**禁止臆造**缺失的用户需求、时长、风格等关键信息，也**禁止**在 content 中向用户追问而不调用 `ask_user_question`。
-9. **禁止**连续两次以相同参数调用同一只读工具（如 `list_text_assets`）；系统检测到重复签名将立即中止子 Agent。
+9. **禁止**连续两次以相同参数调用同一只读工具（如 `list_text_assets`、`list_project_shared_assets`）；系统检测到重复签名将立即中止子 Agent。
 10. **计划跟踪**：业务 tool **不必**填写 `plan_status` / `remaining_plan`。进度有变时单独调用 `update_plan`（必填 `observation`、`plan_status`、`remaining_plan`）；结构调整（跳过/重置步骤、改流水线）由主编排调用 `replan`（`version++`）。
 11. 主编排：`remaining_plan` 反映全局流水线剩余步骤；子 Agent：`remaining_plan` 反映本子 Agent pipeline 内尚未完成的行动。`execution_plan` / `plan_slice` 由系统注入，勿重复编造已完成步骤。重大 replan（跳过已完成步、改顺序、用户意图变更）前，交互模式应先 `ask_user_question`（`kind=plan_approval`）；目标模式不可用 ask，可直接 `replan`。

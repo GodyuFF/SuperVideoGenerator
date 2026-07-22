@@ -23,6 +23,12 @@ from core.llm.tools.web_fetch.schemas import (
     read_webpage_input_schema,
     read_webpage_react_input_schema,
 )
+from core.llm.tools.common.skill_refs import (
+    LIST_SKILL_REFS,
+    READ_SKILL_REF,
+    list_skill_refs_input_schema,
+    read_skill_ref_input_schema,
+)
 
 ASK_USER_QUESTION_ACTION = "ask_user_question"
 _ASK_USER_QUESTION_SCHEMA = build_ask_user_question_schema()
@@ -30,17 +36,21 @@ _ASK_USER_QUESTION_SCHEMA = build_ask_user_question_schema()
 _READ_ONLY_REACT_ACTIONS = frozenset(
     {
         "list_text_assets",
+        "list_project_shared_assets",
         "list_images",
         "get_plan",
         "get_refine_plan",
         "list_videos",
         "list_audio",
         "list_final",
+        LIST_SKILL_REFS,
     }
 )
 
 _WEB_FETCH_SCHEMAS: dict[str, dict[str, Any]] = {
     "read_webpage": read_webpage_input_schema(),
+    LIST_SKILL_REFS: list_skill_refs_input_schema(),
+    READ_SKILL_REF: read_skill_ref_input_schema(),
 }
 
 ACTION_INPUT_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -74,6 +84,8 @@ def react_input_schema(action: str) -> dict[str, Any]:
         return dict(REPLAN_SCHEMA)
     if action == "read_webpage":
         return read_webpage_react_input_schema()
+    if action == READ_SKILL_REF:
+        return dict(read_skill_ref_input_schema())
     if action in _READ_ONLY_REACT_ACTIONS:
         return dict(REACT_INPUT_SCHEMA)
     return dict(REACT_INPUT_SCHEMA)

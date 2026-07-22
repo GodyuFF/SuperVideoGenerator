@@ -1241,6 +1241,7 @@ def list_conversations(project_id: str, script_id: str | None = None):
             "status": c.status.value,
             "last_round_token_usage": c.last_round_token_usage,
             "total_token_usage": c.total_token_usage,
+            "active_skill_id": c.active_skill_id or "",
         }
         for c in items
     ]
@@ -1377,12 +1378,11 @@ async def post_chat(project_id: str, script_id: str, body: ChatRequest):
     from core.models.entities import ScriptStatus
 
     registry = get_execution_cancel_registry()
-    if (
-        script.status == ScriptStatus.EXECUTING
-        or registry.is_active(script_id)
-        or state.is_chat_running(script_id)
-    ):
+    # 仅以进程内活跃任务为准；磁盘 status=executing 可能是崩溃残留，不能单独锁死发送
+    if registry.is_active(script_id) or state.is_chat_running(script_id):
         raise HTTPException(400, "剧本正在执行中，请稍候")
+    if script.status == ScriptStatus.EXECUTING:
+        script.status = ScriptStatus.FAILED
 
     try:
         if body.conversation_id:
@@ -1447,13 +1447,23 @@ async def post_chat_abort(project_id: str, script_id: str):
     if not script or script.project_id != project_id:
         raise HTTPException(404, "剧本不存在")
 
+    from core.models.entities import ScriptStatus
+
     registry = get_execution_cancel_registry()
-    if not registry.is_active(script_id):
+    chat_running = state.is_chat_running(script_id)
+    if not registry.is_active(script_id) and not chat_running:
         raise HTTPException(409, "当前没有正在执行的主编排")
 
+    conversation_id = registry.conversation_id(script_id)
     registry.request_cancel(script_id)
     cancelled_confirmations = state.confirmation_manager.cancel_all_pending()
-    conversation_id = registry.conversation_id(script_id)
+    # 硬取消后台 task，避免卡在未轮询取消标记的长 await（如裸 LLM 调用）
+    task_cancelled = state.cancel_chat_task(script_id)
+    # 立即释放发送门禁；收尾任务仍可通过 cancelled 标记自行退出
+    registry.release_active(script_id)
+    state.clear_chat_task(script_id)
+    if script.status == ScriptStatus.EXECUTING:
+        script.status = ScriptStatus.FAILED
     await state.emitter.emit(
         {
             "type": "execution_abort_requested",
@@ -1461,6 +1471,7 @@ async def post_chat_abort(project_id: str, script_id: str):
             "project_id": project_id,
             "conversation_id": conversation_id,
             "cancelled_confirmations": cancelled_confirmations,
+            "task_cancelled": task_cancelled,
         }
     )
     return {
@@ -1468,4 +1479,5 @@ async def post_chat_abort(project_id: str, script_id: str):
         "script_id": script_id,
         "conversation_id": conversation_id,
         "cancelled_confirmations": cancelled_confirmations,
+        "task_cancelled": task_cancelled,
     }

@@ -64,7 +64,13 @@ _ACTION_DATA_SCOPE: dict[str, ToolDataScope] = {
     "tool_get_plan_summary": _read("剧本", "ReAct 执行计划"),
     "tool_list_assets": _read("文字资产", "数字媒体资产"),
     "tool_read_webpage": _read("无持久化"),
+    "tool_list_skills": _read("无持久化"),
+    "tool_list_skill_refs": _read("无持久化"),
+    "tool_read_skill_ref": _read("无持久化"),
+    "tool_switch_skill": _read("无持久化"),
     "read_webpage": _read("无持久化"),
+    "list_skill_refs": _read("无持久化"),
+    "read_skill_ref": _read("无持久化"),
     "web_search": _read("无持久化"),
     # —— script_agent ——
     "parse_brief": _write(
@@ -86,6 +92,7 @@ _ACTION_DATA_SCOPE: dict[str, ToolDataScope] = {
     "delete_scene": _write("文字资产层", ("场景文字资产", "资产引用边")),
     "delete_prop": _write("文字资产层", ("道具文字资产", "资产引用边")),
     "list_text_assets": _read("文字资产", "数字媒体资产"),
+    "list_project_shared_assets": _read("文字资产", "项目共享池"),
     # —— image_agent ——
     "scan_text_assets": _read("文字资产"),
     "generate_images": _write(

@@ -44,6 +44,7 @@ export function useAgentConfig(_projectId: string | null) {
         custom_agents: globalData.custom_agents ?? [],
         profile_agents: globalData.profile_agents ?? {},
         tool_overrides_by_profile: globalData.tool_overrides_by_profile ?? {},
+        skill_allowlists_by_profile: globalData.skill_allowlists_by_profile ?? {},
         available_profiles: globalData.available_profiles ?? [],
         config_path: globalData.config_path,
         agents: agentsData.agents ?? [],

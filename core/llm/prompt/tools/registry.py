@@ -145,6 +145,51 @@ def build_master_react_tool(
             input_schema=read_webpage_react_input_schema(for_master=True),
             kind="function",
         )
+    if action == "tool_list_skills":
+        return ToolDefinition(
+            name=action,
+            description="列出可用 Skill 元数据",
+            input_schema={"type": "object", "properties": {}, "additionalProperties": True},
+            kind="function",
+        )
+    if action == "tool_list_skill_refs":
+        return ToolDefinition(
+            name=action,
+            description="列出当前激活 Skill 的 references 索引",
+            input_schema={"type": "object", "properties": {}, "additionalProperties": True},
+            kind="function",
+        )
+    if action == "tool_read_skill_ref":
+        return ToolDefinition(
+            name=action,
+            description="按 ref_id 读取当前 Skill 的 reference 正文",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "ref_id": {"type": "string", "description": "参考文档 id"},
+                    "max_chars": {"type": "integer"},
+                },
+                "required": ["ref_id"],
+                "additionalProperties": True,
+            },
+            kind="function",
+        )
+    if action == "tool_switch_skill":
+        return ToolDefinition(
+            name=action,
+            description="激活或切换对话 Skill（skill_id 为空则清除）",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "skill_id": {
+                        "type": "string",
+                        "description": "Skill id 或 alias；空字符串表示清除",
+                    },
+                },
+                "additionalProperties": True,
+            },
+            kind="function",
+        )
     return build_react_tool(action, description)
 
 

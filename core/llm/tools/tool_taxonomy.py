@@ -39,6 +39,12 @@ _ACTION_TAXONOMY: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {
         "（character/scene/prop/plot/frame）完整 content、traits、scope/linked 关系；"
         "每项 linked_media 数字媒体摘要。用于改删前获取 asset_id。",
     ),
+    "list_project_shared_assets": (
+        ("character", "scene", "prop", "project"),
+        ("read",),
+        "只读列出/检索项目共享池 character/scene/prop（可选 query；含未关联当前剧本的资产），"
+        "供 create_*(reuse_asset_id) 显式复用；linked 相对当前剧本。",
+    ),
     "scan_text_assets": (("image", "character", "scene", "prop", "frame"), ("read", "scan"), "扫描待生图文字资产"),
     "generate_images": (("image",), ("generate",), "为文字资产生成图片"),
     "search_images": (("image",), ("search",), "搜索并关联配图"),
@@ -124,6 +130,8 @@ _ACTION_TAXONOMY: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {
     "get_export_status": (("export",), ("read",), "查询导出进度"),
     "read_webpage": (("web",), ("read",), "读取指定 URL 网页正文"),
     "web_search": (("web",), ("read", "search"), "搜索网页信息"),
+    "list_skill_refs": (("skill",), ("read",), "列出当前 Skill 的 references 索引"),
+    "read_skill_ref": (("skill",), ("read",), "按需读取 Skill reference 正文"),
     "tool_get_plan_summary": (("plan",), ("read",), "查询计划摘要"),
     "tool_list_assets": (
         ("asset",),
@@ -132,6 +140,10 @@ _ACTION_TAXONOMY: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {
         "图片/音频/视频/成片数字媒体清单（含 URL 与可访问性）。",
     ),
     "tool_read_webpage": (("web",), ("read",), "读取网页正文"),
+    "tool_list_skills": (("skill",), ("read",), "列出可用 Skill 元数据"),
+    "tool_list_skill_refs": (("skill",), ("read",), "列出当前 Skill 的 references 索引"),
+    "tool_read_skill_ref": (("skill",), ("read",), "读取 Skill reference 正文"),
+    "tool_switch_skill": (("skill",), ("control",), "激活或切换当前对话 Skill"),
     "return_to_master": (("orchestration",), ("control",), "结束子 Agent 任务并返回主编排"),
     "finish": (("orchestration",), ("control",), "结束当前 ReAct 轮次"),
     "ask_user_question": (("orchestration",), ("control",), "向用户发起结构化确认或提问"),

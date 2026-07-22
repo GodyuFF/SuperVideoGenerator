@@ -37,3 +37,22 @@ def find_shared_asset_by_name(
         if normalize_asset_name(asset.name) == needle:
             return asset
     return None
+
+
+def filter_shared_assets_by_name_query(
+    assets: list[TextAsset],
+    query: str,
+) -> list[TextAsset]:
+    """按规范化名称精确优先、子串其次过滤共享资产；无命中返回空列表。"""
+    needle = normalize_asset_name(query)
+    if not needle:
+        return []
+    exact: list[TextAsset] = []
+    partial: list[TextAsset] = []
+    for asset in assets:
+        name_n = normalize_asset_name(asset.name)
+        if name_n == needle:
+            exact.append(asset)
+        elif needle in name_n or name_n in needle:
+            partial.append(asset)
+    return exact + partial

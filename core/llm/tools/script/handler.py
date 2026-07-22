@@ -52,6 +52,44 @@ def handle_list_text_assets(
     return ToolResult(observation=obs, structured=payload)
 
 
+def handle_list_project_shared_assets(
+    store: MemoryStore, ctx: AgentRunContext, args: dict[str, Any]
+) -> ToolResult:
+    """列出或按 query 检索项目共享池角色/空镜/道具。"""
+    from core.llm.tools.script.list import (
+        build_project_shared_assets_list_payload,
+        format_text_assets_list_payload,
+    )
+
+    types = args.get("types")
+    if types is not None and not isinstance(types, list):
+        types = None
+    include_content = args.get("include_content", True)
+    if not isinstance(include_content, bool):
+        include_content = True
+    query = args.get("query")
+    if query is not None and not isinstance(query, str):
+        query = str(query)
+
+    try:
+        payload = build_project_shared_assets_list_payload(
+            store,
+            ctx.script_id,
+            types=types,
+            include_content=include_content,
+            query=query,
+        )
+    except ValueError as e:
+        return ToolResult(
+            observation=str(e),
+            structured={"error": str(e), "valid": False},
+            ok=False,
+        )
+
+    obs = format_text_assets_list_payload(payload)
+    return ToolResult(observation=obs, structured=payload)
+
+
 def handle_apply_script_action(
     store: MemoryStore,
     ctx: AgentRunContext,
@@ -132,12 +170,14 @@ def _structured_for_action(
         new_outputs = [o for o in ctx.outputs if o not in outputs_before]
         asset_id = new_outputs[-1].asset_id if new_outputs else ""
         asset = store.get_text_asset(asset_id) if asset_id else None
+        reused = bool(str(args.get("reuse_asset_id") or "").strip()) and asset is not None
         return {
             "asset_id": asset_id,
             "type": asset.type.value if asset else "",
             "name": asset.name if asset else str(args.get("asset_name", "")),
             "scope": asset.scope.value if asset else "",
             "content": dict(asset.content) if asset and isinstance(asset.content, dict) else {},
+            "reused": reused,
         }
 
     return {"action": action, "summary": str(args.get("observation", ""))}

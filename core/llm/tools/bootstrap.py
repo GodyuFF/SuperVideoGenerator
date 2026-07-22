@@ -36,6 +36,7 @@ def build_agent_tools() -> dict[str, list]:
 
 
 def agent_tools_from_registry(registry: ToolRegistry) -> dict[str, list]:
+    from core.llm.tools.common.skill_refs import SKILL_ONLY_COMMON_TOOLS
     from core.llm.tools.shared.agent_tools import ASK_USER_QUESTION_ACTION, AgentToolSpec
     from core.llm.tools.web_fetch.tool import COMMON_AGENT
 
@@ -50,6 +51,9 @@ def agent_tools_from_registry(registry: ToolRegistry) -> dict[str, list]:
             ad_hoc=spec.ad_hoc,
         )
         if spec.agent == COMMON_AGENT:
+            # Skill 渐进工具仅在激活时由 apply_skill_tool_filter 追加
+            if spec.name in SKILL_ONLY_COMMON_TOOLS:
+                continue
             common_specs.append(entry)
             continue
         by_agent.setdefault(spec.agent, []).append(entry)

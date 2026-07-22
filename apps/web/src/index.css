@@ -3225,6 +3225,10 @@ button.project-home-card-body:hover .project-home-open {
 .plan-step-desc {
   margin: 0.25rem 0 0;
   font-size: 0.75rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .plan-step-error {
@@ -3233,11 +3237,63 @@ button.project-home-card-body:hover .project-home-open {
   color: var(--svf-danger, #e05252);
 }
 
+.plan-step-outputs-wrap {
+  margin-top: 0.35rem;
+}
+
+.plan-step-outputs-toggle {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--svf-text-soft, #b8c0d0);
+  font-family: var(--svf-font-mono, "IBM Plex Mono", ui-monospace, monospace);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan-step-outputs-toggle:focus-visible {
+  outline: 2px solid var(--svf-accent, #e0634a);
+  outline-offset: 2px;
+}
+
+.plan-step-outputs-chevron {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.plan-step-outputs-summary {
+  min-width: 0;
+  word-break: break-word;
+}
+
 .plan-step-outputs {
   margin: 0.35rem 0 0;
   padding-left: 1rem;
   font-size: 0.6875rem;
   color: var(--svf-muted, #8e9aaf);
+}
+
+.plan-step-outputs--scroll {
+  max-height: 9.5rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .plan-step-outputs {
+    animation: plan-outputs-in 120ms ease-out;
+  }
+}
+
+@keyframes plan-outputs-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .plan-list-inline {

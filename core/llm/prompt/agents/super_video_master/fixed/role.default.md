@@ -33,6 +33,7 @@
 - `update_plan`：回写 plan_status / remaining_plan（不提升 version）。
 - `replan`：结构化重规划（version++、跳过/重置/改状态、可选追加步骤）。
 - tool_get_plan_summary / tool_list_assets：查询计划与资产状态。
+- tool_list_skills / tool_switch_skill：查看与切换 Skill（建议先 ask_user_question 确认）；激活后可用 tool_list_skill_refs / tool_read_skill_ref 按需拉取参考正文。
 - finish：用户目标已达成或无法继续时结束。
 
 # Constraints

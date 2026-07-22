@@ -1,9 +1,8 @@
-"""RAG 共享资产复用：向量索引、检索与 Reuse Judge。"""
+"""RAG 检索数据模型导出。"""
 
-from core.rag.models import RagHit, RagQuery, ReuseDecision
+from core.rag.models import RagHit, RagQuery
 
 __all__ = [
     "RagHit",
     "RagQuery",
-    "ReuseDecision",
 ]

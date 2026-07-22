@@ -17,6 +17,7 @@ from core.llm.tools.output_schemas import (
     generic_action_output_schema,
     load_edit_context_output_schema,
     list_text_assets_output_schema,
+    list_project_shared_assets_output_schema,
     media_list_output_schema,
     opencut_clip_mutation_output_schema,
     plot_content_output_schema,
@@ -89,6 +90,8 @@ def output_schema_for(name: str) -> dict:
         return script_update_schema()
     if name == "list_text_assets":
         return list_text_assets_output_schema()
+    if name == "list_project_shared_assets":
+        return list_project_shared_assets_output_schema()
     if name == "scan_text_assets":
         return scan_text_assets_output_schema()
     if name in ("parse_brief", "update_script"):
@@ -117,6 +120,14 @@ def output_schema_for(name: str) -> dict:
         return analyze_edit_timeline_output_schema()
     if name == "read_webpage":
         return read_webpage_output_schema()
+    if name == "list_skill_refs":
+        from core.llm.tools.common.skill_refs import list_skill_refs_output_schema
+
+        return list_skill_refs_output_schema()
+    if name == "read_skill_ref":
+        from core.llm.tools.common.skill_refs import read_skill_ref_output_schema
+
+        return read_skill_ref_output_schema()
     if name.startswith("list_"):
         return media_list_output_schema()
     if name == "search_images":

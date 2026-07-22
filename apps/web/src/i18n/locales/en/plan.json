@@ -26,5 +26,19 @@
     "superseded": "Recovered",
     "awaiting_confirmation": "Awaiting confirmation"
   },
-  "supersededStepNote": "This failed step was superseded by a later successful retry"
+  "supersededStepNote": "This failed step was superseded by a later successful retry",
+  "outputsToggle": "Step outputs",
+  "outputsSummary": {
+    "image": "Images",
+    "video": "Videos",
+    "audio": "Audio",
+    "text": "Text",
+    "labels": {
+      "character": "Character",
+      "prop": "Prop",
+      "scene": "Scene",
+      "plot": "Plot",
+      "video_plan": "Video plan"
+    }
+  }
 }

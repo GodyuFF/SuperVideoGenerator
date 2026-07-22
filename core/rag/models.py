@@ -1,4 +1,4 @@
-"""RAG 复用流程的数据模型。"""
+"""共享池向量检索的数据模型。"""
 
 from typing import Any, Literal
 
@@ -25,14 +25,3 @@ class RagHit(BaseModel):
     summary: str
     score: float
     content_preview: dict[str, Any] = Field(default_factory=dict)
-
-
-class ReuseDecision(BaseModel):
-    """LLM Reuse Judge 判定结果。"""
-
-    requirement_summary: str = ""
-    decision: Literal["reuse", "fork", "create_new"]
-    selected_asset_id: str | None = None
-    fork_patch: dict[str, Any] = Field(default_factory=dict)
-    reason: str = ""
-    confidence: float = 0.0

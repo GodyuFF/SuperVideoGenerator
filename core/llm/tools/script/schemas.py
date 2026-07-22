@@ -8,6 +8,7 @@ from core.llm.prompt.tools.schema_builders import (
     _OBSERVATION,
     build_character_content_schema,
     build_character_content_update_schema,
+    build_list_project_shared_assets_input_schema,
     build_list_text_assets_input_schema,
     build_plot_content_schema,
     build_plot_content_update_schema,
@@ -50,8 +51,12 @@ _CREATE_ASSET_SCHEMA: dict[str, dict[str, Any]] = {
             "observation": _OBSERVATION,
             "asset_name": {"type": "string"},
             "content": _CHARACTER_CONTENT,
+            "reuse_asset_id": {
+                "type": "string",
+                "description": "复用项目共享池已有人物：填 list_project_shared_assets 返回的 id；有则只关联不新建，可省略 content",
+            },
         },
-        "required": ["observation", "content"],
+        "required": ["observation"],
         "additionalProperties": True,
     },
     "create_scene": {
@@ -60,8 +65,12 @@ _CREATE_ASSET_SCHEMA: dict[str, dict[str, Any]] = {
             "observation": _OBSERVATION,
             "asset_name": {"type": "string"},
             "content": _SCENE_CONTENT,
+            "reuse_asset_id": {
+                "type": "string",
+                "description": "复用项目共享池已有空镜：填 list_project_shared_assets 返回的 id；有则只关联不新建，可省略 content",
+            },
         },
-        "required": ["observation", "content"],
+        "required": ["observation"],
         "additionalProperties": True,
     },
     "create_prop": {
@@ -70,8 +79,12 @@ _CREATE_ASSET_SCHEMA: dict[str, dict[str, Any]] = {
             "observation": _OBSERVATION,
             "asset_name": {"type": "string"},
             "content": _PROP_CONTENT,
+            "reuse_asset_id": {
+                "type": "string",
+                "description": "复用项目共享池已有道具：填 list_project_shared_assets 返回的 id；有则只关联不新建，可省略 content",
+            },
         },
-        "required": ["observation", "content"],
+        "required": ["observation"],
         "additionalProperties": True,
     },
 }
@@ -89,4 +102,7 @@ SCRIPT_SCHEMAS: dict[str, dict[str, Any]] = {
     "delete_scene": DELETE_ASSET_SCHEMA,
     "delete_prop": DELETE_ASSET_SCHEMA,
     "list_text_assets": merge_plan_tracking(build_list_text_assets_input_schema()),
+    "list_project_shared_assets": merge_plan_tracking(
+        build_list_project_shared_assets_input_schema()
+    ),
 }

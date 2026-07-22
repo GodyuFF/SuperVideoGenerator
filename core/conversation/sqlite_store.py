@@ -64,10 +64,19 @@ class ConversationSqliteStore:
                     created_at TEXT,
                     updated_at TEXT,
                     last_round_token_usage TEXT,
-                    total_token_usage TEXT
+                    total_token_usage TEXT,
+                    active_skill_id TEXT
                 )
                 """
             )
+            cols = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(conversations)").fetchall()
+            }
+            if "active_skill_id" not in cols:
+                conn.execute(
+                    "ALTER TABLE conversations ADD COLUMN active_skill_id TEXT"
+                )
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS conversation_messages (
@@ -130,20 +139,23 @@ class ConversationSqliteStore:
         return int(row["c"]) if row else 0
 
     def upsert_conversation(self, conv: Conversation) -> None:
+        """插入或更新对话元数据（含 active_skill_id）。"""
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO conversations (
                     id, project_id, script_id, title, last_summary, status,
-                    created_at, updated_at, last_round_token_usage, total_token_usage
-                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                    created_at, updated_at, last_round_token_usage, total_token_usage,
+                    active_skill_id
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     title=excluded.title,
                     last_summary=excluded.last_summary,
                     status=excluded.status,
                     updated_at=excluded.updated_at,
                     last_round_token_usage=excluded.last_round_token_usage,
-                    total_token_usage=excluded.total_token_usage
+                    total_token_usage=excluded.total_token_usage,
+                    active_skill_id=excluded.active_skill_id
                 """,
                 (
                     conv.id,
@@ -156,6 +168,7 @@ class ConversationSqliteStore:
                     conv.updated_at,
                     json.dumps(conv.last_round_token_usage, ensure_ascii=False),
                     json.dumps(conv.total_token_usage, ensure_ascii=False),
+                    conv.active_skill_id or "",
                 ),
             )
             conn.commit()
@@ -484,6 +497,10 @@ class ConversationSqliteStore:
             status = ConversationStatus(status_raw)
         except ValueError:
             status = ConversationStatus.ACTIVE
+        keys = set(row.keys())
+        active_skill = ""
+        if "active_skill_id" in keys:
+            active_skill = row["active_skill_id"] or ""
         return Conversation(
             id=row["id"],
             project_id=row["project_id"],
@@ -495,6 +512,7 @@ class ConversationSqliteStore:
             updated_at=row["updated_at"] or "",
             last_round_token_usage=self._parse_json(row["last_round_token_usage"]) or {},
             total_token_usage=self._parse_json(row["total_token_usage"]) or {},
+            active_skill_id=active_skill,
         )
 
     def _row_to_message(self, row: sqlite3.Row) -> ConversationMessage:

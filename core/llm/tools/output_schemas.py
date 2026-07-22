@@ -109,6 +109,96 @@ def list_text_assets_output_schema() -> dict[str, Any]:
     )
 
 
+def list_project_shared_assets_output_schema() -> dict[str, Any]:
+    """项目共享池列表输出 schema（character/scene/prop）。"""
+    linked_media_item = _object_schema(
+        {
+            "id": {"type": "string"},
+            "type": {"type": "string"},
+            "name": {"type": "string"},
+            "url": {"type": "string"},
+            "status": {"type": "string"},
+        },
+        required=["id", "type", "name", "url", "status"],
+        additional_properties=True,
+    )
+    asset_item = _object_schema(
+        {
+            "id": {"type": "string"},
+            "type": {
+                "type": "string",
+                "enum": ["character", "scene", "prop"],
+            },
+            "name": {"type": "string"},
+            "scope": {"type": "string"},
+            "linked": {"type": "boolean"},
+            "content": {"type": "object"},
+            "status": {"type": "string"},
+            "user_edited": {"type": "boolean"},
+            "reuse_policy": {"type": "string"},
+            "source_script_id": {"type": ["string", "null"]},
+            "relation": {"type": ["string", "null"]},
+            "primary_media_id": {"type": ["string", "null"]},
+            "traits": {
+                "type": "object",
+                "additionalProperties": {"type": "string"},
+            },
+            "linked_media": {
+                "type": "array",
+                "items": linked_media_item,
+            },
+            "score": {"type": "number"},
+        },
+        required=[
+            "id",
+            "type",
+            "name",
+            "scope",
+            "linked",
+            "content",
+            "status",
+            "user_edited",
+            "reuse_policy",
+            "source_script_id",
+            "relation",
+            "primary_media_id",
+        ],
+        additional_properties=False,
+    )
+    return _object_schema(
+        {
+            "project_id": {"type": "string"},
+            "script_id": {"type": "string"},
+            "match_mode": {
+                "type": "string",
+                "enum": ["full", "name", "embedding"],
+            },
+            "query": {"type": "string"},
+            "fallback_full": {"type": "boolean"},
+            "count": {"type": "integer"},
+            "counts_by_type": {
+                "type": "object",
+                "additionalProperties": {"type": "integer"},
+            },
+            "assets": {
+                "type": "array",
+                "items": asset_item,
+            },
+            "message": {"type": "string"},
+        },
+        required=[
+            "project_id",
+            "script_id",
+            "match_mode",
+            "query",
+            "count",
+            "counts_by_type",
+            "assets",
+        ],
+        additional_properties=False,
+    )
+
+
 def asset_mutation_output_schema() -> dict[str, Any]:
     return _object_schema(
         {
@@ -118,6 +208,7 @@ def asset_mutation_output_schema() -> dict[str, Any]:
             "scope": {"type": "string"},
             "content": {"type": "object"},
             "merged_fields": {"type": "array", "items": {"type": "string"}},
+            "reused": {"type": "boolean"},
         },
         required=["asset_id", "type"],
     )
