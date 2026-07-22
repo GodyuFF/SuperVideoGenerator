@@ -42,24 +42,30 @@ Multi-track polish for captions, picture, and narration; export from the top bar
 
 ## Demo
 
-Sample story: Nüwa Mends the Sky (storybook final cut).
+Two sample cuts: storybook *Nüwa Mends the Sky*, and image-to-video *The Blade Wanderer* (ink-wash wuxia).
 
 | Step | What happens |
 |------|----------------|
 | Chat | Describe the idea; the lead agent plans the run |
 | Storyboard & assets | Editable board; characters / scenes reusable |
 | Edit | Edit Assistant multi-track polish for captions, picture, and narration |
-| Final cut | Export the storybook video |
+| Final cut | Export the video |
 
-**Final cut preview:**
+**Final cut 1 — Nüwa Mends the Sky (storybook):**
 
 <a href="site/assets/demo-final.mp4">
-  <img src="site/assets/demo-final-poster.jpg" alt="Final cut preview — click to open MP4" width="720" />
+  <img src="site/assets/demo-final-poster.jpg" alt="Nüwa final cut preview — click to open MP4" width="720" />
 </a>
 
-> GitHub READMEs cannot embed local video playback; click the poster to open [`demo-final.mp4`](site/assets/demo-final.mp4).
+**Final cut 2 — The Blade Wanderer (image-to-video):**
 
-**Matching edit timeline:**
+<a href="site/assets/demo-daoke.mp4">
+  <img src="site/assets/demo-daoke-poster.jpg" alt="Blade Wanderer final cut preview — click to open MP4" width="720" />
+</a>
+
+> GitHub READMEs cannot embed local video playback; click a poster to open [`demo-final.mp4`](site/assets/demo-final.mp4) / [`demo-daoke.mp4`](site/assets/demo-daoke.mp4).
+
+**Matching edit timeline (Nüwa):**
 
 <img src="site/assets/edit-timeline.png" alt="Multi-track edit timeline for the Nüwa project" width="720" />
 

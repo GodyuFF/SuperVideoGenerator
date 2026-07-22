@@ -42,24 +42,30 @@ Language: **中文** | [English](README.en.md)
 
 ## Demo
 
-示例题材：女娲补天（故事书成片）。
+两个成片示例：故事书《女娲补天》、图生视频《刀客》（水墨武侠）。
 
 | 步骤 | 说明 |
 |------|------|
 | 对话 | 自然语言描述创意，主 Agent 编排计划 |
 | 分镜与资产 | 看板可见可改，人物 / 场景可复用 |
 | 剪辑 | 剪辑助手多轨精修字幕、画面与旁白 |
-| 成片 | 导出故事书视频 |
+| 成片 | 导出视频 |
 
-**成片演示：**
+**成片演示 1 — 女娲补天（故事书）：**
 
 <a href="site/assets/demo-final.mp4">
-  <img src="site/assets/demo-final-poster.jpg" alt="成片预览 — 点击观看 MP4" width="720" />
+  <img src="site/assets/demo-final-poster.jpg" alt="女娲补天成片预览 — 点击观看 MP4" width="720" />
 </a>
 
-> GitHub README 无法内嵌播放本地视频；点击封面即可打开 [`demo-final.mp4`](site/assets/demo-final.mp4)。
+**成片演示 2 — 刀客（图生视频）：**
 
-**对应剪辑时间轴：**
+<a href="site/assets/demo-daoke.mp4">
+  <img src="site/assets/demo-daoke-poster.jpg" alt="刀客成片预览 — 点击观看 MP4" width="720" />
+</a>
+
+> GitHub README 无法内嵌播放本地视频；点击封面即可打开 [`demo-final.mp4`](site/assets/demo-final.mp4) / [`demo-daoke.mp4`](site/assets/demo-daoke.mp4)。
+
+**对应剪辑时间轴（女娲补天）：**
 
 <img src="site/assets/edit-timeline.png" alt="女娲补天项目的多轨剪辑时间轴" width="720" />
 
