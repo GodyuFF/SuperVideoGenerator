@@ -1,0 +1,77 @@
+# One-shot: publish already-built desktop artifacts from run 29795856023 to release v0.1.5.
+# Trigger: workflow_dispatch only. Safe to delete after assets are on the Release.
+
+name: Publish v0.1.5 Desktop Assets
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    name: Upload Win + macOS arm64 to v0.1.5
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download CI artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          echo "Downloading win-x64..."
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            repos/GodyuFF/SuperVideoGenerator/actions/artifacts/8482211807/zip \
+            > win-x64.zip
+          echo "Downloading macos-arm64..."
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            repos/GodyuFF/SuperVideoGenerator/actions/artifacts/8482148835/zip \
+            > macos-arm64.zip
+          unzip -o win-x64.zip -d release-assets
+          unzip -o macos-arm64.zip -d release-assets
+          echo "## Files to upload" >> "$GITHUB_STEP_SUMMARY"
+          find release-assets -type f -printf "- \`%f\` (%s bytes)\n" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload to GitHub Release v0.1.5
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find release-assets -type f)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No files found in release-assets" >&2
+            exit 1
+          fi
+          gh release upload v0.1.5 "${files[@]}" \
+            --repo GodyuFF/SuperVideoGenerator \
+            --clobber
+
+      - name: Update release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          body="$(cat <<'EOF'
+          从剧本到成片，一条对话流水线
+
+          ## 桌面安装包
+
+          - **Windows x64**：下载 `SuperVideoGenerator-Setup-0.1.5-x64.exe`
+          - **macOS Apple Silicon (arm64)**：下载对应 `.dmg`
+          - 本次未提供 macOS Intel (x64) 安装包
+
+          ### 使用说明
+
+          1. 安装并启动应用（无需自备 Python / Node）
+          2. 在应用内 **「AI 配置」** 填写自备 API Key
+          3. 安装包**未代码签名**：Windows SmartScreen / macOS Gatekeeper 可能提示拦截，按系统提示允许即可
+          EOF
+          )"
+          # Strip leading indentation from heredoc
+          body="$(printf '%s\n' "$body" | sed 's/^          //')"
+          gh release edit v0.1.5 --repo GodyuFF/SuperVideoGenerator --notes "$body"
+          gh release view v0.1.5 --repo GodyuFF/SuperVideoGenerator
