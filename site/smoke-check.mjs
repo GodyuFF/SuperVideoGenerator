@@ -9,6 +9,9 @@ const mustFiles = [
   "styles.css",
   "i18n.js",
   "assets/demo-final.mp4",
+  "assets/demo-final-poster.jpg",
+  "assets/demo-daoke.mp4",
+  "assets/demo-daoke-poster.jpg",
   "assets/edit-timeline.png",
   "assets/wechat-group-qr.png",
 ];

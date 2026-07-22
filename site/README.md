@@ -26,7 +26,10 @@ node site/smoke-check.mjs
 
 | 文件 | 用途 |
 |------|------|
-| `assets/demo-final.mp4` | 女娲补天成片 |
+| `assets/demo-final.mp4` | 女娲补天成片（故事书） |
+| `assets/demo-final-poster.jpg` | 女娲补天封面 |
+| `assets/demo-daoke.mp4` | 刀客成片（图生视频 / 水墨） |
+| `assets/demo-daoke-poster.jpg` | 刀客封面 |
 | `assets/edit-timeline.png` | 剪辑时间轴截图 |
 | `assets/wechat-group-qr.png` | 微信群二维码 |
 
